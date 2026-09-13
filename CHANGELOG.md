@@ -30,7 +30,7 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - `omahub agent [agent] [--pick]` starts a coding agent in your projects folder or a folder you pick, and `omahub edit [--pick]` opens it in your editor.
 - Folder settings in the hub: the current folder and quick places as chips, plus Choose… for any folder. Omahub Capture's screenshot folder is the first.
 - The screenshot thumbnail, which began as Omahub Capture, now ships inside Omahub. Turn on `capture/thumbnail` and PRINT, the Mac screenshot keys, and the mouse shortcut show a floating thumbnail: click to edit, drag into any app, drag right to dismiss, or right-click to copy, show in Files, trash, or save to another folder.
-- The welcome. The first time Omahub loads, it opens once with the detected keyboard and the settings recommended for it. `omahub open welcome` brings it back.
+- The welcome. The first time Omahub loads, it opens once with the detected keyboard and the settings recommended for it. `omahub open welcome` brings it back. After the keyboard, it offers the screenshot thumbnail and your default agent and editor.
 
 ### Changed
 

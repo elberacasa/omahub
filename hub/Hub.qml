@@ -49,7 +49,8 @@ Item {
     && (root.view === "welcome" || root.sectionId === "keyboard")
 
   readonly property int cardWidth: Math.min(Style.space(root.view === "welcome" ? 760 : 980), panel.width - Style.gapsOut * 2)
-  readonly property int cardHeight: Math.min(Style.space(640), panel.height - Style.gapsOut * 2)
+  // The welcome is a single list meant to be read at once, so it gets the room to show all of it.
+  readonly property int cardHeight: Math.min(Style.space(root.view === "welcome" ? 860 : 640), panel.height - Style.gapsOut * 2)
   readonly property int headerHeight: Math.max(Style.space(40), Style.font.heading + Style.spacing.controlPaddingY * 2)
   readonly property int sidebarWidth: Style.space(190)
 

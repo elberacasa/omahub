@@ -75,15 +75,20 @@ function errorText(stderr) {
   return last.replace(/^omahub: /, "")
 }
 
-// The welcome shows the keyboard's size and the settings recommended for it, in recommended order.
-// A keyboard Omahub does not recognize sees every keyboard setting instead.
-function welcomeRows(catalog, states) {
-  const size = states["keyboard/size"]
-  if (!size || size.value === null || !Array.isArray(size.recommended)) return rows(catalog, "keyboard", "")
+// Beyond the keyboard, the welcome offers the few choices that change a first day the most.
+const WELCOME_EXTRAS = ["capture/thumbnail", "projects/default-agent", "projects/editor"]
 
+// The welcome shows the keyboard's size and the settings recommended for it, in recommended order,
+// then the extras. A keyboard Omahub does not recognize sees every keyboard setting instead.
+function welcomeRows(catalog, states) {
   const byId = {}
   for (const setting of catalog) byId[setting.id] = setting
-  return ["keyboard/size"].concat(size.recommended).map(id => byId[id]).filter(Boolean)
+  const extras = WELCOME_EXTRAS.map(id => byId[id]).filter(Boolean)
+
+  const size = states["keyboard/size"]
+  if (!size || size.value === null || !Array.isArray(size.recommended)) return rows(catalog, "keyboard", "").concat(extras)
+
+  return ["keyboard/size"].concat(size.recommended).map(id => byId[id]).filter(Boolean).concat(extras)
 }
 
 function pendingRecommended(states) {

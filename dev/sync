@@ -1,6 +1,7 @@
 #!/bin/bash
 
-# Copy the working tree into the Omarchy plugins folder so the shell hot reloads it.
+# Mirror the working tree into the Omarchy plugins folder, the way an install would see it: every
+# tracked or new file except dev/ and test/, and nothing left over from files moved or deleted.
 # Symlinks are rejected by `omarchy plugin validate` and not followed by the file watcher.
 # Omahub is keepLoaded, so the shell keeps the old instance across hot reloads.
 # Pass --restart to restart the shell after syncing, or --watch to keep syncing on every save.
@@ -12,10 +13,14 @@ SRC="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$HOME/.config/omarchy/plugins/$ID"
 
 sync_plugin() {
-  mkdir -p "$DEST"
+  local stage
+  stage=$(mktemp -d)
   git -C "$SRC" ls-files --cached --others --exclude-standard -z \
     | grep -zvE '^(dev|test)/' \
-    | rsync -a --delete-missing-args --from0 --files-from=- "$SRC/" "$DEST/"
+    | rsync -a --from0 --files-from=- --ignore-missing-args "$SRC/" "$stage/"
+  mkdir -p "$DEST"
+  rsync -a --delete "$stage/" "$DEST/"
+  rm -rf "$stage"
 }
 
 sync_plugin
