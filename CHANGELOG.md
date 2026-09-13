@@ -12,6 +12,7 @@ Notable changes to Omahub Capture. The format follows [Keep a Changelog](https:/
 - Keycap mark with a 4 legend, for SUPER + SHIFT + 4, in `assets/`.
 - A Save to section in the right-click menu: the current folder, Pictures, Downloads, Documents, or any folder. Saving moves the screenshot, makes that folder the default through Omarchy's `OMARCHY_SCREENSHOT_DIR`, and dismisses the card.
 - Drag the thumbnail to the right to throw it away. It follows the pointer and springs back on a short drag.
+- `capture/screenshot-folder`, a setting for the Omahub hub's Capture section, with tests in `test/`.
 
 ### Changed
 

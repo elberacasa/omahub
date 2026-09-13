@@ -17,6 +17,7 @@ Part of [Omahub](https://github.com/elberacasa/omahub).
 - Drag it to the right to throw it away
 - Right-click to copy it, show it in Files, move it to trash, or save it to another folder
 - Save to moves the screenshot and sends every future one to the same folder
+- With [Omahub](https://github.com/elberacasa/omahub) installed, pick the screenshot folder from its Capture section too
 - Hover to keep it around, or leave it and it slides away on its own
 
 Screenshots come from Omarchy's own capture tool and follow your theme.
