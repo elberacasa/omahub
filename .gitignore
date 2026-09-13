@@ -1,0 +1,10 @@
+# Private working notes
+CLAUDE.md
+HANDOFF.md
+docs/
+.claude/
+
+# Local state and scratch
+*.bak*
+*.log
+tmp/
