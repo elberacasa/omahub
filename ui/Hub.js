@@ -75,6 +75,17 @@ function errorText(stderr) {
   return last.replace(/^omahub: /, "")
 }
 
+// The welcome shows the keyboard's size and the settings recommended for it, in recommended order.
+// A keyboard Omahub does not recognize sees every keyboard setting instead.
+function welcomeRows(catalog, states) {
+  const size = states["keyboard/size"]
+  if (!size || size.value === null || !Array.isArray(size.recommended)) return rows(catalog, "keyboard", "")
+
+  const byId = {}
+  for (const setting of catalog) byId[setting.id] = setting
+  return ["keyboard/size"].concat(size.recommended).map(id => byId[id]).filter(Boolean)
+}
+
 function pendingRecommended(states) {
   const size = states["keyboard/size"]
   if (!size || !Array.isArray(size.recommended)) return []

@@ -22,6 +22,7 @@ Item {
   property bool statesReady: false
   property var pendingStates: ({})
   property var pendingOptions: ({})
+  property string view: "hub"
   property string sectionId: "keyboard"
   property int cursor: 0
   property string query: ""
@@ -30,13 +31,18 @@ Item {
   property var queue: []
 
   readonly property string omahub: Qt.resolvedUrl("bin/omahub").toString().replace("file://", "")
+  readonly property string welcomeMarker: Quickshell.env("HOME") + "/.local/state/omahub/welcomed"
+  readonly property string firstRunScript: "if [[ -e $1 ]]; then\n  exit 1\nfi\nmkdir -p \"$(dirname \"$1\")\"\ntouch \"$1\""
   readonly property var sections: Hub.sections(root.catalog)
-  readonly property var rows: Hub.rows(root.catalog, root.sectionId, root.query)
+  readonly property var rows: root.view === "welcome"
+    ? Hub.welcomeRows(root.catalog, root.states)
+    : Hub.rows(root.catalog, root.sectionId, root.query)
   readonly property var summary: Hub.keyboardSummary(root.states)
   readonly property var pending: Hub.pendingRecommended(root.states)
-  readonly property bool showKeyboardCard: root.query === "" && root.sectionId === "keyboard" && root.summary !== null
+  readonly property bool showKeyboardCard: root.summary !== null && root.query === ""
+    && (root.view === "welcome" || root.sectionId === "keyboard")
 
-  readonly property int cardWidth: Math.min(Style.space(980), panel.width - Style.gapsOut * 2)
+  readonly property int cardWidth: Math.min(Style.space(root.view === "welcome" ? 760 : 980), panel.width - Style.gapsOut * 2)
   readonly property int cardHeight: Math.min(Style.space(640), panel.height - Style.gapsOut * 2)
   readonly property int headerHeight: Math.max(Style.space(40), Style.font.heading + Style.spacing.controlPaddingY * 2)
   readonly property int sidebarWidth: Style.space(190)
@@ -56,12 +62,17 @@ Item {
     + "done"
 
   // The plugin stays loaded, so read settings once at startup and the first SUPER + A opens on real state.
-  Component.onCompleted: root.refresh()
+  // The very first load also shows the welcome, once.
+  Component.onCompleted: {
+    root.refresh()
+    firstRun.running = true
+  }
 
   function open(payloadJson) {
     var payload = {}
     try { payload = JSON.parse(payloadJson || "{}") } catch (e) {}
     if (payload.section) root.sectionId = payload.section
+    root.view = payload.view === "welcome" ? "welcome" : "hub"
 
     root.query = ""
     root.searching = false
@@ -211,6 +222,7 @@ Item {
   }
 
   function moveSection(delta) {
+    if (root.view !== "hub") return
     var list = root.sections
     if (list.length === 0) return
     var index = list.findIndex(function(section) { return section.id === root.sectionId })
@@ -220,6 +232,14 @@ Item {
   function setQuery(text) {
     root.query = text
     root.cursor = 0
+  }
+
+  // Leaves the welcome for the full hub, searching with whatever was typed.
+  function showAll(text) {
+    root.view = "hub"
+    root.searching = true
+    root.setQuery(text)
+    sectionFade.restart()
   }
 
   function selectFromPointer(index, item, mouse) {
@@ -247,6 +267,28 @@ Item {
       onRead: function(line) { root.applyStateLine(line) }
     }
     onExited: root.commitStates()
+  }
+
+  Process {
+    id: firstRun
+    command: ["bash", "-c", root.firstRunScript, "omahub-first-run", root.welcomeMarker]
+    onExited: function(exitCode) {
+      if (exitCode === 0) welcomeTimer.start()
+    }
+  }
+
+  // Lets the desktop settle and settings finish reading, so the welcome opens complete.
+  Timer {
+    id: welcomeTimer
+    interval: 1200
+    onTriggered: {
+      if (root.loadError !== "" || root.opened) return
+      if (!root.statesReady) {
+        welcomeTimer.restart()
+        return
+      }
+      root.open(JSON.stringify({ view: "welcome" }))
+    }
   }
 
   Process {
@@ -302,6 +344,11 @@ Item {
     BorderSurface {
       id: card
       width: root.cardWidth
+      // Only while shown, so opening in a different view never resizes during the fade in.
+      Behavior on width {
+        enabled: root.opened && card.opacity === 1
+        NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
+      }
       height: root.cardHeight
       anchors.centerIn: parent
       radius: Style.cornerRadius
@@ -360,10 +407,15 @@ Item {
           } else if (event.key === Qt.Key_Space || event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
             root.activate(root.cursor)
           } else if (event.text === "/") {
-            root.searching = true
+            if (root.view === "welcome") root.showAll("")
+            else root.searching = true
           } else if (plain && printable) {
-            root.searching = true
-            root.setQuery(root.query + event.text)
+            if (root.view === "welcome") {
+              root.showAll(event.text)
+            } else {
+              root.searching = true
+              root.setQuery(root.query + event.text)
+            }
           } else {
             return
           }
@@ -397,7 +449,7 @@ Item {
             Text {
               anchors.verticalCenter: parent.verticalCenter
               textFormat: Text.PlainText
-              text: "Omahub"
+              text: root.view === "welcome" ? "Welcome to Omahub" : "Omahub"
               color: Color.menu.text
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.heading
@@ -405,8 +457,23 @@ Item {
             }
           }
 
+          Text {
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            width: Math.min(implicitWidth, parent.width - brand.width - Style.spacing.panelGap)
+            visible: root.view === "welcome"
+            textFormat: Text.PlainText
+            text: "Pick the Mac touches you want. Change them anytime."
+            color: Color.menu.text
+            opacity: 0.6
+            elide: Text.ElideRight
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.body
+          }
+
           BorderSurface {
             id: searchBox
+            visible: root.view === "hub"
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             width: Math.min(Style.space(420), parent.width - brand.width - Style.spacing.panelGap)
@@ -505,7 +572,8 @@ Item {
 
           Column {
             id: sidebar
-            width: root.sidebarWidth
+            visible: root.view === "hub"
+            width: root.view === "hub" ? root.sidebarWidth : 0
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             spacing: Style.spacing.xs
@@ -529,18 +597,19 @@ Item {
 
           Rectangle {
             id: divider
+            visible: root.view === "hub"
             anchors.left: sidebar.right
-            anchors.leftMargin: Style.spacing.lg
+            anchors.leftMargin: root.view === "hub" ? Style.spacing.lg : 0
             anchors.top: parent.top
             anchors.bottom: parent.bottom
-            width: Style.normalBorderWidth
+            width: root.view === "hub" ? Style.normalBorderWidth : 0
             color: Util.alpha(Color.menu.border, 0.28)
           }
 
           Item {
             id: mainPane
             anchors.left: divider.right
-            anchors.leftMargin: Style.spacing.lg
+            anchors.leftMargin: root.view === "hub" ? Style.spacing.lg : 0
             anchors.right: parent.right
             anchors.top: parent.top
             anchors.bottom: parent.bottom
@@ -747,10 +816,10 @@ Item {
           Repeater {
             model: [
               { keys: ["j", "k"], label: "Move" },
-              { keys: ["h", "l"], label: "Sections", hidden: root.sections.length < 2 },
+              { keys: ["h", "l"], label: "Sections", hidden: root.view !== "hub" || root.sections.length < 2 },
               { keys: ["space"], label: "Change" },
-              { keys: ["/"], label: "Search" },
-              { keys: ["esc"], label: "Close" }
+              { keys: ["/"], label: root.view === "welcome" ? "All settings" : "Search" },
+              { keys: ["esc"], label: "Close", hidden: root.view === "welcome" }
             ].filter(function(hint) { return !hint.hidden })
 
             delegate: Row {
@@ -794,6 +863,17 @@ Item {
                 font.pixelSize: Style.font.caption
               }
             }
+          }
+
+          Button {
+            anchors.verticalCenter: parent.verticalCenter
+            visible: root.view === "welcome"
+            text: "Done"
+            bordered: true
+            selected: true
+            foreground: Color.menu.text
+            fontFamily: Style.font.menuFamily
+            onClicked: root.close()
           }
         }
       }

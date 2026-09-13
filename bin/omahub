@@ -18,7 +18,7 @@ Usage: omahub <command>
   set <setting> <value>       Change a setting
   options <setting>           Print a setting's choices as JSON
   reset <setting>             Undo everything a setting changed
-  open [section]              Open the Omahub hub
+  open [section|welcome]      Open the hub at a section, or the welcome
   version                     Print the Omahub version
 
 Settings are named <section>/<name>, for example keyboard/mac-screenshot-keys.
@@ -56,7 +56,12 @@ case "${1:-help}" in
     run_setting "$@"
     ;;
   open)
-    omarchy-shell shell summon "$OMAHUB_PLUGIN_ID" "$(jq -nc --arg section "${2:-}" '{section: $section}')" >/dev/null
+    if [[ ${2:-} == "welcome" ]]; then
+      payload='{"view":"welcome"}'
+    else
+      payload=$(jq -nc --arg section "${2:-}" '{section: $section}')
+    fi
+    omarchy-shell shell summon "$OMAHUB_PLUGIN_ID" "$payload" >/dev/null
     ;;
   version)
     jq -r .version "$OMAHUB_PATH/manifest.json"

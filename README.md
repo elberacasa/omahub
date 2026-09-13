@@ -22,14 +22,13 @@ Every setting in Omahub is a small, readable file. People change them from the h
 
 | | What it does |
 |---|---|
-| The hub | SUPER + A opens it. Search every setting, move with j and k, change it with Space. Every row shows the real state of your system |
+| The hub | SUPER + A opens it. Search every setting, move with j and k, change it with Space. Every row shows the real state of your system. The first time it loads, a welcome offers the settings recommended for your keyboard |
 | Keyboard | Detects your keyboard and recommends keys for it: Mac screenshots, Vim focus, agent keys, and mouse buttons. No Omarchy action loses its key |
 | [Omahub Capture](https://github.com/elberacasa/omahub-capture) | A thumbnail after every screenshot. Click to edit, drag into any app, drag right to throw away, right-click to save it anywhere |
 
 ## Building now
 
 - **More sections.** Capture, appearance, and plugins, each one a folder of setting files.
-- **A welcome** that lets new users pick the Mac touches they want, and nothing else.
 - **An agent skill,** so any coding agent on Omarchy can use Omahub the same way you do.
 
 ## Install
