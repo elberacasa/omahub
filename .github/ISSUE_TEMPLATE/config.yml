@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ideas
+    url: https://github.com/elberacasa/omahub-capture/discussions
+    about: Suggest a feature or a change in Discussions.
+  - name: Problems with Omarchy's screenshot tool
+    url: https://github.com/basecamp/omarchy
+    about: Capture uses Omarchy's own screenshot command. Report problems with capturing itself to the Omarchy project.

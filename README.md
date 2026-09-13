@@ -40,6 +40,10 @@ Modes: `region`, `windows`, `fullscreen`.
 
 Or use [Omahub](https://github.com/elberacasa/omahub)'s Mac keyboard layout, which puts it on SUPER + SHIFT + 3 and 4 for you.
 
+## Contributing
+
+Bug reports, ideas, and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) to get set up and [AGENTS.md](AGENTS.md) for the conventions this project follows. Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md). Report security issues privately as described in [SECURITY.md](SECURITY.md).
+
 ## Remove
 
 ```bash

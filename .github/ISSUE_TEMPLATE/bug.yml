@@ -1,0 +1,33 @@
+name: Bug
+description: Report a bug you can reproduce
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. For ideas, use Discussions instead.
+
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Run `omarchy version`, and find the Capture version in `~/.config/omarchy/plugins/io.github.elberacasa.omahub-capture/manifest.json`
+      placeholder: e.g. Omarchy 4.0.3, Omahub Capture 0.1.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead. Steps to reproduce help the most.
+    validations:
+      required: true
+
+  - type: textarea
+    id: capture
+    attributes:
+      label: Screenshot or recording
+      description: Drag a screenshot or a short recording here if the problem is visual.
+    validations:
+      required: false
