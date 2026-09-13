@@ -2,15 +2,15 @@
 
 # Cut segments of a take into an MP4 for social posts and a GIF for READMEs.
 #
-#   bin/export-media <video> <name> <start-end> [<start-end>...] [--gif-width <px>] [--gif-fps <n>] [--no-gif]
+#   dev/export-media <video> <name> <start-end> [<start-end>...] [--gif-width <px>] [--gif-fps <n>] [--no-gif]
 #
 # Segments are joined with hard cuts in the order given, for example:
-#   bin/export-media tmp/takes/hero.mp4 capture-hero 0.5-13.5 27.3-30
+#   dev/export-media tmp/takes/hero.mp4 capture-hero 0.5-13.5 27.3-30
 # Output lands in tmp/media/.
 
 set -euo pipefail
 
-usage="usage: bin/export-media <video> <name> <start-end> [<start-end>...] [--gif-width <px>] [--gif-fps <n>] [--no-gif]"
+usage="usage: dev/export-media <video> <name> <start-end> [<start-end>...] [--gif-width <px>] [--gif-fps <n>] [--no-gif]"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 
 (( $# >= 3 )) || { echo "$usage" >&2; exit 1; }
@@ -34,7 +34,7 @@ while (( $# )); do
   esac
 done
 
-[[ -f $video ]] || { echo "bin/export-media: no such video: $video" >&2; exit 1; }
+[[ -f $video ]] || { echo "dev/export-media: no such video: $video" >&2; exit 1; }
 (( ${#segments[@]} )) || { echo "$usage" >&2; exit 1; }
 
 dir="$root/tmp/media"

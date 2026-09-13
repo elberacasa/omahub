@@ -72,8 +72,8 @@ Omahub edits one marked block in `~/.config/hypr/bindings.lua`, backs the file u
 Clone into your projects folder, then sync it into the plugins folder the shell watches:
 
 ```bash
-bin/dev-sync --restart   # copy the working tree and restart the shell
-bin/dev-sync --watch     # keep copying on every save
+dev/sync --restart   # copy the working tree and restart the shell
+dev/sync --watch     # keep copying on every save
 omarchy plugin validate .
 ```
 
@@ -82,12 +82,12 @@ Plugins with `keepLoaded: true` only pick up QML changes after a shell restart.
 Record and review motion:
 
 ```bash
-bin/take thumbnail 7 --quiet --run "<command that triggers the animation>"
-bin/frames tmp/takes/thumbnail.mp4 0.4 1.0 --fps 60
-bin/export-media tmp/takes/thumbnail.mp4 thumbnail 0.4-6.5
+dev/take thumbnail 7 --quiet --run "<command that triggers the animation>"
+dev/frames tmp/takes/thumbnail.mp4 0.4 1.0 --fps 60
+dev/export-media tmp/takes/thumbnail.mp4 thumbnail 0.4-6.5
 ```
 
-`bin/take` records the focused monitor with notifications silenced. `bin/frames` tiles every frame of a window into one image. `bin/export-media` cuts segments into an MP4 and a GIF.
+`dev/take` records the focused monitor with notifications silenced. `dev/frames` tiles every frame of a window into one image. `dev/export-media` cuts segments into an MP4 and a GIF.
 
 ## Remove
 

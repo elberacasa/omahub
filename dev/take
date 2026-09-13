@@ -2,7 +2,7 @@
 
 # Record a take of the focused monitor, for demos or for reviewing motion frame by frame.
 #
-#   bin/take <name> [seconds] [--workspace <n>] [--fps <n>] [--quiet] [--run <command>]
+#   dev/take <name> [seconds] [--workspace <n>] [--fps <n>] [--quiet] [--run <command>]
 #
 #   --workspace  switch to a workspace before recording
 #   --fps        capture rate, default 60
@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-usage="usage: bin/take <name> [seconds] [--workspace <n>] [--fps <n>] [--quiet] [--run <command>]"
+usage="usage: dev/take <name> [seconds] [--workspace <n>] [--fps <n>] [--quiet] [--run <command>]"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 name=""
 seconds=15

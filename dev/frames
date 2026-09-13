@@ -2,14 +2,14 @@
 
 # Tile frames from a video into one timestamped image, to review motion or pick stills.
 #
-#   bin/frames <video> <start> <end> [--fps <n>] [--crop W:H:X:Y] [--width <px>] [--cols <n>] [--out <png>]
+#   dev/frames <video> <start> <end> [--fps <n>] [--crop W:H:X:Y] [--width <px>] [--cols <n>] [--out <png>]
 #
 # Timestamps are video time, so a frame labeled 00:00:04.250 is 4.25s into the take.
 # Use --fps 60 on a short window to inspect every frame of a transition.
 
 set -euo pipefail
 
-usage="usage: bin/frames <video> <start> <end> [--fps <n>] [--crop W:H:X:Y] [--width <px>] [--cols <n>] [--out <png>]"
+usage="usage: dev/frames <video> <start> <end> [--fps <n>] [--crop W:H:X:Y] [--width <px>] [--cols <n>] [--out <png>]"
 
 (( $# >= 3 )) || { echo "$usage" >&2; exit 1; }
 
@@ -35,7 +35,7 @@ while (( $# )); do
   esac
 done
 
-[[ -f $video ]] || { echo "bin/frames: no such video: $video" >&2; exit 1; }
+[[ -f $video ]] || { echo "dev/frames: no such video: $video" >&2; exit 1; }
 
 count=$(awk -v s="$start" -v e="$end" -v f="$fps" 'BEGIN { n = int((e - s) * f + 0.999); print (n < 1 ? 1 : n) }')
 (( cols > count )) && cols=$count
