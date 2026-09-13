@@ -32,9 +32,7 @@ Check every few seconds, for up to three minutes, until it is enabled:
 omarchy plugin list --json | jq -e '.[] | select(.id == "io.github.elberacasa.omahub" and .enabled)'
 ```
 
-Offer Omahub Capture next: a Mac-style thumbnail after every screenshot. If they want it, install it the same way with `https://github.com/elberacasa/omahub-capture.git` and wait for `io.github.elberacasa.omahub-capture`.
-
-Then load the new plugins:
+Then load it:
 
 ```bash
 omarchy restart shell
@@ -82,7 +80,13 @@ Keyboard settings make sure every Omarchy action still has a key, and undo thems
 
 ## 5. Screenshots
 
-If Omahub Capture is installed, ask where screenshots should be saved:
+Offer the Mac-style thumbnail after every screenshot: click to edit, drag into any app, drag right to dismiss.
+
+```bash
+"$omahub" set capture/thumbnail on
+```
+
+Then ask where screenshots should be saved:
 
 ```bash
 "$omahub" options capture/screenshot-folder

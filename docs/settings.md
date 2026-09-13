@@ -32,7 +32,7 @@ esac
 | Location | Id |
 |---|---|
 | `settings/<section>/<name>` in Omahub | `<section>/<name>` |
-| `settings/<section>/<name>` in an Omahub plugin such as Omahub Capture | `<section>/<name>` |
+| `settings/<section>/<name>` in a plugin whose id starts with Omahub's, such as `io.github.elberacasa.omahub-extra` | `<section>/<name>` |
 | `omahub/settings/<section>/<name>` in any other Omarchy plugin | `<section>/<name>` |
 | `~/.config/omahub/settings/<section>/<name>` | `<section>/<name>` |
 

@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# omahub:title=Screenshot thumbnail
+# omahub:summary=A floating thumbnail after every screenshot. Click to edit, drag into any app, drag right to dismiss
+# omahub:section=capture
+# omahub:kind=toggle
+# omahub:icon=󰄄
+# omahub:keywords=screenshot thumbnail preview capture mac print floating drag
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/keymap.sh"
+
+omahub_keymap_toggle_setting thumbnail capture/thumbnail "$@"

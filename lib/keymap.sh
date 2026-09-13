@@ -4,7 +4,7 @@
 # Each layer is a file in keymaps/, loaded in a fixed order. Requires lib/settings.sh.
 
 OMAHUB_BINDINGS="$HOME/.config/hypr/bindings.lua"
-OMAHUB_KEYMAP_ORDER=(hotkey mac vim agents mouse)
+OMAHUB_KEYMAP_ORDER=(hotkey thumbnail mac vim agents mouse)
 
 omahub_keymap_layers() {
   local names

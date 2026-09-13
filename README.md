@@ -25,7 +25,7 @@ Every setting in Omahub is a small, readable file. People change them from the h
 | The hub | SUPER + A opens it. Search every setting, move with j and k, change it with Space. Every row shows the real state of your system. The first time it loads, a welcome offers the settings recommended for your keyboard |
 | Keyboard | Detects your keyboard and recommends keys for it: Mac screenshots, Vim focus, agent keys, and mouse buttons. No Omarchy action loses its key |
 | Agents | Turn on "Let agents use Omahub" and any coding agent can read and change these settings through the `omahub` command. Pick which subscriptions, such as Claude and Codex, show in the bar's Agents panel, and put their limits on the bar when your Agents widget offers it. Choose your default agent, editor, and projects folder, then start any agent there with `omahub agent` |
-| [Omahub Capture](https://github.com/elberacasa/omahub-capture) | A thumbnail after every screenshot. Click to edit, drag into any app, drag right to throw away, right-click to save it anywhere |
+| Capture | Turn on the thumbnail and every screenshot slides into the corner. Click to edit, drag into any app, drag right to throw away, right-click to save it anywhere. Pick the screenshot folder in the same section |
 
 ## Building now
 
@@ -48,12 +48,7 @@ omarchy plugin add https://github.com/elberacasa/omahub.git --enable
 omarchy restart shell
 ```
 
-Add the screenshot thumbnail too:
-
-```bash
-omarchy plugin add https://github.com/elberacasa/omahub-capture.git --enable
-omarchy restart shell
-```
+That is everything. The hub, the screenshot thumbnail, and every setting come in one plugin, and nothing turns on until you choose it.
 
 Plugins land disabled until you enable them, so you can read the code first. Omahub never uses sudo. Anything that needs your password opens in a visible terminal.
 
@@ -93,7 +88,7 @@ Every Omarchy action these settings take a key from moves to a new one:
 | Herdr keybindings | SUPER + CTRL + K | SUPER + CTRL + / |
 | Monitor scaling up and down | SUPER + / and SUPER + ALT + / | SUPER + CTRL + ALT + = and - |
 
-After every change, Omahub compares the actions Omarchy has keys for before and after, and undoes the change if any action lost its key. It edits one marked block in `~/.config/hypr/bindings.lua` and backs the file up first. With Omahub Capture installed, the screenshot keys show the floating thumbnail.
+After every change, Omahub compares the actions Omarchy has keys for before and after, and undoes the change if any action lost its key. It edits one marked block in `~/.config/hypr/bindings.lua` and backs the file up first. With the screenshot thumbnail on, PRINT and the screenshot keys show it after every shot.
 
 ## Principles
 

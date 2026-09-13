@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Report where the pointer is, relative to the focused monitor, and whether a window is under it.
-# Omahub Capture asks after a drag ends, because Qt on Wayland reports many accepted drops as ignored.
+# The thumbnail asks after a drag ends, because Qt on Wayland reports many accepted drops as ignored.
 
 set -euo pipefail
 

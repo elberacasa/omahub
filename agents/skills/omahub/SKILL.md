@@ -66,5 +66,5 @@ The default agent, editor, and projects folder are the settings `agents/default-
   `~/.config/uwsm/default`. Use `set` and `reset`.
 - Ask before turning on a setting the person did not mention. Every setting is opt in.
 - To show the person the result, run `omahub open <section>` to open the hub there.
-- `omahub settings` lists only what is installed. A missing setting usually means its
-  plugin, such as Omahub Capture, is not installed.
+- `omahub settings` lists only what is installed. A missing setting usually means the
+  command or plugin it needs is not installed.
