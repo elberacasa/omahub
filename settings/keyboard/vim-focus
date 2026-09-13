@@ -4,7 +4,7 @@
 # omahub:summary=H, J, K, and L focus, swap, and group windows wherever Omarchy uses the arrow keys
 # omahub:section=keyboard
 # omahub:kind=toggle
-# omahub:icon=󰘳
+# omahub:icon=
 # omahub:keywords=vim hjkl arrows focus swap group 60 compact keyboard
 
 set -euo pipefail

@@ -11,7 +11,8 @@ Omahub is a plugin for the [Omarchy](https://omarchy.org) shell, written in QML 
 | Path | Purpose |
 |---|---|
 | `manifest.json` | Plugin manifest. `version` follows semver |
-| `Omahub.qml` | The overlay entry point |
+| `Omahub.qml` | The hub overlay: search, sections, and rows read from `omahub settings --json` |
+| `ui/` | Hub components and pure data shaping (`Hub.js`) |
 | `bin/omahub` | The command the hub, people, and agents use to list and change settings |
 | `settings/` | One executable file per setting, described by `# omahub:` headers. See [docs/settings.md](docs/settings.md) |
 | `lib/` | Shared bash for settings: discovery, marked blocks, backups, keyboard layers |

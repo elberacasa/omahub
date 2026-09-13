@@ -6,7 +6,6 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 
 ### Added
 
-- Omahub overlay skeleton with section tabs. Switch sections with h and l, the arrow keys, Tab, or 1 to 5. Esc closes.
 - Switchable keyboard layouts in `scripts/keymap.sh`: Omarchy defaults or Mac screenshot keys, with SUPER + A for Omahub in both.
 - Mac screenshot keys use Omahub Capture when it is installed and fall back to Omarchy's screenshot flow when it is not.
 - Development tools: `bin/dev-sync`, plus `bin/take`, `bin/frames`, and `bin/export-media` for recording takes and reviewing motion frame by frame.
@@ -20,6 +19,7 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - `keyboard/agent-keys`: Agent on SUPER + SHIFT + A, browser on SUPER + B, and dictation on SUPER + R.
 - `keyboard/mouse-buttons`: hold SUPER and press a mouse side button to take a screenshot or toggle dictation.
 - `keyboard/size`: detects the keyboard from known models and its name, and recommends the keyboard settings that fit it. Contributors add a keyboard with one file in `keyboards/`.
+- The hub. SUPER + A opens a search-first overlay of every setting, grouped by section, with live state, a keyboard card that shows the detected keyboard and turns on its recommended settings, and full keyboard control: j and k move, h and l switch sections, Space changes, / searches, Esc closes.
 
 ### Changed
 
