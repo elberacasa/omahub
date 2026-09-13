@@ -1,6 +1,14 @@
-# Omahub
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/omahub-hero-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="assets/omahub-hero-light.svg">
+    <img alt="Omahub" src="assets/omahub-hero-dark.svg" width="560">
+  </picture>
+</p>
 
-Mac comforts for Omarchy, built the Omarchy way.
+<p align="center">Mac comforts for Omarchy, built the Omarchy way.</p>
+
+# Omahub
 
 Omahub is a small family of [Omarchy](https://omarchy.org) shell plugins for people who came from macOS and still want the details right: screenshot keys that feel familiar, a thumbnail you can drag straight into your coding agent, and one place to browse and manage everything Omarchy offers. Every piece follows your theme, runs Omarchy's own commands, and works from the keyboard.
 
