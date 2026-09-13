@@ -309,7 +309,7 @@ Item {
 
     BorderSurface {
       id: card
-      width: root.thumbWidth + card.borderLeft + card.borderRight + root.frame * 2
+      width: image.width + card.borderLeft + card.borderRight + root.frame * 2
       height: image.height + card.borderTop + card.borderBottom + root.frame * 2
       anchors.right: parent.right
       anchors.bottom: parent.bottom
@@ -329,17 +329,21 @@ Item {
 
       transform: Translate { id: shift }
 
+      // The whole screenshot always shows, like a Mac thumbnail. Wide shots use the full
+      // width, tall shots use the full height and a narrower card.
       Image {
         id: image
+
+        readonly property real aspect: implicitHeight > 0 ? implicitWidth / implicitHeight : 16 / 9
+        readonly property bool tall: aspect < root.thumbWidth / root.maxThumbHeight
+
         x: card.borderLeft + root.frame
         y: card.borderTop + root.frame
-        width: root.thumbWidth
-        height: implicitWidth > 0
-          ? Math.min(root.maxThumbHeight, Math.round(root.thumbWidth * implicitHeight / implicitWidth))
-          : Math.round(root.thumbWidth * 9 / 16)
+        width: tall ? Math.max(Style.space(96), Math.round(root.maxThumbHeight * aspect)) : root.thumbWidth
+        height: tall ? root.maxThumbHeight : Math.round(root.thumbWidth / aspect)
         source: root.fileUrl
-        sourceSize.width: root.thumbWidth * 2
-        fillMode: Image.PreserveAspectCrop
+        sourceSize: Qt.size(root.thumbWidth * 2, root.maxThumbHeight * 2)
+        fillMode: Image.PreserveAspectFit
         asynchronous: true
         cache: false
         smooth: true

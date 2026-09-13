@@ -19,3 +19,4 @@ Notable changes to Omahub Capture. The format follows [Keep a Changelog](https:/
 
 - Clicks missed the thumbnail because its input region followed the slide-in transform.
 - Dropping the thumbnail onto a window now dismisses it right away instead of waiting for its timer.
+- The thumbnail shows the whole screenshot. Tall captures get a narrower card instead of being cropped.
