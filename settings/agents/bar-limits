@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# omahub:title=Limits on the bar
+# omahub:summary=Shows every subscription's mark and fullest limit in the bar, such as Claude and Codex side by side
+# omahub:section=agents
+# omahub:kind=toggle
+# omahub:icon=󰄨
+# omahub:keywords=bar top navbar limits percent claude codex subscription usage meter
+# omahub:requires=omarchy-agent-usage-update
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/agents.sh"
+
+omahub_agents_bar_limits_setting agents/bar-limits "$@"
