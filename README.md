@@ -14,8 +14,9 @@ Part of [Omahub](https://github.com/elberacasa/omahub).
 
 - Click it to open the editor
 - Drag it into any app to drop the file: a terminal, a browser, Files
-- Right-click for Copy, Open in Editor, Show in Files, Move to Trash, or Close
-- Swipe or tilt the wheel sideways to dismiss
+- Drag it to the right to throw it away
+- Right-click to copy it, show it in Files, move it to trash, or save it to another folder
+- Save to moves the screenshot and sends every future one to the same folder
 - Hover to keep it around, or leave it and it slides away on its own
 
 Screenshots come from Omarchy's own capture tool and follow your theme.

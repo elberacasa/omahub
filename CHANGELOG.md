@@ -10,6 +10,8 @@ Notable changes to Omahub Capture. The format follows [Keep a Changelog](https:/
 - Click to open the editor. Drag the file into any app. Right-click for Copy, Open in Editor, Show in Files, Move to Trash, or Close, with j, k, Enter, and Esc.
 - Sideways swipe or wheel tilt to dismiss. Hovering, dragging, or an open menu keeps it on screen.
 - Keycap mark with a 4 legend, for SUPER + SHIFT + 4, in `assets/`.
+- A Save to section in the right-click menu: the current folder, Pictures, Downloads, Documents, or any folder. Saving moves the screenshot, makes that folder the default through Omarchy's `OMARCHY_SCREENSHOT_DIR`, and dismisses the card.
+- Drag the thumbnail to the right to throw it away. It follows the pointer and springs back on a short drag.
 
 ### Changed
 

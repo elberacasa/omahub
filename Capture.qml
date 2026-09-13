@@ -9,58 +9,84 @@ Item {
   id: root
 
   property string path: ""
+  property string imageUrl: ""
   property bool mounted: false
   property bool dismissing: false
   property bool launching: false
   property bool dragging: false
   property bool probing: false
+  property bool saving: false
   property bool hovered: false
   property bool pressedVisual: false
+  property string gesture: ""
+  property real pressX: 0
+  property real pressY: 0
   property bool menuOpen: false
   property int menuIndex: 0
   property real menuX: 0
   property real menuY: 0
   property real swipe: 0
   property string flash: ""
+  property bool flashDismisses: true
+  property var places: []
   property var dragGrab: null
 
+  readonly property string home: Quickshell.env("HOME")
   readonly property string fileUrl: root.path ? Util.fileUrl(root.path) : ""
   readonly property string editor: Quickshell.env("OMARCHY_SCREENSHOT_EDITOR") || "tensaku-edit"
   readonly property string dropTargetScript: Qt.resolvedUrl("drop-target.sh").toString().replace("file://", "")
+  readonly property string folderScript: Qt.resolvedUrl("screenshot-dir.sh").toString().replace("file://", "")
   readonly property int margin: Style.gapsOut + Style.spacing.panelPadding
   readonly property int frame: Style.spacing.sm
   readonly property int thumbWidth: Style.space(240)
   readonly property int maxThumbHeight: Style.space(180)
-  readonly property int menuWidth: Style.space(190)
+  readonly property int gestureThreshold: Style.space(8)
+  readonly property int menuWidth: Style.space(200)
   readonly property int menuRowHeight: Math.max(Style.spacing.popupRowHeight, Style.font.body + Style.spacing.controlPaddingY * 2)
+  readonly property int menuHeaderHeight: Style.font.caption + Style.spacing.md * 2
   readonly property int displayMs: 5000
   readonly property int lingerMs: 2500
-  readonly property bool held: root.hovered || root.dragging || root.probing || root.menuOpen || root.flash !== ""
+  readonly property bool held: root.hovered || root.dragging || root.probing || root.saving
+    || root.menuOpen || root.flash !== "" || root.gesture === "swipe"
 
-  readonly property var menuItems: [
-    { label: "Copy", action: "copy" },
-    { label: "Open in Editor", action: "edit" },
-    { label: "Show in Files", action: "reveal" },
-    { separator: true },
-    { label: "Move to Trash", action: "trash" },
-    { label: "Close", action: "dismiss" }
-  ]
+  readonly property var menuItems: {
+    var items = [
+      { label: "Copy", action: "copy" },
+      { label: "Open in Editor", action: "edit" },
+      { label: "Show in Files", action: "reveal" },
+      { separator: true },
+      { header: "Save to" }
+    ]
+    for (var i = 0; i < root.places.length; i++) {
+      var place = root.places[i]
+      items.push({ label: place.name, action: "saveTo", arg: place.path, checked: place.current === true })
+    }
+    items.push({ label: "Choose Folder…", action: "saveTo", arg: "" })
+    items.push({ separator: true })
+    items.push({ label: "Move to Trash", action: "trash" })
+    items.push({ label: "Close", action: "dismiss" })
+    return items
+  }
 
   onHeldChanged: root.updateTimer()
 
   function open(payloadJson) {
     var payload = {}
     try { payload = JSON.parse(payloadJson || "{}") } catch (e) { return }
-    if (!payload.path || root.dragging || root.probing) return
+    if (!payload.path || root.dragging || root.probing || root.saving) return
 
     root.stopMotion()
     root.closeMenu()
     root.path = payload.path
+    root.imageUrl = Util.fileUrl(payload.path)
     root.flash = ""
     root.swipe = 0
+    root.gesture = ""
     root.dismissing = false
     root.launching = false
     root.mounted = true
+    placesProbe.running = false
+    placesProbe.running = true
     enter.restart()
     dismissTimer.interval = root.displayMs
     if (!root.held) dismissTimer.restart()
@@ -96,7 +122,9 @@ Item {
     root.launching = false
     root.dragging = false
     root.probing = false
+    root.saving = false
     root.pressedVisual = false
+    root.gesture = ""
     root.menuOpen = false
     root.swipe = 0
     root.flash = ""
@@ -118,6 +146,13 @@ Item {
     root.dismiss()
   }
 
+  function showFlash(text, dismissAfter, ms) {
+    root.flashDismisses = dismissAfter
+    root.flash = text
+    flashTimer.interval = ms
+    flashTimer.restart()
+  }
+
   function edit() {
     if (!root.mounted || root.dismissing || root.launching) return
     root.closeMenu()
@@ -130,8 +165,7 @@ Item {
 
   function copy() {
     Quickshell.execDetached(["bash", "-c", "wl-copy --type image/png < \"$1\"", "copy", root.path])
-    root.flash = "Copied"
-    flashTimer.restart()
+    root.showFlash("Copied", true, 700)
   }
 
   function reveal() {
@@ -140,6 +174,31 @@ Item {
 
   function trash() {
     root.run(["gio", "trash", root.path])
+  }
+
+  // Moves the screenshot into a folder and makes that folder the default, like Save to on
+  // a Mac. An empty folder opens the desktop folder chooser.
+  function saveTo(folder) {
+    if (!root.mounted || root.dismissing || root.launching || root.saving) return
+    root.saving = true
+    mover.command = folder
+      ? ["bash", root.folderScript, "move", root.path, folder]
+      : ["bash", root.folderScript, "move", root.path]
+    mover.running = true
+  }
+
+  function finishSave(output) {
+    if (!root.saving) return
+    root.saving = false
+    var saved = String(output || "").trim()
+    if (!saved) {
+      root.updateTimer()
+      return
+    }
+    root.path = saved
+    var folder = saved.substring(0, saved.lastIndexOf("/"))
+    var name = folder === root.home ? "Home" : folder.substring(folder.lastIndexOf("/") + 1)
+    root.showFlash("Saved to " + name, true, 900)
   }
 
   function beginDrag() {
@@ -152,8 +211,8 @@ Item {
   }
 
   function endDrag(dropAction) {
-    dragProxy.x = 0
-    dragProxy.y = 0
+    dragProxy.Drag.active = false
+    root.gesture = ""
     if (dropAction !== Qt.IgnoreAction) {
       root.unmount()
       return
@@ -182,6 +241,10 @@ Item {
     root.updateTimer()
   }
 
+  function selectable(item) {
+    return item && !item.separator && !item.header
+  }
+
   function openMenu(x, y) {
     root.menuX = x
     root.menuY = y
@@ -199,16 +262,16 @@ Item {
     var next = root.menuIndex
     for (var i = 0; i < count; i++) {
       next = (next + delta + count) % count
-      if (!root.menuItems[next].separator) break
+      if (root.selectable(root.menuItems[next])) break
     }
     root.menuIndex = next
   }
 
   function activateMenu(index) {
     var item = root.menuItems[index]
-    if (!item || item.separator) return
+    if (!root.selectable(item)) return
     root.closeMenu()
-    root[item.action]()
+    root[item.action](item.arg)
   }
 
   Process {
@@ -219,6 +282,25 @@ Item {
     }
   }
 
+  Process {
+    id: placesProbe
+    command: ["bash", root.folderScript, "places"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        try { root.places = JSON.parse(text) } catch (e) { root.places = [] }
+      }
+    }
+  }
+
+  Process {
+    id: mover
+    stdout: StdioCollector {
+      id: moverOutput
+      onStreamFinished: root.finishSave(text)
+    }
+    onExited: Qt.callLater(function() { root.finishSave(moverOutput.text) })
+  }
+
   Timer {
     id: dismissTimer
     onTriggered: root.dismiss()
@@ -226,10 +308,9 @@ Item {
 
   Timer {
     id: flashTimer
-    interval: 700
     onTriggered: {
       root.flash = ""
-      root.dismiss()
+      if (root.flashDismisses) root.dismiss()
     }
   }
 
@@ -270,13 +351,10 @@ Item {
     ScriptAction { script: root.unmount() }
   }
 
-  NumberAnimation {
+  ParallelAnimation {
     id: snapBack
-    target: shift
-    property: "x"
-    to: 0
-    duration: 220
-    easing.type: Easing.OutQuint
+    NumberAnimation { target: shift; property: "x"; to: 0; duration: 240; easing.type: Easing.OutCubic }
+    NumberAnimation { target: card; property: "opacity"; to: 1; duration: 200; easing.type: Easing.OutCubic }
   }
 
   NumberAnimation {
@@ -322,7 +400,7 @@ Item {
       transformOrigin: Item.Center
       scale: root.launching ? 1.06
         : root.pressedVisual ? 0.97
-        : root.hovered && !root.menuOpen ? 1.02
+        : root.hovered && !root.menuOpen && root.gesture === "" ? 1.02
         : 1
 
       Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
@@ -330,7 +408,8 @@ Item {
       transform: Translate { id: shift }
 
       // The whole screenshot always shows, like a Mac thumbnail. Wide shots use the full
-      // width, tall shots use the full height and a narrower card.
+      // width, tall shots use the full height and a narrower card. The source is set once
+      // per screenshot, so moving the file never reloads or resizes the card.
       Image {
         id: image
 
@@ -341,7 +420,7 @@ Item {
         y: card.borderTop + root.frame
         width: tall ? Math.max(Style.space(96), Math.round(root.maxThumbHeight * aspect)) : root.thumbWidth
         height: tall ? root.maxThumbHeight : Math.round(root.thumbWidth / aspect)
-        source: root.fileUrl
+        source: root.imageUrl
         sourceSize: Qt.size(root.thumbWidth * 2, root.maxThumbHeight * 2)
         fillMode: Image.PreserveAspectFit
         asynchronous: true
@@ -352,7 +431,7 @@ Item {
       Rectangle {
         x: image.x + Math.round((image.width - width) / 2)
         y: image.y + Math.round((image.height - height) / 2)
-        width: flashLabel.implicitWidth + Style.spacing.controlPaddingX * 2
+        width: Math.min(flashLabel.implicitWidth + Style.spacing.controlPaddingX * 2, image.width - Style.spacing.sm * 2)
         height: flashLabel.implicitHeight + Style.spacing.controlPaddingY * 2
         radius: Style.cornerRadius
         color: Util.alpha(Color.background, 0.9)
@@ -364,6 +443,9 @@ Item {
         Text {
           id: flashLabel
           anchors.centerIn: parent
+          width: parent.width - Style.spacing.controlPaddingX * 2
+          horizontalAlignment: Text.AlignHCenter
+          elide: Text.ElideMiddle
           textFormat: Text.PlainText
           text: root.flash
           color: Color.popups.text
@@ -388,7 +470,6 @@ Item {
         width: hitArea.width
         height: hitArea.height
 
-        Drag.active: pointer.drag.active
         Drag.dragType: Drag.Automatic
         Drag.supportedActions: Qt.CopyAction | Qt.MoveAction | Qt.LinkAction
         Drag.proposedAction: Qt.CopyAction
@@ -397,15 +478,16 @@ Item {
         Drag.onDragFinished: function(dropAction) { root.endDrag(dropAction) }
       }
 
+      // A press decides its gesture once it moves past the threshold: mostly rightward
+      // throws the card away and it follows the pointer, anything else starts a file drag.
+      // A press that never moves is a click and opens the editor.
       MouseArea {
         id: pointer
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         hoverEnabled: true
-        enabled: root.mounted && !root.dismissing && !root.launching && !root.probing
-        cursorShape: root.dragging ? Qt.ClosedHandCursor : Qt.PointingHandCursor
-        drag.target: root.menuOpen ? null : dragProxy
-        drag.threshold: Style.space(8)
+        enabled: root.mounted && !root.dismissing && !root.launching && !root.probing && !root.saving
+        cursorShape: root.dragging || root.gesture === "swipe" ? Qt.ClosedHandCursor : Qt.PointingHandCursor
 
         onEntered: root.hovered = true
         onExited: root.hovered = false
@@ -416,7 +498,12 @@ Item {
             root.openMenu(point.x, point.y)
             return
           }
+          var start = mapToItem(panel.contentItem, mouse.x, mouse.y)
+          root.pressX = start.x
+          root.pressY = start.y
+          root.gesture = ""
           root.pressedVisual = true
+          snapBack.stop()
           dragProxy.Drag.hotSpot.x = mouse.x
           dragProxy.Drag.hotSpot.y = mouse.y
           card.grabToImage(function(result) {
@@ -425,11 +512,46 @@ Item {
           })
         }
 
-        onReleased: root.pressedVisual = false
-        onCanceled: root.pressedVisual = false
+        onPositionChanged: function(mouse) {
+          if (!(pressedButtons & Qt.LeftButton) || root.menuOpen || root.gesture === "drag") return
+          var now = mapToItem(panel.contentItem, mouse.x, mouse.y)
+          var dx = now.x - root.pressX
+          var dy = now.y - root.pressY
 
-        onClicked: function(mouse) {
-          if (mouse.button === Qt.LeftButton) root.edit()
+          if (root.gesture === "") {
+            if (Math.abs(dx) < root.gestureThreshold && Math.abs(dy) < root.gestureThreshold) return
+            root.pressedVisual = false
+            if (dx > 0 && dx > Math.abs(dy) * 1.2) {
+              root.gesture = "swipe"
+            } else {
+              root.gesture = "drag"
+              dragProxy.Drag.active = true
+              return
+            }
+          }
+
+          shift.x = Math.max(0, dx)
+          card.opacity = Math.max(0.35, 1 - shift.x / (card.width * 1.4))
+        }
+
+        onReleased: function(mouse) {
+          root.pressedVisual = false
+          if (mouse.button !== Qt.LeftButton) return
+          if (root.gesture === "swipe") {
+            root.gesture = ""
+            if (shift.x > card.width * 0.25) root.dismiss()
+            else snapBack.restart()
+          } else if (root.gesture === "") {
+            root.edit()
+          }
+        }
+
+        onCanceled: {
+          root.pressedVisual = false
+          if (root.gesture === "swipe") {
+            root.gesture = ""
+            snapBack.restart()
+          }
         }
 
         onWheel: function(wheel) {
@@ -438,6 +560,7 @@ Item {
           snapBack.stop()
           root.swipe += Math.abs(dx)
           shift.x = root.swipe
+          card.opacity = Math.max(0.35, 1 - shift.x / (card.width * 1.4))
           swipeEnd.restart()
         }
       }
@@ -511,13 +634,17 @@ Item {
               required property int index
               required property var modelData
 
-              readonly property bool selected: !modelData.separator && root.menuIndex === index
+              readonly property bool isSeparator: !!modelData.separator
+              readonly property bool isHeader: !!modelData.header
+              readonly property bool selected: root.selectable(modelData) && root.menuIndex === index
 
               width: menuColumn.width
-              height: modelData.separator ? Style.spacing.md * 2 + Style.normalBorderWidth : root.menuRowHeight
+              height: isSeparator ? Style.spacing.md * 2 + Style.normalBorderWidth
+                : isHeader ? root.menuHeaderHeight
+                : root.menuRowHeight
 
               Rectangle {
-                visible: !!row.modelData.separator
+                visible: row.isSeparator
                 anchors.verticalCenter: parent.verticalCenter
                 x: Style.spacing.rowPaddingX
                 width: parent.width - Style.spacing.rowPaddingX * 2
@@ -525,8 +652,21 @@ Item {
                 color: Util.alpha(Color.menu.text, 0.16)
               }
 
+              Text {
+                visible: row.isHeader
+                anchors.left: parent.left
+                anchors.leftMargin: Style.spacing.rowPaddingX
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: Style.spacing.xs
+                textFormat: Text.PlainText
+                text: row.modelData.header || ""
+                color: Util.alpha(Color.menu.text, 0.55)
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.caption
+              }
+
               Rectangle {
-                visible: !row.modelData.separator
+                visible: !row.isSeparator && !row.isHeader
                 anchors.fill: parent
                 radius: Style.cornerRadius
                 color: row.selected ? Color.menu.selectedBackground : "transparent"
@@ -536,12 +676,27 @@ Item {
                 Text {
                   anchors.left: parent.left
                   anchors.leftMargin: Style.spacing.rowPaddingX
+                  anchors.right: check.left
+                  anchors.rightMargin: Style.spacing.sm
                   anchors.verticalCenter: parent.verticalCenter
                   textFormat: Text.PlainText
                   text: row.modelData.label || ""
+                  elide: Text.ElideRight
                   color: row.selected ? Color.menu.selectedText : Color.menu.text
                   font.family: Style.font.menuFamily
                   font.pixelSize: Style.font.body
+                }
+
+                Text {
+                  id: check
+                  anchors.right: parent.right
+                  anchors.rightMargin: Style.spacing.rowPaddingX
+                  anchors.verticalCenter: parent.verticalCenter
+                  textFormat: Text.PlainText
+                  text: row.modelData.checked ? "󰄬" : ""
+                  color: row.selected ? Color.menu.selectedText : Color.menu.text
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.icon
                 }
 
                 MouseArea {
