@@ -9,7 +9,7 @@
 <p align="center">The Mac layer for Omarchy. One key for everything you want to change.</p>
 
 <p align="center">
-  <img alt="SUPER + A opens the hub: move through keyboard settings with j and k, then search for screenshot keys" src="assets/omahub-hub.gif" width="720">
+  <img alt="SUPER + A opens Omahub. Go to Projects, type a name, press Enter, and the agent opens in the new project" src="assets/omahub-idea-to-agent.gif" width="720">
 </p>
 
 # Omahub

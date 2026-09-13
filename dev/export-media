@@ -2,16 +2,18 @@
 
 # Cut segments of a take into an MP4 for social posts and a GIF for READMEs.
 #
-#   dev/export-media <video> <name> <start-end> [<start-end>...] [--crop W:H:X:Y] [--gif-width <px>] [--gif-fps <n>] [--no-gif]
+#   dev/export-media <video> <name> <start-end> [<start-end>...] [--crop W:H:X:Y] [--filter <ffmpeg filters>] [--gif-width <px>] [--gif-fps <n>] [--no-gif]
 #
 # Segments are joined with hard cuts in the order given, for example:
 #   dev/export-media tmp/takes/hero.mp4 capture-hero 0.5-13.5 27.3-30
 # --crop frames one window instead of the whole monitor, so small UI stays readable in a README.
+# --filter runs on the take before it is cut, so `enable='gte(t,8.5)'` uses the take's own clock,
+# for example to cover a home path an app prints on screen.
 # Output lands in tmp/media/.
 
 set -euo pipefail
 
-usage="usage: dev/export-media <video> <name> <start-end> [<start-end>...] [--crop W:H:X:Y] [--gif-width <px>] [--gif-fps <n>] [--no-gif]"
+usage="usage: dev/export-media <video> <name> <start-end> [<start-end>...] [--crop W:H:X:Y] [--filter <ffmpeg filters>] [--gif-width <px>] [--gif-fps <n>] [--no-gif]"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 
 (( $# >= 3 )) || { echo "$usage" >&2; exit 1; }
@@ -25,10 +27,12 @@ gif_width=960
 gif_fps=24
 gif=1
 crop=""
+extra=""
 
 while (( $# )); do
   case "$1" in
     --crop) crop="crop=$2,"; shift 2 ;;
+    --filter) extra="$2,"; shift 2 ;;
     --gif-width) gif_width="$2"; shift 2 ;;
     --gif-fps) gif_fps="$2"; shift 2 ;;
     --no-gif) gif=0; shift ;;
@@ -48,7 +52,7 @@ labels=""
 for i in "${!segments[@]}"; do
   from="${segments[$i]%-*}"
   to="${segments[$i]#*-}"
-  filter+="[0:v]${crop}trim=$from:$to,setpts=PTS-STARTPTS[s$i];"
+  filter+="[0:v]${extra}${crop}trim=$from:$to,setpts=PTS-STARTPTS[s$i];"
   labels+="[s$i]"
 done
 filter+="${labels}concat=n=${#segments[@]}:v=1[v]"
