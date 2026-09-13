@@ -19,7 +19,7 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - `keyboard/agent-keys`: Agent on SUPER + SHIFT + A, browser on SUPER + B, and dictation on SUPER + R.
 - `keyboard/mouse-buttons`: hold SUPER and press a mouse side button to take a screenshot or toggle dictation.
 - `keyboard/size`: detects the keyboard from known models and its name, and recommends the keyboard settings that fit it. Contributors add a keyboard with one file in `keyboards/`.
-- The hub. SUPER + A opens a search-first overlay of every setting, grouped by section, with live state, a keyboard card that shows the detected keyboard and turns on its recommended settings, and full keyboard control: j and k move, h and l switch sections, Space changes, / searches, Esc closes.
+- The hub. SUPER + A opens a search-first overlay of every setting, grouped by section, with live state, a keyboard card that shows the detected keyboard and turns on its recommended settings, and full keyboard control: j and k move, h and l switch sections, Space changes, / searches, Esc closes. Settings are read when the shell starts, so the hub opens on real state with nothing shifting into place.
 
 ### Changed
 

@@ -19,6 +19,9 @@ Item {
   property bool loading: true
   property string loadError: ""
   property bool statesStale: false
+  property bool statesReady: false
+  property var pendingStates: ({})
+  property var pendingOptions: ({})
   property string sectionId: "keyboard"
   property int cursor: 0
   property string query: ""
@@ -38,7 +41,8 @@ Item {
   readonly property int headerHeight: Math.max(Style.space(40), Style.font.heading + Style.spacing.controlPaddingY * 2)
   readonly property int sidebarWidth: Style.space(190)
 
-  // Reads every setting's state, one line per setting, so rows fill in as answers arrive.
+  // Reads every setting's state, one line per setting. Answers are applied together when the read
+  // finishes, so rows, the keyboard card, and its progress never appear half filled.
   readonly property string stateScript: "bin=$1\nshift\n"
     + "for entry in \"$@\"; do\n"
     + "  id=${entry%|*}\n"
@@ -50,6 +54,9 @@ Item {
     + "  fi\n"
     + "  printf '%s\\t%s\\t%s\\n' \"$id\" \"${state:-null}\" \"${options:-null}\"\n"
     + "done"
+
+  // The plugin stays loaded, so read settings once at startup and the first SUPER + A opens on real state.
+  Component.onCompleted: root.refresh()
 
   function open(payloadJson) {
     var payload = {}
@@ -104,6 +111,8 @@ Item {
       return
     }
     var entries = root.catalog.map(function(setting) { return setting.id + "|" + setting.kind })
+    root.pendingStates = {}
+    root.pendingOptions = {}
     stateProcess.command = ["bash", "-c", root.stateScript, "omahub-states", root.omahub].concat(entries)
     stateProcess.running = true
   }
@@ -111,14 +120,20 @@ Item {
   function applyStateLine(line) {
     var parsed = Hub.parseStateLine(line)
     if (!parsed) return
-    var nextStates = Object.assign({}, root.states)
-    nextStates[parsed.id] = parsed.state
-    root.states = nextStates
-    if (parsed.options) {
-      var nextOptions = Object.assign({}, root.options)
-      nextOptions[parsed.id] = parsed.options
-      root.options = nextOptions
+    root.pendingStates[parsed.id] = parsed.state
+    if (parsed.options) root.pendingOptions[parsed.id] = parsed.options
+  }
+
+  function commitStates() {
+    // A change finished while this read ran, so its answers may already be out of date.
+    if (root.statesStale) {
+      root.statesStale = false
+      Qt.callLater(root.readStates)
+      return
     }
+    root.states = Object.assign({}, root.states, root.pendingStates)
+    root.options = Object.assign({}, root.options, root.pendingOptions)
+    root.statesReady = true
   }
 
   function setValue(id, value) {
@@ -231,12 +246,7 @@ Item {
     stdout: SplitParser {
       onRead: function(line) { root.applyStateLine(line) }
     }
-    onExited: {
-      if (root.statesStale) {
-        root.statesStale = false
-        Qt.callLater(root.readStates)
-      }
-    }
+    onExited: root.commitStates()
   }
 
   Process {
@@ -546,7 +556,7 @@ Item {
             }
 
             Column {
-              visible: root.loading && root.catalog.length === 0
+              visible: root.loadError === "" && !root.statesReady
               width: parent.width
               spacing: Style.spacing.sm
 
@@ -560,7 +570,7 @@ Item {
                   color: Util.alpha(Color.menu.text, 0.06)
 
                   SequentialAnimation on opacity {
-                    running: root.loading
+                    running: root.mounted && !root.statesReady
                     loops: Animation.Infinite
                     NumberAnimation { to: 0.5; duration: 700; easing.type: Easing.InOutSine }
                     NumberAnimation { to: 1; duration: 700; easing.type: Easing.InOutSine }
@@ -595,7 +605,7 @@ Item {
             ListView {
               id: settingsList
               anchors.fill: parent
-              visible: root.loadError === "" && root.catalog.length > 0
+              visible: root.loadError === "" && root.statesReady
               clip: true
               spacing: Style.spacing.xs
               boundsBehavior: Flickable.StopAtBounds
@@ -737,11 +747,11 @@ Item {
           Repeater {
             model: [
               { keys: ["j", "k"], label: "Move" },
-              { keys: ["h", "l"], label: "Sections" },
+              { keys: ["h", "l"], label: "Sections", hidden: root.sections.length < 2 },
               { keys: ["space"], label: "Change" },
               { keys: ["/"], label: "Search" },
               { keys: ["esc"], label: "Close" }
-            ]
+            ].filter(function(hint) { return !hint.hidden })
 
             delegate: Row {
               id: hint
