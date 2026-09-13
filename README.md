@@ -24,7 +24,7 @@ Every setting in Omahub is a small, readable file. People change them from the h
 |---|---|
 | The hub | SUPER + A opens it. Search every setting, move with j and k, change it with Space. Every row shows the real state of your system. The first time it loads, a welcome offers the settings recommended for your keyboard |
 | Keyboard | Detects your keyboard and recommends keys for it: Mac screenshots, Vim focus, agent keys, and mouse buttons. No Omarchy action loses its key |
-| Agents | Turn on "Let agents use Omahub" and any coding agent can read and change these settings through the `omahub` command. Pick which subscriptions, such as Claude and Codex, show in the bar's Agents panel, and put their limits on the bar when your Agents widget offers it |
+| Agents | Turn on "Let agents use Omahub" and any coding agent can read and change these settings through the `omahub` command. Pick which subscriptions, such as Claude and Codex, show in the bar's Agents panel, and put their limits on the bar when your Agents widget offers it. Choose your default agent, editor, and projects folder, then start any agent there with `omahub agent` |
 | [Omahub Capture](https://github.com/elberacasa/omahub-capture) | A thumbnail after every screenshot. Click to edit, drag into any app, drag right to throw away, right-click to save it anywhere |
 
 ## Building now

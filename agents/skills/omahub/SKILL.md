@@ -49,6 +49,16 @@ omahub reset keyboard/agent-keys   # undo everything that setting changed
   themselves if one would be lost. Report that message to the person rather than working
   around it.
 
+## Start work
+
+```bash
+omahub agent                # the default agent, in the projects folder
+omahub agent codex --pick   # Codex, in a folder the person picks or creates
+omahub edit                 # the projects folder, in the default editor
+```
+
+The default agent, editor, and projects folder are the settings `agents/default-agent`, `agents/editor`, and `agents/projects-folder`.
+
 ## Rules
 
 - Never edit the marked blocks Omahub writes, such as `-- omahub:keymap:start` in

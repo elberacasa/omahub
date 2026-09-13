@@ -19,6 +19,8 @@ Usage: omahub <command>
   options <setting>           Print a setting's choices as JSON
   reset <setting>             Undo everything a setting changed
   open [section|welcome]      Open the hub at a section, or the welcome
+  agent [agent] [--pick]      Start a coding agent in your projects folder, or a folder you pick
+  edit [--pick]               Open your projects folder, or a folder you pick, in your editor
   version                     Print the Omahub version
 
 Settings are named <section>/<name>, for example keyboard/mac-screenshot-keys.
@@ -47,6 +49,59 @@ run_setting() {
   exec "$path" "$verb" "$@"
 }
 
+# Print the folder to work in: the projects folder, or one picked in the desktop folder chooser,
+# which can also create a new one. Prints nothing when the chooser is cancelled.
+work_folder() {
+  local pick="$1" folder
+  folder=$(omahub_projects_folder)
+  mkdir -p "$folder"
+  if [[ $pick == "--pick" ]]; then
+    omarchy-file-select --directory --title "$2" || true
+  else
+    printf '%s\n' "$folder"
+  fi
+}
+
+start_agent() {
+  local agent="" pick="" folder
+  while (( $# )); do
+    case "$1" in
+      --pick) pick="--pick"; shift ;;
+      -*) omahub_fail "usage: omahub agent [agent] [--pick]" ;;
+      *) agent="$1"; shift ;;
+    esac
+  done
+
+  source "$OMAHUB_PATH/lib/defaults.sh"
+  if [[ -n $agent && $agent != "$(omahub_default_agent)" ]] && ! omahub_defaults_installed "$agent"; then
+    omahub_fail "$agent is not installed"
+  fi
+
+  folder=$(work_folder "$pick" "Start an agent in")
+  if [[ -z $folder ]]; then
+    exit 0
+  fi
+  cd "$folder"
+
+  # The default agent starts through Omarchy with its own launch flags. Any other installed agent
+  # starts plainly, in the same agent window class.
+  if [[ -z $agent || $agent == "$(omahub_default_agent)" ]]; then
+    exec omarchy-agent --pick
+  else
+    exec omarchy-launch-tui --app-id=org.omarchy.agent "$agent"
+  fi
+}
+
+open_editor() {
+  local folder
+  source "$OMAHUB_PATH/lib/defaults.sh"
+  folder=$(work_folder "${1:-}" "Open in your editor")
+  if [[ -z $folder ]]; then
+    exit 0
+  fi
+  exec omarchy-launch-editor "$folder"
+}
+
 case "${1:-help}" in
   settings)
     shift
@@ -62,6 +117,14 @@ case "${1:-help}" in
       payload=$(jq -nc --arg section "${2:-}" '{section: $section}')
     fi
     omarchy-shell shell summon "$OMAHUB_PLUGIN_ID" "$payload" >/dev/null
+    ;;
+  agent)
+    shift
+    start_agent "$@"
+    ;;
+  edit)
+    shift
+    open_editor "$@"
     ;;
   version)
     jq -r .version "$OMAHUB_PATH/manifest.json"

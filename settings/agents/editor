@@ -1,0 +1,33 @@
+#!/bin/bash
+
+# omahub:title=Editor
+# omahub:summary=The editor Omarchy opens files and folders in, such as Cursor or Neovim
+# omahub:section=agents
+# omahub:kind=choice
+# omahub:icon=󰅩
+# omahub:keywords=editor ide default cursor vscode code zed neovim nvim helix sublime
+# omahub:requires=omarchy-default-editor
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/defaults.sh"
+
+case "${1:-}" in
+  get)
+    omahub_default_editor_state
+    ;;
+  options)
+    omahub_defaults_options omarchy-default-editor editor "$(omahub_default_editor)"
+    ;;
+  set)
+    omahub_default_editor_set "${2:-}"
+    omahub_default_editor_state
+    ;;
+  reset)
+    omahub_restore_file editor "$OMAHUB_EDITOR_FILE"
+    omahub_default_editor_state
+    ;;
+  *)
+    omahub_fail "usage: omahub get|set|options|reset agents/editor"
+    ;;
+esac

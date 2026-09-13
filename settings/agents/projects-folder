@@ -1,0 +1,35 @@
+#!/bin/bash
+
+# omahub:title=Projects folder
+# omahub:summary=Where new agent sessions start and your editor opens. Choose any folder, or create one
+# omahub:section=agents
+# omahub:kind=folder
+# omahub:icon=󰉋
+# omahub:keywords=projects folder work code workspace directory agent session editor
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/defaults.sh"
+
+case "${1:-}" in
+  get)
+    omahub_projects_state
+    ;;
+  options)
+    omahub_projects_options
+    ;;
+  set)
+    if [[ -z ${2:-} ]]; then
+      omahub_fail "usage: omahub set agents/projects-folder <folder>"
+    fi
+    omahub_projects_set "$2"
+    omahub_projects_state
+    ;;
+  reset)
+    rm -f "$OMAHUB_PROJECTS_FILE"
+    omahub_projects_state
+    ;;
+  *)
+    omahub_fail "usage: omahub get|set|options|reset agents/projects-folder"
+    ;;
+esac

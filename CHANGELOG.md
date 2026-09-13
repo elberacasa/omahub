@@ -24,6 +24,8 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - `agents/setup.md`, a guide any coding agent can follow to install Omahub and set it up with the person, asking before every change.
 - `agents/claude-usage`, `agents/codex-usage`, and `agents/fireworks-usage` choose which subscriptions show in Omarchy's Agents bar panel, through `omarchy bar set`. They follow a clone of the widget made with `omarchy plugin clone`.
 - `agents/bar-limits` shows every subscription's limit on the bar when the Agents widget offers a Limits mode.
+- `agents/default-agent`, `agents/editor`, and `agents/projects-folder`, built on Omarchy's own `omarchy default` commands, so agents and editors Omarchy adds appear on their own. Reset restores what was chosen before.
+- `omahub agent [agent] [--pick]` starts a coding agent in your projects folder or a folder you pick, and `omahub edit [--pick]` opens it in your editor.
 - Folder settings in the hub: the current folder and quick places as chips, plus Choose… for any folder. Omahub Capture's screenshot folder is the first.
 - The welcome. The first time Omahub loads, it opens once with the detected keyboard and the settings recommended for it. `omahub open welcome` brings it back.
 
