@@ -31,6 +31,14 @@ omarchy plugin enable io.github.elberacasa.omahub
 5. If anything moves, review the motion frame by frame with `dev/take` and `dev/frames`.
 6. Add a line to `CHANGELOG.md` under `Unreleased` if a user would notice the change.
 
+## Add your keyboard
+
+Omahub recommends keys based on keyboard size. If yours is detected as unknown or the wrong size, add it:
+
+1. Find its vendor and product id in `/proc/bus/input/devices`, on the `I:` line above its name.
+2. Create `keyboards/<vendor>-<product>`, for example `keyboards/2e3c-c365`, with two lines: `name=` and `size=`, where size is one of `60`, `65`, `75`, `tkl`, `full`, or `laptop`.
+3. Check it with `bin/omahub get keyboard/size`.
+
 ## Pull requests
 
 - One change per pull request, with a clear title in the imperative mood.

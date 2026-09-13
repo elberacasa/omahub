@@ -1,41 +1,14 @@
 #!/bin/bash
 
 # omahub:title=Mac screenshot keys
-# omahub:summary=SUPER + SHIFT + 3, 4, and 5 take screenshots, like Command + Shift on a Mac
+# omahub:summary=SUPER + SHIFT + 3, 4, and 5 take screenshots, and moving a window to a workspace becomes SUPER + ALT + number
 # omahub:section=keyboard
 # omahub:kind=toggle
 # omahub:icon=󰹑
-# omahub:keywords=screenshot capture keyboard mac layout workspace
+# omahub:keywords=screenshot capture keyboard mac layout workspace move
 
 set -euo pipefail
 source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
 source "$OMAHUB_PATH/lib/keymap.sh"
 
-state() {
-  if omahub_keymap_has mac; then
-    omahub_state true "On"
-  else
-    omahub_state false "Off"
-  fi
-}
-
-case "${1:-}" in
-  get)
-    state
-    ;;
-  set)
-    case "${2:-}" in
-      on | true) omahub_keymap_set mac on ;;
-      off | false) omahub_keymap_set mac off ;;
-      *) omahub_fail "usage: omahub set keyboard/mac-screenshot-keys on|off" ;;
-    esac
-    state
-    ;;
-  reset)
-    omahub_keymap_set mac off
-    state
-    ;;
-  *)
-    omahub_fail "usage: omahub get|set|reset keyboard/mac-screenshot-keys"
-    ;;
-esac
+omahub_keymap_toggle_setting mac keyboard/mac-screenshot-keys "$@"

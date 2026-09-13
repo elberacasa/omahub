@@ -18,7 +18,7 @@ Every setting in Omahub is a small, readable file. People change them from the h
 
 | | What it does |
 |---|---|
-| Mac keyboard layout | SUPER + SHIFT + 3, 4, and 5 for screenshots, switchable back to Omarchy's keys at any time |
+| Keyboard | Detects your keyboard and recommends keys for it: Mac screenshots, Vim focus, agent keys, and mouse buttons. No Omarchy action loses its key |
 | [Omahub Capture](https://github.com/elberacasa/omahub-capture) | A thumbnail after every screenshot. Click to edit, drag into any app, drag right to throw away, right-click to save it anywhere |
 
 ## Building now
@@ -46,31 +46,41 @@ Plugins land disabled until you enable them, so you can read the code first. Oma
 
 ## Keyboard
 
-Installing Omahub never changes your keybindings. Every keyboard change is a setting you turn on, and off again, with the `omahub` command:
+Installing Omahub never changes your keybindings. Omahub detects your keyboard, recommends the keys that fit it, and makes every keyboard change a setting you can turn off again:
 
 ```bash
 omahub=~/.config/omarchy/plugins/io.github.elberacasa.omahub/bin/omahub
 
-$omahub set keyboard/omahub-key on            # SUPER + A opens Omahub
-$omahub set keyboard/mac-screenshot-keys on   # Mac screenshot keys
-$omahub reset keyboard/mac-screenshot-keys    # back to Omarchy's keys
-$omahub settings                              # everything you can change
+$omahub get keyboard/size          # your keyboard and the settings it recommends
+$omahub set keyboard/vim-focus on  # turn a setting on
+$omahub reset keyboard/vim-focus   # and back to Omarchy's keys
+$omahub settings                   # everything you can change
 ```
 
-The Mac screenshot keys change only these keys, and every Omarchy action they displace keeps a key:
-
-| Keys | Mac layout | Omarchy default |
+| Setting | What it does | Recommended for |
 |---|---|---|
-| SUPER + SHIFT + 3 | Screenshot full screen | Move window to workspace 3 |
-| SUPER + SHIFT + 4 | Screenshot region | Move window to workspace 4 |
-| SUPER + SHIFT + 5 | Capture menu | Move window to workspace 5 |
-| SUPER + SHIFT + CTRL + 3 or 4 | Screenshot to clipboard | Unbound |
-| SUPER + SHIFT + ALT + 1 to 0 | Move window to workspace | Move window silently |
-| SUPER + CTRL + ALT + 1 to 0 | Move window silently to workspace | Unbound |
+| `keyboard/omahub-key` | SUPER + A opens Omahub | Every keyboard |
+| `keyboard/mac-screenshot-keys` | SUPER + SHIFT + 3, 4, and 5 take screenshots, like a Mac | Every keyboard |
+| `keyboard/agent-keys` | Agent on SUPER + SHIFT + A, browser on SUPER + B, dictation on SUPER + R | Every keyboard |
+| `keyboard/vim-focus` | H, J, K, and L focus, swap, and group windows wherever Omarchy uses arrows | 60% and 65% keyboards |
+| `keyboard/mouse-buttons` | Hold SUPER and press a mouse side button to take a screenshot or start dictation | Mice with side buttons |
 
-With Omahub Capture installed, the screenshot keys show the floating thumbnail. Without it, they use Omarchy's own screenshot flow.
+Every Omarchy action these settings take a key from moves to a new one:
 
-Omahub edits one marked block in `~/.config/hypr/bindings.lua`, backs the file up first, and undoes the change if Hyprland reports an error.
+| Action | Omarchy | With Omahub |
+|---|---|---|
+| Move window to workspace | SUPER + SHIFT + number | SUPER + ALT + number |
+| Switch to group window | SUPER + ALT + 1 to 5 | SUPER + CTRL + ALT + 1 to 5 |
+| Agent | SUPER + SHIFT + CTRL + A | SUPER + SHIFT + A |
+| ChatGPT | SUPER + SHIFT + A | SUPER + SHIFT + CTRL + A |
+| Toggle window split | SUPER + J | SUPER + SHIFT + ALT + J |
+| Toggle workspace layout | SUPER + L | SUPER + SHIFT + ALT + L |
+| Keybindings | SUPER + K | SUPER + / |
+| Tmux keybindings | SUPER + ALT + K | SUPER + ALT + / |
+| Herdr keybindings | SUPER + CTRL + K | SUPER + CTRL + / |
+| Monitor scaling up and down | SUPER + / and SUPER + ALT + / | SUPER + CTRL + ALT + = and - |
+
+After every change, Omahub compares the actions Omarchy has keys for before and after, and undoes the change if any action lost its key. It edits one marked block in `~/.config/hypr/bindings.lua` and backs the file up first. With Omahub Capture installed, the screenshot keys show the floating thumbnail.
 
 ## Principles
 
@@ -110,7 +120,7 @@ Bug reports, ideas, and pull requests are welcome. Read [CONTRIBUTING.md](CONTRI
 
 ## Remove
 
-Turn off any keyboard settings first with `$omahub reset keyboard/omahub-key` and `$omahub reset keyboard/mac-screenshot-keys`, then:
+Turn off any keyboard settings first with `$omahub reset keyboard/<name>`, then:
 
 ```bash
 omarchy plugin remove io.github.elberacasa.omahub

@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# omahub:title=Vim focus
+# omahub:summary=H, J, K, and L focus, swap, and group windows wherever Omarchy uses the arrow keys
+# omahub:section=keyboard
+# omahub:kind=toggle
+# omahub:icon=󰘳
+# omahub:keywords=vim hjkl arrows focus swap group 60 compact keyboard
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/keymap.sh"
+
+omahub_keymap_toggle_setting vim keyboard/vim-focus "$@"

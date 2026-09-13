@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# omahub:title=Mouse side buttons
+# omahub:summary=Hold SUPER and press a side button to take a screenshot or start dictation
+# omahub:section=keyboard
+# omahub:kind=toggle
+# omahub:icon=󰍽
+# omahub:keywords=mouse buttons side back forward screenshot dictation gaming
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/keymap.sh"
+
+omahub_keymap_toggle_setting mouse keyboard/mouse-buttons "$@"

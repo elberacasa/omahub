@@ -15,7 +15,8 @@ Omahub is a plugin for the [Omarchy](https://omarchy.org) shell, written in QML 
 | `bin/omahub` | The command the hub, people, and agents use to list and change settings |
 | `settings/` | One executable file per setting, described by `# omahub:` headers. See [docs/settings.md](docs/settings.md) |
 | `lib/` | Shared bash for settings: discovery, marked blocks, backups, keyboard layers |
-| `keymaps/` | Hyprland bindings loaded by the keyboard settings |
+| `keymaps/` | Hyprland bindings loaded by the keyboard settings, one layer per file |
+| `keyboards/` | Known keyboard models, one file per vendor and product id, used to detect keyboard size |
 | `docs/` | Reference for contributors |
 | `test/` | `test/all` runs every test against a disposable home |
 | `assets/` | Brand assets for READMEs |

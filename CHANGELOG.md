@@ -16,11 +16,16 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - Settings as files. Each setting is one executable with `# omahub:` headers, found across Omahub, its sibling plugins, and `~/.config/omahub/settings`, where a file with the same name replaces the shipped one. Documented in `docs/settings.md`.
 - `test/all`, which runs every test against a disposable home.
 - Keyboard settings compare the actions Omarchy has keys for before and after every change, and undo the change if any action would lose its key.
+- `keyboard/vim-focus`: H, J, K, and L focus, swap, and group windows wherever Omarchy uses arrows. Keybindings join a help family on `/`.
+- `keyboard/agent-keys`: Agent on SUPER + SHIFT + A, browser on SUPER + B, and dictation on SUPER + R.
+- `keyboard/mouse-buttons`: hold SUPER and press a mouse side button to take a screenshot or toggle dictation.
+- `keyboard/size`: detects the keyboard from known models and its name, and recommends the keyboard settings that fit it. Contributors add a keyboard with one file in `keyboards/`.
 
 ### Changed
 
 - Development tools moved from `bin/` to `dev/`, leaving `bin/` for the upcoming `omahub` command.
 - Keyboard layouts are now two independent settings, `keyboard/omahub-key` and `keyboard/mac-screenshot-keys`, replacing `scripts/keymap.sh`. Existing setups keep working unchanged.
+- The Mac screenshot keys move windows to a workspace with SUPER + ALT + number, and group windows move to SUPER + CTRL + ALT + 1 to 5. Silent moves keep Omarchy's own SUPER + SHIFT + ALT + number.
 
 ### Fixed
 

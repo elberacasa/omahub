@@ -1,0 +1,36 @@
+#!/bin/bash
+
+# omahub:title=Keyboard size
+# omahub:summary=Detected from your keyboard, so Omahub can recommend the keys that fit it
+# omahub:section=keyboard
+# omahub:kind=choice
+# omahub:icon=󰌓
+# omahub:keywords=keyboard size layout 60 65 75 tkl tenkeyless full laptop detect recommend
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/keyboard.sh"
+
+case "${1:-}" in
+  get)
+    omahub_keyboard_state
+    ;;
+  options)
+    omahub_keyboard_options
+    ;;
+  set)
+    if ! omahub_keyboard_valid_size "${2:-}"; then
+      omahub_fail "usage: omahub set keyboard/size $(IFS='|'; echo "${OMAHUB_KEYBOARD_SIZES[*]}")"
+    fi
+    mkdir -p "$OMAHUB_STATE_DIR"
+    printf '%s\n' "$2" >"$OMAHUB_KEYBOARD_SIZE_FILE"
+    omahub_keyboard_state
+    ;;
+  reset)
+    rm -f "$OMAHUB_KEYBOARD_SIZE_FILE"
+    omahub_keyboard_state
+    ;;
+  *)
+    omahub_fail "usage: omahub get|set|options|reset keyboard/size"
+    ;;
+esac
