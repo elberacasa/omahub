@@ -15,6 +15,8 @@ Omahub Capture is a plugin for the [Omarchy](https://omarchy.org) shell that sho
 | `capture.sh` | Takes a screenshot with Omarchy in `save` mode and summons the thumbnail |
 | `drop-target.sh` | Tells the panel whether a drag ended over a window |
 | `screenshot-dir.sh` | Gets, sets, and lists screenshot folders, and moves a screenshot |
+| `settings/` | Settings the Omahub hub shows when Omahub is installed, in [Omahub's setting format](https://github.com/elberacasa/omahub/blob/main/docs/settings.md) |
+| `test/` | `test/all` runs every test against a disposable home |
 | `assets/` | Brand assets for the README |
 | `dev/` | Development tools. Nothing at runtime uses them |
 
@@ -39,7 +41,13 @@ omarchy-shell shell summon io.github.elberacasa.omahub-capture '{"path":"/path/t
 
 The plugin sets `keepLoaded: true`, so QML changes only apply after a shell restart.
 
-Test the scripts against a temporary home so they never touch your own config:
+Run the tests. Settings run through the `omahub` command, so clone Omahub next to this repo or point `OMAHUB_PATH` at a checkout:
+
+```bash
+test/all
+```
+
+Try a script by hand against a temporary home so it never touches your own config:
 
 ```bash
 env -i HOME="$(mktemp -d)" PATH="$PATH" bash screenshot-dir.sh places
