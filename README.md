@@ -8,6 +8,10 @@
 
 <p align="center">The Mac layer for Omarchy. One key for everything you want to change.</p>
 
+<p align="center">
+  <img alt="SUPER + A opens the hub: move through keyboard settings with j and k, then search for screenshot keys" src="assets/omahub-hub.gif" width="720">
+</p>
+
 # Omahub
 
 Omahub turns SUPER + A into the place where you set up, tune, and extend Omarchy. It brings the details people love about the Mac to a system that stays pure Omarchy underneath: every change runs through Omarchy's own commands, follows your theme, and can be undone.
