@@ -6,19 +6,27 @@
   </picture>
 </p>
 
-<p align="center">Mac comforts for Omarchy, built the Omarchy way.</p>
+<p align="center">The Mac layer for Omarchy. One key for everything you want to change.</p>
 
 # Omahub
 
-Omahub is a small family of [Omarchy](https://omarchy.org) shell plugins for people who came from macOS and still want the details right: screenshot keys that feel familiar, a thumbnail you can drag straight into your coding agent, and one place to browse and manage everything Omarchy offers. Every piece follows your theme, runs Omarchy's own commands, and works from the keyboard.
+Omahub turns SUPER + A into the place where you set up, tune, and extend Omarchy. It brings the details people love about the Mac to a system that stays pure Omarchy underneath: every change runs through Omarchy's own commands, follows your theme, and can be undone.
 
-## What's inside
+Every setting in Omahub is a small, readable file. People change them from the hub, agents change them from the terminal, and contributors add new ones with a single file and a test.
 
-| Piece | What it does | Status |
-|---|---|---|
-| Mac keyboard layout | SUPER + SHIFT + 3, 4, and 5 for screenshots. Switch back to Omarchy's keys any time | Ready |
-| [Omahub Capture](https://github.com/elberacasa/omahub-capture) | A floating thumbnail after every screenshot. Click to edit, drag the file into any app, right-click for more | Ready |
-| Omahub | Browse, install, and remove apps, themes, plugins, and services from one overlay | In progress |
+## Today
+
+| | What it does |
+|---|---|
+| Mac keyboard layout | SUPER + SHIFT + 3, 4, and 5 for screenshots, switchable back to Omarchy's keys at any time |
+| [Omahub Capture](https://github.com/elberacasa/omahub-capture) | A thumbnail after every screenshot. Click to edit, drag into any app, drag right to throw away, right-click to save it anywhere |
+
+## Building now
+
+- **The hub.** Search every setting, grouped by section, with live state and one-key changes.
+- **`omahub`.** One command for the hub, the terminal, and agents: `omahub settings --json`, `get`, `set`, `reset`.
+- **A welcome** that lets new users pick the Mac touches they want, and nothing else.
+- **An agent skill,** so any coding agent on Omarchy can use Omahub the same way you do.
 
 ## Install
 
