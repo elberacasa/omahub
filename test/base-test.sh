@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Shared setup for Omahub tests: a disposable HOME, a stubbed hyprctl, and small assertions.
-# Tests source this, run their checks, and end with `finish`.
+# Shared setup for Omahub tests: a disposable HOME, stubbed hyprctl and omarchy, and small
+# assertions. Tests source this, run their checks, and end with `finish`.
 
 set -euo pipefail
 
@@ -19,7 +19,14 @@ cat >"$TEST_ROOT/bin/hyprctl" <<'EOF'
 #!/bin/bash
 exit 0
 EOF
-chmod +x "$TEST_ROOT/bin/hyprctl"
+
+# Omarchy's binding list is empty in tests unless a test replaces this stub.
+cat >"$TEST_ROOT/bin/omarchy" <<'EOF'
+#!/bin/bash
+exit 0
+EOF
+
+chmod +x "$TEST_ROOT/bin/hyprctl" "$TEST_ROOT/bin/omarchy"
 export PATH="$TEST_ROOT/bin:$PATH"
 
 failures=0

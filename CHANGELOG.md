@@ -15,6 +15,7 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - The `omahub` command: `settings`, `get`, `set`, `options`, `reset`, `open`, and `version`, shared by the hub, the terminal, and agents.
 - Settings as files. Each setting is one executable with `# omahub:` headers, found across Omahub, its sibling plugins, and `~/.config/omahub/settings`, where a file with the same name replaces the shipped one. Documented in `docs/settings.md`.
 - `test/all`, which runs every test against a disposable home.
+- Keyboard settings compare the actions Omarchy has keys for before and after every change, and undo the change if any action would lose its key.
 
 ### Changed
 
