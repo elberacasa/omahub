@@ -3,9 +3,10 @@
 Mac-style screenshots for Omarchy. Take a shot and a thumbnail slides into the corner.
 
 - Click it to open the editor
-- Swipe it right to dismiss
-- Hover to copy, show in Files, or move to trash
-- Leave it and it slides away on its own
+- Drag it into any app to drop the file: a terminal, a browser, Files
+- Right-click for Copy, Open in Editor, Show in Files, Move to Trash, or Close
+- Swipe or tilt the wheel sideways to dismiss
+- Hover to keep it around, or leave it and it slides away on its own
 
 Screenshots come from Omarchy's own capture tool and follow your theme.
 
