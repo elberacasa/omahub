@@ -216,17 +216,20 @@ Item {
     }
   }
 
+  // Reviewed frame by frame at 60 fps. OutQuint arrived in one visible jump, so the glide
+  // uses OutCubic over a longer span. On exit the fade finishes before the card reaches
+  // the screen edge, otherwise a faint strip lingers there.
   ParallelAnimation {
     id: enter
-    NumberAnimation { target: shift; property: "x"; from: root.thumbWidth; to: 0; duration: 280; easing.type: Easing.OutQuint }
+    NumberAnimation { target: shift; property: "x"; from: card.width + root.margin; to: 0; duration: 340; easing.type: Easing.OutCubic }
     NumberAnimation { target: card; property: "opacity"; from: 0; to: 1; duration: 180; easing.type: Easing.OutCubic }
   }
 
   SequentialAnimation {
     id: exit
     ParallelAnimation {
-      NumberAnimation { target: shift; property: "x"; to: card.width + root.margin; duration: 220; easing.type: Easing.InCubic }
-      NumberAnimation { target: card; property: "opacity"; to: 0; duration: 220; easing.type: Easing.InCubic }
+      NumberAnimation { target: shift; property: "x"; to: card.width + root.margin; duration: 240; easing.type: Easing.InCubic }
+      NumberAnimation { target: card; property: "opacity"; to: 0; duration: 150; easing.type: Easing.InQuad }
     }
     ScriptAction { script: root.unmount() }
   }
