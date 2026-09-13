@@ -1,0 +1,34 @@
+#!/bin/bash
+
+# omahub:title=New project
+# omahub:summary=Creates a folder in your projects folder, starts git, and opens your default agent there
+# omahub:section=projects
+# omahub:kind=action
+# omahub:icon=󰉗
+# omahub:action=Create
+# omahub:prompt=Project name
+# omahub:closes=true
+# omahub:keywords=new project create folder repo git start agent session
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/defaults.sh"
+
+where() {
+  omahub_state null "In $(omahub_home_label "$(omahub_projects_folder)")"
+}
+
+case "${1:-}" in
+  get | reset)
+    where
+    ;;
+  set)
+    dir=$(omahub_project_new "${2:-}")
+    # Start the agent without waiting on it, so the hub gets its answer and closes.
+    (cd "$dir" && setsid -f omarchy-agent --pick >/dev/null 2>&1)
+    omahub_state "$(jq -nc --arg dir "$dir" '$dir')" "Created $(omahub_home_label "$dir")"
+    ;;
+  *)
+    omahub_fail "usage: omahub get|set|reset projects/new"
+    ;;
+esac

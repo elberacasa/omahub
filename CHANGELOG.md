@@ -24,7 +24,9 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - `agents/setup.md`, a guide any coding agent can follow to install Omahub and set it up with the person, asking before every change.
 - `agents/claude-usage`, `agents/codex-usage`, and `agents/fireworks-usage` choose which subscriptions show in Omarchy's Agents bar panel, through `omarchy bar set`. They follow a clone of the widget made with `omarchy plugin clone`.
 - `agents/bar-limits` shows every subscription's limit on the bar when the Agents widget offers a Limits mode.
-- `agents/default-agent`, `agents/editor`, and `agents/projects-folder`, built on Omarchy's own `omarchy default` commands, so agents and editors Omarchy adds appear on their own. Reset restores what was chosen before.
+- `projects/default-agent`, `projects/editor`, and `projects/folder`, built on Omarchy's own `omarchy default` commands, so agents and editors Omarchy adds appear on their own. Reset restores what was chosen before.
+- New project: name it in the hub, or run `omahub project new <name>`, and Omahub creates the folder in your projects folder, starts git, and opens your agent or editor there. `omahub open projects/new` jumps straight to the name.
+- Action settings with an inline prompt, and a More… chip on the default agent and editor that opens Omarchy's own menu to install and pick others.
 - `omahub agent [agent] [--pick]` starts a coding agent in your projects folder or a folder you pick, and `omahub edit [--pick]` opens it in your editor.
 - Folder settings in the hub: the current folder and quick places as chips, plus Choose… for any folder. Omahub Capture's screenshot folder is the first.
 - The screenshot thumbnail, which began as Omahub Capture, now ships inside Omahub. Turn on `capture/thumbnail` and PRINT, the Mac screenshot keys, and the mouse shortcut show a floating thumbnail: click to edit, drag into any app, drag right to dismiss, or right-click to copy, show in Files, trash, or save to another folder.

@@ -13,16 +13,36 @@ Rectangle {
   property bool busy: false
   property string error: ""
   property bool hasCursor: false
+  property bool promptActive: false
+  property string promptText: ""
 
   signal activated()
   signal chose(string value)
   signal chooseFolder()
+  signal moreChosen()
   // Carries the item the mouse position is relative to, so the hub can tell a moving pointer
   // from rows scrolling under a still one.
   signal pointerMoved(var item, var mouse)
 
   readonly property bool isOn: row.settingState !== null && row.settingState.value === true
   readonly property bool hasChips: row.setting.kind === "choice" || row.setting.kind === "folder"
+  // A choice with More… keeps its chips short: the current one and up to three others, so the
+  // title always has room. The rest live behind More….
+  readonly property var chipOptions: {
+    var list = row.options || []
+    if (!row.setting.more || list.length <= 4) return list
+    var shown = []
+    var others = 3
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].current) {
+        shown.push(list[i])
+      } else if (others > 0) {
+        shown.push(list[i])
+        others--
+      }
+    }
+    return shown
+  }
   readonly property color ink: row.hasCursor ? Color.menu.selectedText : Color.menu.text
 
   implicitHeight: Math.max(Style.space(58), content.implicitHeight + Style.spacing.rowPaddingX * 2)
@@ -107,8 +127,9 @@ Rectangle {
       id: control
       width: row.setting.kind === "toggle" ? toggle.implicitWidth
         : row.hasChips ? choices.implicitWidth
+        : row.setting.kind === "action" ? actionControl.implicitWidth
         : valueLabel.implicitWidth
-      height: Math.max(toggle.implicitHeight, choices.implicitHeight, valueLabel.implicitHeight)
+      height: Math.max(toggle.implicitHeight, choices.implicitHeight, valueLabel.implicitHeight, actionControl.implicitHeight)
       anchors.verticalCenter: parent.verticalCenter
 
       ToggleSwitch {
@@ -139,7 +160,7 @@ Rectangle {
         Behavior on opacity { NumberAnimation { duration: 140 } }
 
         Repeater {
-          model: row.hasChips ? row.options : []
+          model: row.hasChips ? row.chipOptions : []
 
           delegate: Button {
             required property var modelData
@@ -156,6 +177,18 @@ Rectangle {
         }
 
         Button {
+          visible: row.setting.kind === "choice" && !!row.setting.more
+          text: "More…"
+          bordered: true
+          foreground: row.ink
+          fontFamily: Style.font.menuFamily
+          fontSize: Style.font.caption
+          horizontalPadding: Style.spacing.md
+          verticalPadding: Style.spacing.xs
+          onClicked: row.moreChosen()
+        }
+
+        Button {
           visible: row.setting.kind === "folder"
           text: "Choose…"
           bordered: true
@@ -168,9 +201,91 @@ Rectangle {
         }
       }
 
+      Row {
+        id: actionControl
+        visible: row.setting.kind === "action"
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: Style.spacing.sm
+        opacity: row.busy ? 0.6 : 1
+
+        Behavior on opacity { NumberAnimation { duration: 140 } }
+
+        // The inline prompt, drawn like the search box: placeholder, typed text, blinking caret.
+        BorderSurface {
+          id: promptField
+          visible: row.promptActive
+          anchors.verticalCenter: parent.verticalCenter
+          width: Style.space(220)
+          height: promptTyped.implicitHeight + Style.spacing.xs * 2
+          radius: Style.cornerRadius
+          color: "transparent"
+          borderSpec: Border.controlSpec("focus", row.ink, Color.accent)
+
+          Text {
+            anchors.left: parent.left
+            anchors.leftMargin: Style.spacing.md
+            anchors.verticalCenter: parent.verticalCenter
+            visible: row.promptText === ""
+            textFormat: Text.PlainText
+            text: row.setting.prompt || ""
+            color: row.ink
+            opacity: 0.5
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.caption
+          }
+
+          Row {
+            anchors.left: parent.left
+            anchors.leftMargin: Style.spacing.md
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 1
+
+            Text {
+              id: promptTyped
+              width: Math.min(implicitWidth, promptField.width - Style.spacing.md * 2 - Style.space(2))
+              textFormat: Text.PlainText
+              text: row.promptText
+              color: row.ink
+              elide: Text.ElideLeft
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.caption
+            }
+
+            Rectangle {
+              anchors.verticalCenter: parent.verticalCenter
+              width: Math.max(1, Style.space(2))
+              height: Style.font.caption + Style.spacing.xxs
+              color: Color.accent
+
+              SequentialAnimation on opacity {
+                running: row.promptActive
+                loops: Animation.Infinite
+                NumberAnimation { to: 1; duration: 0 }
+                PauseAnimation { duration: 530 }
+                NumberAnimation { to: 0; duration: 0 }
+                PauseAnimation { duration: 530 }
+              }
+            }
+          }
+        }
+
+        Button {
+          anchors.verticalCenter: parent.verticalCenter
+          text: row.setting.action || "Run"
+          bordered: true
+          selected: row.promptActive
+          foreground: row.ink
+          fontFamily: Style.font.menuFamily
+          fontSize: Style.font.caption
+          horizontalPadding: Style.spacing.md
+          verticalPadding: Style.spacing.xs
+          onClicked: row.activated()
+        }
+      }
+
       Text {
         id: valueLabel
-        visible: row.setting.kind !== "toggle" && !row.hasChips
+        visible: row.setting.kind !== "toggle" && !row.hasChips && row.setting.kind !== "action"
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
         text: row.settingState ? row.settingState.label : ""

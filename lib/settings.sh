@@ -68,6 +68,10 @@ omahub_setting_json() {
           keywords: ($h.keywords // ""),
           requires: ($h.requires // ""),
           privileged: ($h.privileged == "true"),
+          action: ($h.action // ""),
+          prompt: ($h.prompt // ""),
+          closes: ($h.closes == "true"),
+          more: ($h.more // ""),
           hidden: ($h.hidden == "true")
         }
       else
@@ -96,8 +100,23 @@ omahub_catalog() {
   done < <(omahub_setting_roots) | jq -s 'reduce .[] as $s ({}; .[$s.id] = $s) | [.[]] | sort_by(.section, .title)'
 }
 
+# Find one setting's file without building the whole catalog, following the same rules: later
+# roots win, and a file needs its headers and its requirement to count.
 omahub_setting_path() {
-  omahub_catalog 2>/dev/null | jq -r --arg id "$1" '.[] | select(.id == $id) | .path'
+  local id="$1" root file requirement found=""
+  if [[ ! $id =~ ^[A-Za-z0-9_-]+/[A-Za-z0-9_-]+([.][A-Za-z0-9_-]+)*$ ]]; then
+    return 0
+  fi
+  while IFS= read -r root; do
+    file="$root/$id"
+    if [[ -f $file && -x $file ]] && grep -q '^# omahub:title=' "$file"; then
+      requirement=$(sed -n 's/^# omahub:requires=//p' "$file" | head -1)
+      if [[ -z $requirement ]] || omahub_requirement_met "$requirement"; then
+        found=$file
+      fi
+    fi
+  done < <(omahub_setting_roots)
+  printf '%s\n' "$found"
 }
 
 # Print a setting state: omahub_state <json value> <label>.

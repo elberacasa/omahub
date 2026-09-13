@@ -2,11 +2,12 @@
 
 # omahub:title=Default agent
 # omahub:summary=The coding agent SUPER + SHIFT + A starts, and the one new sessions from the bar use
-# omahub:section=agents
+# omahub:section=projects
 # omahub:kind=choice
 # omahub:icon=󰚩
 # omahub:keywords=agent default claude codex opencode gemini copilot cursor coding assistant
 # omahub:requires=omarchy-default-agent
+# omahub:more=setup.default.agent
 
 set -euo pipefail
 source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
@@ -28,6 +29,6 @@ case "${1:-}" in
     omahub_default_agent_state
     ;;
   *)
-    omahub_fail "usage: omahub get|set|options|reset agents/default-agent"
+    omahub_fail "usage: omahub get|set|options|reset projects/default-agent"
     ;;
 esac

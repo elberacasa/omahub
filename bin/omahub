@@ -18,9 +18,10 @@ Usage: omahub <command>
   set <setting> <value>       Change a setting
   options <setting>           Print a setting's choices as JSON
   reset <setting>             Undo everything a setting changed
-  open [section|welcome]      Open the hub at a section, or the welcome
+  open [where]                Open the hub at a section, a setting, or the welcome
   agent [agent] [--pick]      Start a coding agent in your projects folder, or a folder you pick
   edit [--pick]               Open your projects folder, or a folder you pick, in your editor
+  project new <name>          Create a project and start your agent there (--editor, --no-open)
   version                     Print the Omahub version
 
 Settings are named <section>/<name>, for example keyboard/mac-screenshot-keys.
@@ -92,6 +93,33 @@ start_agent() {
   fi
 }
 
+new_project() {
+  local usage="usage: omahub project new <name> [--editor|--no-open]" name="" open="agent" dir
+  if [[ ${1:-} != "new" ]]; then
+    omahub_fail "$usage"
+  fi
+  shift
+  while (( $# )); do
+    case "$1" in
+      --editor) open="editor"; shift ;;
+      --no-open) open="none"; shift ;;
+      -*) omahub_fail "$usage" ;;
+      *) name="$name${name:+ }$1"; shift ;;
+    esac
+  done
+
+  source "$OMAHUB_PATH/lib/defaults.sh"
+  dir=$(omahub_project_new "$name")
+  printf '%s\n' "$dir"
+  cd "$dir"
+
+  if [[ $open == "agent" ]]; then
+    exec omarchy-agent --pick
+  elif [[ $open == "editor" ]]; then
+    exec omarchy-launch-editor "$dir"
+  fi
+}
+
 open_editor() {
   local folder
   source "$OMAHUB_PATH/lib/defaults.sh"
@@ -113,6 +141,8 @@ case "${1:-help}" in
   open)
     if [[ ${2:-} == "welcome" ]]; then
       payload='{"view":"welcome"}'
+    elif [[ ${2:-} == */* ]]; then
+      payload=$(jq -nc --arg id "$2" '{section: ($id | split("/")[0]), setting: $id}')
     else
       payload=$(jq -nc --arg section "${2:-}" '{section: $section}')
     fi
@@ -125,6 +155,10 @@ case "${1:-help}" in
   edit)
     shift
     open_editor "$@"
+    ;;
+  project)
+    shift
+    new_project "$@"
     ;;
   version)
     jq -r .version "$OMAHUB_PATH/manifest.json"

@@ -19,6 +19,13 @@ Item {
   property string loadError: ""
   property bool statesStale: false
   property bool statesReady: false
+  property string promptId: ""
+  property string promptText: ""
+  property string pendingSetting: ""
+  readonly property string promptAction: {
+    var setting = root.settingById(root.promptId)
+    return setting && setting.action ? setting.action : "Run"
+  }
   property var pendingStates: ({})
   property var pendingOptions: ({})
   property string view: "hub"
@@ -48,17 +55,26 @@ Item {
 
   // Reads every setting's state, one line per setting. Answers are applied together when the read
   // finishes, so rows, the keyboard card, and its progress never appear half filled.
+  // Every setting is read at once, each into its own file, and printed together when all are done.
   readonly property string stateScript: "bin=$1\nshift\n"
+    + "dir=$(mktemp -d)\n"
+    + "trap 'rm -rf \"$dir\"' EXIT\n"
+    + "i=0\n"
     + "for entry in \"$@\"; do\n"
-    + "  id=${entry%|*}\n"
-    + "  kind=${entry##*|}\n"
-    + "  state=$(\"$bin\" get \"$id\" 2>/dev/null) || state=null\n"
-    + "  options=null\n"
-    + "  if [[ $kind == \"choice\" || $kind == \"folder\" ]]; then\n"
-    + "    options=$(\"$bin\" options \"$id\" 2>/dev/null) || options=null\n"
-    + "  fi\n"
-    + "  printf '%s\\t%s\\t%s\\n' \"$id\" \"${state:-null}\" \"${options:-null}\"\n"
-    + "done"
+    + "  (\n"
+    + "    id=${entry%|*}\n"
+    + "    kind=${entry##*|}\n"
+    + "    state=$(\"$bin\" get \"$id\" 2>/dev/null) || state=null\n"
+    + "    options=null\n"
+    + "    if [[ $kind == \"choice\" || $kind == \"folder\" ]]; then\n"
+    + "      options=$(\"$bin\" options \"$id\" 2>/dev/null) || options=null\n"
+    + "    fi\n"
+    + "    printf '%s\\t%s\\t%s\\n' \"$id\" \"${state:-null}\" \"${options:-null}\" >\"$dir/$i\"\n"
+    + "  ) &\n"
+    + "  i=$((i + 1))\n"
+    + "done\n"
+    + "wait\n"
+    + "cat \"$dir\"/* 2>/dev/null"
 
   // The plugin stays loaded, so read settings once at startup and the first SUPER + A opens on real state.
   // The very first load also shows the welcome, once.
@@ -76,6 +92,8 @@ Item {
     root.query = ""
     root.searching = false
     root.cursor = 0
+    root.cancelPrompt()
+    root.pendingSetting = payload.setting ? String(payload.setting) : ""
     exitAnimation.stop()
     root.mounted = true
     root.opened = true
@@ -83,6 +101,7 @@ Item {
     pointerGate.reset()
     root.refresh()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    Qt.callLater(root.applyPendingSetting)
   }
 
   function close() {
@@ -113,6 +132,7 @@ Item {
     root.catalog = list
     if (list.length > 0 && !Model.hasSection(list, root.sectionId)) root.sectionId = Model.sections(list)[0].id
     root.readStates()
+    Qt.callLater(root.applyPendingSetting)
   }
 
   function readStates() {
@@ -170,6 +190,8 @@ Item {
         nextStates[id] = state
         root.states = nextStates
       }
+      var finished = root.settingById(id)
+      if (finished && finished.closes) root.close()
     } else {
       var nextErrors = Object.assign({}, root.errors)
       nextErrors[id] = Model.errorText(setErrors.text)
@@ -200,6 +222,62 @@ Item {
       root.setValue(setting.id, choices[(current + 1) % choices.length].value)
     } else if (setting.kind === "folder") {
       root.chooseFolder(setting)
+    } else if (setting.kind === "action") {
+      if (root.promptId === setting.id) root.submitPrompt()
+      else if (setting.prompt) root.beginPrompt(index)
+      else root.setValue(setting.id, "run")
+    }
+  }
+
+  // An action with a prompt asks for its value inline, the way search does: type, Enter to run,
+  // Esc to cancel.
+  function beginPrompt(index) {
+    var setting = root.rows[index]
+    if (!setting) return
+    root.searching = false
+    root.cursor = index
+    root.promptId = setting.id
+    root.promptText = ""
+  }
+
+  function cancelPrompt() {
+    root.promptId = ""
+    root.promptText = ""
+  }
+
+  function submitPrompt() {
+    var text = root.promptText.trim()
+    if (text === "") return
+    var id = root.promptId
+    root.cancelPrompt()
+    root.setValue(id, text)
+  }
+
+  // More choices live in Omarchy's own menu, which installs what is missing.
+  function openMore(setting) {
+    if (!setting.more) return
+    root.close()
+    Quickshell.execDetached(["omarchy-menu", "summon", setting.more])
+  }
+
+  function settingById(id) {
+    for (var i = 0; i < root.catalog.length; i++) {
+      if (root.catalog[i].id === id) return root.catalog[i]
+    }
+    return null
+  }
+
+  // `omahub open <setting>` lands on that row, and starts its prompt when it has one.
+  function applyPendingSetting() {
+    if (!root.pendingSetting || root.catalog.length === 0) return
+    var id = root.pendingSetting
+    root.pendingSetting = ""
+    for (var i = 0; i < root.rows.length; i++) {
+      if (root.rows[i].id !== id) continue
+      if (root.rows[i].prompt) root.beginPrompt(i)
+      else root.cursor = i
+      revealTimer.restart()
+      return
     }
   }
 
@@ -263,6 +341,7 @@ Item {
 
   function selectFromPointer(index, item, mouse) {
     if (!pointerGate.moved(item, mouse)) return
+    if (root.promptId !== "") return
     root.cursor = index
   }
 
@@ -308,6 +387,13 @@ Item {
       }
       root.open(JSON.stringify({ view: "welcome" }))
     }
+  }
+
+  // A row reached by `omahub open <setting>` scrolls into view once the list has laid it out.
+  Timer {
+    id: revealTimer
+    interval: 80
+    onTriggered: settingsList.positionViewAtIndex(root.cursor, ListView.Contain)
   }
 
   Process {
@@ -401,11 +487,23 @@ Item {
           var printable = event.text.length === 1 && event.text.charCodeAt(0) > 32 && event.text.charCodeAt(0) !== 127
 
           if (event.key === Qt.Key_Escape) {
-            if (root.query !== "" || root.searching) {
+            if (root.promptId !== "") {
+              root.cancelPrompt()
+            } else if (root.query !== "" || root.searching) {
               root.setQuery("")
               root.searching = false
             } else {
               root.close()
+            }
+          } else if (root.promptId !== "") {
+            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+              root.submitPrompt()
+            } else if (Util.editsFilter(event, root.promptText)) {
+              root.promptText = Util.editedFilter(event, root.promptText)
+            } else if (event.key === Qt.Key_Backspace) {
+              root.promptText = root.promptText.slice(0, -1)
+            } else if (plain && (printable || event.key === Qt.Key_Space)) {
+              root.promptText = root.promptText + event.text
             }
           } else if (root.searching) {
             if (Util.editsFilter(event, root.query)) {
@@ -800,7 +898,10 @@ Item {
                 busy: root.busyId === modelData.id
                 error: root.errors[modelData.id] || ""
                 hasCursor: index === root.cursor
+                promptActive: root.promptId === modelData.id
+                promptText: root.promptId === modelData.id ? root.promptText : ""
                 onActivated: root.activate(index)
+                onMoreChosen: root.openMore(modelData)
                 onChose: function(value) {
                   root.cursor = index
                   root.setValue(modelData.id, value)
@@ -852,8 +953,12 @@ Item {
               { keys: ["h", "l"], label: "Sections", hidden: root.view !== "hub" || root.sections.length < 2 },
               { keys: ["space"], label: "Change" },
               { keys: ["/"], label: root.view === "welcome" ? "All settings" : "Search" },
-              { keys: ["esc"], label: "Close", hidden: root.view === "welcome" }
-            ].filter(function(hint) { return !hint.hidden })
+              { keys: ["esc"], label: "Close", hidden: root.view === "welcome" },
+              { keys: ["enter"], label: root.promptAction, prompt: true },
+              { keys: ["esc"], label: "Cancel", prompt: true }
+            ].filter(function(hint) {
+              return root.promptId !== "" ? hint.prompt === true : hint.prompt !== true && !hint.hidden
+            })
 
             delegate: Row {
               id: hint

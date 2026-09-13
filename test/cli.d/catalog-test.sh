@@ -40,6 +40,16 @@ cat >"$HOME/.config/omahub/settings/extra/needs-plugin" <<'EOF'
 EOF
 chmod +x "$HOME/.config/omahub/settings/extra/needs-plugin"
 assert_eq "a setting whose requirement is missing is hidden" "$(omahub settings --json | jq -r 'map(select(.id == "extra/needs-plugin")) | length')" "0"
+if omahub get extra/needs-plugin 2>/dev/null; then
+  fail "a setting whose requirement is missing cannot run"
+else
+  pass "a setting whose requirement is missing cannot run"
+fi
+if omahub get "../settings/keyboard/omahub-key" 2>/dev/null; then
+  fail "a setting id cannot reach outside the settings folders"
+else
+  pass "a setting id cannot reach outside the settings folders"
+fi
 rm -rf "$HOME/.config/omahub"
 
 family="$HOME/.config/omarchy/plugins/io.github.elberacasa.omahub-example/settings/extra"

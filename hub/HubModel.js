@@ -2,9 +2,9 @@
 
 // Pure data shaping for the hub: sections, search, row order, and state parsing.
 
-const SECTION_ORDER = ["keyboard", "capture", "appearance", "agents", "plugins", "system"]
-const SECTION_LABELS = { keyboard: "Keyboard", capture: "Capture", appearance: "Appearance", agents: "Agents", plugins: "Plugins", system: "System" }
-const SECTION_ICONS = { keyboard: "󰌌", capture: "󰄄", appearance: "󰏘", agents: "󰚩", plugins: "󰐱", system: "󰒓" }
+const SECTION_ORDER = ["keyboard", "capture", "projects", "agents", "appearance", "plugins", "system"]
+const SECTION_LABELS = { keyboard: "Keyboard", capture: "Capture", projects: "Projects", agents: "Agents", appearance: "Appearance", plugins: "Plugins", system: "System" }
+const SECTION_ICONS = { keyboard: "󰌌", capture: "󰄄", projects: "󰉋", agents: "󰚩", appearance: "󰏘", plugins: "󰐱", system: "󰒓" }
 const KIND_ORDER = { choice: 0, toggle: 1, folder: 2, keys: 3, action: 4 }
 
 function sectionLabel(id) {

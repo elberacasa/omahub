@@ -27,11 +27,20 @@ omahub_defaults_is_known() {
   omahub_defaults_known "$command" "$key" | awk -F'\t' -v id="$id" '$1 == id { found = 1 } END { exit !found }'
 }
 
-# Agents such as Hermes install through their own command, which answers --check.
+# Whether a choice is really installed, judged the way `omarchy default agent` judges it.
+# Agents such as Hermes install through their own command, which answers --check. Omarchy puts
+# a wrapper in ~/.local/bin for every other agent that installs it through mise on first run, so
+# a wrapper only counts when mise already has the package it names. Anything else in
+# ~/.local/bin is the user's own install.
 omahub_defaults_installed() {
-  local id="$1"
+  local id="$1" wrapper="$HOME/.local/bin/$1" package
   if omarchy-cmd-present "omarchy-install-$id-cli"; then
     "omarchy-install-$id-cli" --check >/dev/null 2>&1
+  elif [[ -f $wrapper ]] && grep -q '^mise use -g' "$wrapper"; then
+    package=$(sed -n 's/^mise use -g[^"]*"\([^"]*\)".*/\1/p' "$wrapper" | head -1)
+    [[ -n $package ]] && mise where "$package" >/dev/null 2>&1
+  elif [[ -x $wrapper ]]; then
+    return 0
   else
     omarchy-cmd-present "$id"
   fi
@@ -90,7 +99,7 @@ omahub_default_agent_state() {
 omahub_default_agent_set() {
   local agent="$1"
   if ! omahub_defaults_is_known omarchy-default-agent agent "$agent"; then
-    omahub_fail "usage: omahub set agents/default-agent <agent>. Run 'omahub options agents/default-agent' to list them."
+    omahub_fail "usage: omahub set projects/default-agent <agent>. Run 'omahub options projects/default-agent' to list them."
   fi
   if ! omahub_defaults_installed "$agent"; then
     omahub_fail "$(omahub_defaults_label omarchy-default-agent agent "$agent") is not installed. Install it with: omarchy default agent $agent"
@@ -116,7 +125,7 @@ omahub_default_editor_state() {
 omahub_default_editor_set() {
   local editor="$1"
   if ! omahub_defaults_is_known omarchy-default-editor editor "$editor"; then
-    omahub_fail "usage: omahub set agents/editor <editor>. Run 'omahub options agents/editor' to list them."
+    omahub_fail "usage: omahub set projects/editor <editor>. Run 'omahub options projects/editor' to list them."
   fi
   if ! omahub_defaults_installed "$editor"; then
     omahub_fail "$(omahub_defaults_label omarchy-default-editor editor "$editor") is not installed"
@@ -167,6 +176,25 @@ omahub_projects_options() {
     done
   } | awk '!seen[$0]++' | jq -Rsc --arg current "$current" \
     'split("\n") | map(select(length > 0)) | map({value: ., label: (split("/") | last), current: (. == $current)})'
+}
+
+# Create a project in the projects folder and start git there, unless the projects folder is
+# itself a repository. Spaces in the name become dashes. Prints the new folder.
+omahub_project_new() {
+  local name="${1// /-}" root dir
+  if [[ ! $name =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+    omahub_fail "name a project with letters, numbers, dots, dashes, or underscores"
+  fi
+  root=$(omahub_projects_folder)
+  dir="$root/$name"
+  if [[ -e $dir ]]; then
+    omahub_fail "$(omahub_home_label "$dir") already exists"
+  fi
+  mkdir -p "$dir"
+  if omarchy-cmd-present git && ! git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git -C "$dir" init -q
+  fi
+  printf '%s\n' "$dir"
 }
 
 omahub_projects_set() {
