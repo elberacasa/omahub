@@ -1,0 +1,47 @@
+#!/bin/bash
+
+# omahub:title=Screenshot folder
+# omahub:summary=Where new screenshots are saved. Save to in the thumbnail menu changes it too
+# omahub:section=capture
+# omahub:kind=folder
+# omahub:icon=󰉋
+# omahub:keywords=screenshot folder directory save location downloads pictures capture
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+
+folder_script="$(dirname "$(realpath "$0")")/../../screenshot-dir.sh"
+
+state() {
+  local dir label
+  dir=$("$folder_script" get)
+  if [[ $dir == "$HOME" || $dir == "$HOME"/* ]]; then
+    label="~${dir#"$HOME"}"
+  else
+    label=$dir
+  fi
+  omahub_state "$(jq -nc --arg dir "$dir" '$dir')" "$label"
+}
+
+case "${1:-}" in
+  get)
+    state
+    ;;
+  options)
+    "$folder_script" places | jq -c 'map({value: .path, label: .name, current: .current})'
+    ;;
+  set)
+    if [[ -z ${2:-} ]]; then
+      omahub_fail "usage: omahub set capture/screenshot-folder <folder>"
+    fi
+    "$folder_script" set "$2" >/dev/null
+    state
+    ;;
+  reset)
+    "$folder_script" reset >/dev/null
+    state
+    ;;
+  *)
+    omahub_fail "usage: omahub get|set|options|reset capture/screenshot-folder"
+    ;;
+esac
