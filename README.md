@@ -89,6 +89,10 @@ dev/export-media tmp/takes/thumbnail.mp4 thumbnail 0.4-6.5
 
 `dev/take` records the focused monitor with notifications silenced. `dev/frames` tiles every frame of a window into one image. `dev/export-media` cuts segments into an MP4 and a GIF.
 
+## Contributing
+
+Bug reports, ideas, and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) to get set up and [AGENTS.md](AGENTS.md) for the conventions this project follows, which are Omarchy's own. Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md). Report security issues privately as described in [SECURITY.md](SECURITY.md).
+
 ## Remove
 
 Run `keymap.sh off` first if you picked a layout, then:

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ideas and setting requests
+    url: https://github.com/elberacasa/omahub/discussions
+    about: Suggest a feature, a new setting, or a change in Discussions.
+  - name: Problems with Omarchy itself
+    url: https://github.com/basecamp/omarchy
+    about: Omahub only builds on Omarchy. Report Omarchy bugs to the Omarchy project.
