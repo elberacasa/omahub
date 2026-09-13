@@ -12,10 +12,14 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - Development tools: `bin/dev-sync`, plus `bin/take`, `bin/frames`, and `bin/export-media` for recording takes and reviewing motion frame by frame.
 - Keycap brand in `assets/`: mark, logo, and an animated hero for light and dark grounds, plus a block-character logo for terminals.
 - `AGENTS.md`, `CONTRIBUTING.md`, a code of conduct, a security policy, and issue and pull request templates.
+- The `omahub` command: `settings`, `get`, `set`, `options`, `reset`, `open`, and `version`, shared by the hub, the terminal, and agents.
+- Settings as files. Each setting is one executable with `# omahub:` headers, found across Omahub, its sibling plugins, and `~/.config/omahub/settings`, where a file with the same name replaces the shipped one. Documented in `docs/settings.md`.
+- `test/all`, which runs every test against a disposable home.
 
 ### Changed
 
 - Development tools moved from `bin/` to `dev/`, leaving `bin/` for the upcoming `omahub` command.
+- Keyboard layouts are now two independent settings, `keyboard/omahub-key` and `keyboard/mac-screenshot-keys`, replacing `scripts/keymap.sh`. Existing setups keep working unchanged.
 
 ### Fixed
 

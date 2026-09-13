@@ -12,8 +12,12 @@ Omahub is a plugin for the [Omarchy](https://omarchy.org) shell, written in QML 
 |---|---|
 | `manifest.json` | Plugin manifest. `version` follows semver |
 | `Omahub.qml` | The overlay entry point |
-| `keymaps/` | Hyprland bindings loaded by the keyboard layouts |
-| `scripts/keymap.sh` | Switches layouts inside one marked block in `~/.config/hypr/bindings.lua` |
+| `bin/omahub` | The command the hub, people, and agents use to list and change settings |
+| `settings/` | One executable file per setting, described by `# omahub:` headers. See [docs/settings.md](docs/settings.md) |
+| `lib/` | Shared bash for settings: discovery, marked blocks, backups, keyboard layers |
+| `keymaps/` | Hyprland bindings loaded by the keyboard settings |
+| `docs/` | Reference for contributors |
+| `test/` | `test/all` runs every test against a disposable home |
 | `assets/` | Brand assets for READMEs |
 | `dev/` | Development tools. Nothing at runtime uses them |
 
@@ -48,6 +52,7 @@ Writing: sentence case, short and specific. No em dashes anywhere.
 ```bash
 dev/sync --restart          # copy the working tree into ~/.config/omarchy/plugins and restart the shell
 omarchy plugin validate .   # must pass
+test/all                    # must pass
 omarchy-shell shell toggle io.github.elberacasa.omahub '{}'
 ```
 

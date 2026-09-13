@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# Run every Omahub test that does not need a display.
+
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+status=0
+
+for test in "$root"/test/*.d/*-test.sh; do
+  echo "${test#"$root"/}"
+  if ! bash "$test"; then
+    status=1
+  fi
+done
+
+if (( status == 0 )); then
+  echo "All tests passed."
+else
+  echo "Some tests failed." >&2
+fi
+exit "$status"

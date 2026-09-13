@@ -46,15 +46,18 @@ Plugins land disabled until you enable them, so you can read the code first. Oma
 
 ## Keyboard
 
-Installing Omahub never changes your keybindings. Pick a layout when you want one:
+Installing Omahub never changes your keybindings. Every keyboard change is a setting you turn on, and off again, with the `omahub` command:
 
 ```bash
-~/.config/omarchy/plugins/io.github.elberacasa.omahub/scripts/keymap.sh omarchy   # SUPER + A opens Omahub
-~/.config/omarchy/plugins/io.github.elberacasa.omahub/scripts/keymap.sh mac       # SUPER + A, plus Mac screenshot keys
-~/.config/omarchy/plugins/io.github.elberacasa.omahub/scripts/keymap.sh off       # remove everything Omahub added
+omahub=~/.config/omarchy/plugins/io.github.elberacasa.omahub/bin/omahub
+
+$omahub set keyboard/omahub-key on            # SUPER + A opens Omahub
+$omahub set keyboard/mac-screenshot-keys on   # Mac screenshot keys
+$omahub reset keyboard/mac-screenshot-keys    # back to Omarchy's keys
+$omahub settings                              # everything you can change
 ```
 
-The Mac layout changes only these keys, and every Omarchy action it displaces keeps a key:
+The Mac screenshot keys change only these keys, and every Omarchy action they displace keeps a key:
 
 | Keys | Mac layout | Omarchy default |
 |---|---|---|
@@ -67,7 +70,7 @@ The Mac layout changes only these keys, and every Omarchy action it displaces ke
 
 With Omahub Capture installed, the screenshot keys show the floating thumbnail. Without it, they use Omarchy's own screenshot flow.
 
-Omahub edits one marked block in `~/.config/hypr/bindings.lua`, backs the file up first, and restores it if Hyprland reports an error.
+Omahub edits one marked block in `~/.config/hypr/bindings.lua`, backs the file up first, and undoes the change if Hyprland reports an error.
 
 ## Principles
 
@@ -84,7 +87,10 @@ Clone into your projects folder, then sync it into the plugins folder the shell 
 dev/sync --restart   # copy the working tree and restart the shell
 dev/sync --watch     # keep copying on every save
 omarchy plugin validate .
+test/all                 # run every test against a disposable home
 ```
+
+To add a setting, read [docs/settings.md](docs/settings.md).
 
 Plugins with `keepLoaded: true` only pick up QML changes after a shell restart.
 
@@ -104,7 +110,7 @@ Bug reports, ideas, and pull requests are welcome. Read [CONTRIBUTING.md](CONTRI
 
 ## Remove
 
-Run `keymap.sh off` first if you picked a layout, then:
+Turn off any keyboard settings first with `$omahub reset keyboard/omahub-key` and `$omahub reset keyboard/mac-screenshot-keys`, then:
 
 ```bash
 omarchy plugin remove io.github.elberacasa.omahub

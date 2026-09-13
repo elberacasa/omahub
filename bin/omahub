@@ -1,0 +1,71 @@
+#!/bin/bash
+
+# omahub: the command behind the Omahub hub. The hub, people in a terminal, and agents all
+# change settings through it, so every path behaves the same.
+
+set -euo pipefail
+
+OMAHUB_PATH="$(cd "$(dirname "$(realpath "$0")")/.." && pwd)"
+export OMAHUB_PATH
+source "$OMAHUB_PATH/lib/settings.sh"
+
+usage() {
+  cat <<'EOF'
+Usage: omahub <command>
+
+  settings [--json]           List every setting, or print the catalog as JSON
+  get <setting>               Print a setting's current state as JSON
+  set <setting> <value>       Change a setting
+  options <setting>           Print a setting's choices as JSON
+  reset <setting>             Undo everything a setting changed
+  open [section]              Open the Omahub hub
+  version                     Print the Omahub version
+
+Settings are named <section>/<name>, for example keyboard/mac-screenshot-keys.
+EOF
+}
+
+list_settings() {
+  if [[ ${1:-} == "--json" ]]; then
+    omahub_catalog
+  else
+    omahub_catalog | jq -r '
+      map(select(.hidden | not))
+      | group_by(.section)[]
+      | (.[0].section | ascii_upcase), (.[] | "  \(.id)  \(.summary)"), ""'
+  fi
+}
+
+run_setting() {
+  local verb="$1" id="${2:-}" path
+  [[ -n $id ]] || omahub_fail "usage: omahub $verb <setting>"
+
+  path=$(omahub_setting_path "$id")
+  [[ -n $path ]] || omahub_fail "no setting named '$id'. Run 'omahub settings' to list them."
+
+  shift 2
+  exec "$path" "$verb" "$@"
+}
+
+case "${1:-help}" in
+  settings)
+    shift
+    list_settings "$@"
+    ;;
+  get | set | options | reset)
+    run_setting "$@"
+    ;;
+  open)
+    omarchy-shell shell summon "$OMAHUB_PLUGIN_ID" "$(jq -nc --arg section "${2:-}" '{section: $section}')" >/dev/null
+    ;;
+  version)
+    jq -r .version "$OMAHUB_PATH/manifest.json"
+    ;;
+  help | -h | --help)
+    usage
+    ;;
+  *)
+    usage >&2
+    exit 1
+    ;;
+esac

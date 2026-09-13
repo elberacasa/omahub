@@ -14,7 +14,7 @@ DEST="$HOME/.config/omarchy/plugins/$ID"
 sync_plugin() {
   mkdir -p "$DEST"
   git -C "$SRC" ls-files --cached --others --exclude-standard -z \
-    | grep -zv '^dev/' \
+    | grep -zvE '^(dev|test)/' \
     | rsync -a --delete-missing-args --from0 --files-from=- "$SRC/" "$DEST/"
 }
 
