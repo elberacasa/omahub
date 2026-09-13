@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.elberacasa.omahub",
+  "name": "Omahub",
+  "version": "0.1.0",
+  "author": "elberacasa",
+  "license": "MIT",
+  "description": "Browse, install, and manage everything Omarchy offers from one place.",
+  "kinds": ["overlay"],
+  "keepLoaded": true,
+  "entryPoints": { "overlay": "Omahub.qml" }
+}
