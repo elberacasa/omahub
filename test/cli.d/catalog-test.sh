@@ -42,6 +42,21 @@ chmod +x "$HOME/.config/omahub/settings/extra/needs-plugin"
 assert_eq "a setting whose requirement is missing is hidden" "$(omahub settings --json | jq -r 'map(select(.id == "extra/needs-plugin")) | length')" "0"
 rm -rf "$HOME/.config/omahub"
 
+family="$HOME/.config/omarchy/plugins/io.github.elberacasa.omahub-example/settings/extra"
+mkdir -p "$family"
+cat >"$family/from-family" <<'EOF'
+#!/bin/bash
+# omahub:title=From a family plugin
+# omahub:summary=Shipped by a sibling plugin
+# omahub:section=extra
+# omahub:kind=toggle
+echo '{"value":false,"label":"Off"}'
+EOF
+chmod +x "$family/from-family"
+assert_eq "a family plugin's settings are listed" "$(omahub settings --json | jq -r 'map(select(.id == "extra/from-family")) | length')" "1"
+assert_eq "a family plugin's setting runs" "$(omahub get extra/from-family | jq -r .label)" "Off"
+rm -rf "$HOME/.config/omarchy/plugins"
+
 if omahub get nope/missing 2>"$TEST_ROOT/stderr"; then
   fail "an unknown setting fails"
 else

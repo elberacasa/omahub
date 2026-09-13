@@ -16,11 +16,13 @@ Rectangle {
 
   signal activated()
   signal chose(string value)
+  signal chooseFolder()
   // Carries the item the mouse position is relative to, so the hub can tell a moving pointer
   // from rows scrolling under a still one.
   signal pointerMoved(var item, var mouse)
 
   readonly property bool isOn: row.settingState !== null && row.settingState.value === true
+  readonly property bool hasChips: row.setting.kind === "choice" || row.setting.kind === "folder"
   readonly property color ink: row.hasCursor ? Color.menu.selectedText : Color.menu.text
 
   implicitHeight: Math.max(Style.space(58), content.implicitHeight + Style.spacing.rowPaddingX * 2)
@@ -104,7 +106,7 @@ Rectangle {
     Item {
       id: control
       width: row.setting.kind === "toggle" ? toggle.implicitWidth
-        : row.setting.kind === "choice" ? choices.implicitWidth
+        : row.hasChips ? choices.implicitWidth
         : valueLabel.implicitWidth
       height: Math.max(toggle.implicitHeight, choices.implicitHeight, valueLabel.implicitHeight)
       anchors.verticalCenter: parent.verticalCenter
@@ -129,7 +131,7 @@ Rectangle {
 
       Row {
         id: choices
-        visible: row.setting.kind === "choice"
+        visible: row.hasChips
         anchors.verticalCenter: parent.verticalCenter
         spacing: Style.spacing.xs
         opacity: row.busy ? 0.6 : 1
@@ -137,7 +139,7 @@ Rectangle {
         Behavior on opacity { NumberAnimation { duration: 140 } }
 
         Repeater {
-          model: row.setting.kind === "choice" ? row.options : []
+          model: row.hasChips ? row.options : []
 
           delegate: Button {
             required property var modelData
@@ -152,11 +154,23 @@ Rectangle {
             onClicked: row.chose(modelData.value)
           }
         }
+
+        Button {
+          visible: row.setting.kind === "folder"
+          text: "Choose…"
+          bordered: true
+          foreground: row.ink
+          fontFamily: Style.font.menuFamily
+          fontSize: Style.font.caption
+          horizontalPadding: Style.spacing.md
+          verticalPadding: Style.spacing.xs
+          onClicked: row.chooseFolder()
+        }
       }
 
       Text {
         id: valueLabel
-        visible: row.setting.kind !== "toggle" && row.setting.kind !== "choice"
+        visible: row.setting.kind !== "toggle" && !row.hasChips
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
         text: row.settingState ? row.settingState.label : ""

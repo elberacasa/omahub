@@ -55,7 +55,7 @@ Item {
     + "  kind=${entry##*|}\n"
     + "  state=$(\"$bin\" get \"$id\" 2>/dev/null) || state=null\n"
     + "  options=null\n"
-    + "  if [[ $kind == \"choice\" ]]; then\n"
+    + "  if [[ $kind == \"choice\" || $kind == \"folder\" ]]; then\n"
     + "    options=$(\"$bin\" options \"$id\" 2>/dev/null) || options=null\n"
     + "  fi\n"
     + "  printf '%s\\t%s\\t%s\\n' \"$id\" \"${state:-null}\" \"${options:-null}\"\n"
@@ -199,7 +199,27 @@ Item {
       if (choices.length === 0) return
       var current = choices.findIndex(function(option) { return option.current })
       root.setValue(setting.id, choices[(current + 1) % choices.length].value)
+    } else if (setting.kind === "folder") {
+      root.chooseFolder(setting)
     }
+  }
+
+  // The folder chooser is a normal window, so the hub steps aside while it is open and
+  // comes back where it was.
+  function chooseFolder(setting) {
+    if (folderProcess.running) return
+    folderProcess.settingId = setting.id
+    folderProcess.returnCursor = root.cursor
+    folderProcess.command = ["omarchy-file-select", "--directory", "--title", setting.title]
+    root.close()
+    folderProcess.running = true
+  }
+
+  function finishChooseFolder(exitCode, path) {
+    var cursor = folderProcess.returnCursor
+    root.open(JSON.stringify({ section: root.sectionId }))
+    root.cursor = cursor
+    if (exitCode === 0 && path !== "") root.setValue(folderProcess.settingId, path)
   }
 
   function applyRecommended() {
@@ -288,6 +308,16 @@ Item {
         return
       }
       root.open(JSON.stringify({ view: "welcome" }))
+    }
+  }
+
+  Process {
+    id: folderProcess
+    property string settingId: ""
+    property int returnCursor: 0
+    stdout: StdioCollector { id: folderOutput }
+    onExited: function(exitCode) {
+      Qt.callLater(function() { root.finishChooseFolder(exitCode, folderOutput.text.trim()) })
     }
   }
 
@@ -775,6 +805,10 @@ Item {
                 onChose: function(value) {
                   root.cursor = index
                   root.setValue(modelData.id, value)
+                }
+                onChooseFolder: {
+                  root.cursor = index
+                  root.chooseFolder(modelData)
                 }
                 onPointerMoved: function(item, mouse) { root.selectFromPointer(index, item, mouse) }
               }
