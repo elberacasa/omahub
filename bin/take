@@ -1,0 +1,90 @@
+#!/bin/bash
+
+# Record a take of the focused monitor, for demos or for reviewing motion frame by frame.
+#
+#   bin/take <name> [seconds] [--workspace <n>] [--fps <n>] [--quiet] [--run <command>]
+#
+#   --workspace  switch to a workspace before recording
+#   --fps        capture rate, default 60
+#   --quiet      skip the countdown and Go cue, for automated motion takes
+#   --run        run a command once recording has started, and print its offset in the video
+#
+# Notifications are silenced during the take and restored after. Takes land in tmp/takes/.
+
+set -euo pipefail
+
+usage="usage: bin/take <name> [seconds] [--workspace <n>] [--fps <n>] [--quiet] [--run <command>]"
+root="$(cd "$(dirname "$0")/.." && pwd)"
+name=""
+seconds=15
+workspace=""
+fps=60
+quiet=0
+run=""
+
+while (( $# )); do
+  case "$1" in
+    --workspace) workspace="$2"; shift 2 ;;
+    --fps) fps="$2"; shift 2 ;;
+    --quiet) quiet=1; shift ;;
+    --run) run="$2"; shift 2 ;;
+    -h|--help) echo "$usage"; exit 0 ;;
+    *)
+      if [[ -z $name ]]; then name="$1"; else seconds="$1"; fi
+      shift
+      ;;
+  esac
+done
+
+[[ -n $name ]] || { echo "$usage" >&2; exit 1; }
+
+out="$root/tmp/takes/$name.mp4"
+mkdir -p "$(dirname "$out")"
+rm -f "$out"
+
+osd() {
+  omarchy-shell osd show "$(jq -nc --arg m "$1" --argjson d "${2:-700}" '{message: $m, duration: $d}')" >/dev/null
+}
+
+dnd_before=$(omarchy-shell notifications dndState)
+trap 'omarchy-shell notifications setDnd "$dnd_before" >/dev/null 2>&1 || true' EXIT
+omarchy-shell notifications setDnd on >/dev/null
+
+if [[ -n $workspace ]]; then
+  hyprctl dispatch "hl.dsp.focus({ workspace = \"$workspace\" })" >/dev/null
+  sleep 0.6
+fi
+
+monitor=$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')
+
+if (( ! quiet )); then
+  for n in 3 2 1; do
+    osd "$n"
+    sleep 1
+  done
+  sleep 0.4
+fi
+
+gpu-screen-recorder -w "$monitor" -f "$fps" -k auto -fm cfr -cursor yes -o "$out" >/dev/null 2>&1 &
+pid=$!
+
+while kill -0 "$pid" 2>/dev/null && [[ ! -f $out ]]; do
+  sleep 0.02
+done
+started=$(date +%s.%N)
+
+(( quiet )) || osd "Go" 600
+
+if [[ -n $run ]]; then
+  sleep 0.5
+  offset=$(awk -v now="$(date +%s.%N)" -v start="$started" 'BEGIN { printf "%.2f", now - start }')
+  bash -c "$run" >/dev/null 2>&1 &
+  echo "run at +${offset}s: $run"
+fi
+
+sleep "$seconds"
+kill -INT "$pid"
+wait "$pid" || true
+
+(( quiet )) || osd "Cut" 900
+echo "$out"

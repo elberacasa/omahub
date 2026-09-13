@@ -9,6 +9,7 @@ id_*
 *.log
 .cache/
 tmp/
+/screenshot-*.png
 
 # Private working notes
 CLAUDE.md

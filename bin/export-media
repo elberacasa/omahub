@@ -1,0 +1,63 @@
+#!/bin/bash
+
+# Cut segments of a take into an MP4 for social posts and a GIF for READMEs.
+#
+#   bin/export-media <video> <name> <start-end> [<start-end>...] [--gif-width <px>] [--gif-fps <n>] [--no-gif]
+#
+# Segments are joined with hard cuts in the order given, for example:
+#   bin/export-media tmp/takes/hero.mp4 capture-hero 0.5-13.5 27.3-30
+# Output lands in tmp/media/.
+
+set -euo pipefail
+
+usage="usage: bin/export-media <video> <name> <start-end> [<start-end>...] [--gif-width <px>] [--gif-fps <n>] [--no-gif]"
+root="$(cd "$(dirname "$0")/.." && pwd)"
+
+(( $# >= 3 )) || { echo "$usage" >&2; exit 1; }
+
+video="$1"
+name="$2"
+shift 2
+
+segments=()
+gif_width=960
+gif_fps=24
+gif=1
+
+while (( $# )); do
+  case "$1" in
+    --gif-width) gif_width="$2"; shift 2 ;;
+    --gif-fps) gif_fps="$2"; shift 2 ;;
+    --no-gif) gif=0; shift ;;
+    *-*) segments+=("$1"); shift ;;
+    *) echo "$usage" >&2; exit 1 ;;
+  esac
+done
+
+[[ -f $video ]] || { echo "bin/export-media: no such video: $video" >&2; exit 1; }
+(( ${#segments[@]} )) || { echo "$usage" >&2; exit 1; }
+
+dir="$root/tmp/media"
+mkdir -p "$dir"
+
+filter=""
+labels=""
+for i in "${!segments[@]}"; do
+  from="${segments[$i]%-*}"
+  to="${segments[$i]#*-}"
+  filter+="[0:v]trim=$from:$to,setpts=PTS-STARTPTS[s$i];"
+  labels+="[s$i]"
+done
+filter+="${labels}concat=n=${#segments[@]}:v=1[v]"
+
+ffmpeg -y -loglevel error -i "$video" -filter_complex "$filter" -map "[v]" \
+  -c:v libx264 -crf 16 -preset slow -pix_fmt yuv420p -movflags +faststart -an \
+  "$dir/$name.mp4"
+
+if (( gif )); then
+  ffmpeg -y -loglevel error -i "$dir/$name.mp4" \
+    -vf "fps=$gif_fps,scale=$gif_width:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle" \
+    -loop 0 "$dir/$name.gif"
+fi
+
+ls -lh "$dir/$name".*
