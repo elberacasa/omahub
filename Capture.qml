@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
@@ -12,6 +13,7 @@ Item {
   property bool dismissing: false
   property bool launching: false
   property bool dragging: false
+  property bool probing: false
   property bool hovered: false
   property bool pressedVisual: false
   property bool menuOpen: false
@@ -24,6 +26,7 @@ Item {
 
   readonly property string fileUrl: root.path ? Util.fileUrl(root.path) : ""
   readonly property string editor: Quickshell.env("OMARCHY_SCREENSHOT_EDITOR") || "tensaku-edit"
+  readonly property string dropTargetScript: Qt.resolvedUrl("drop-target.sh").toString().replace("file://", "")
   readonly property int margin: Style.gapsOut + Style.spacing.panelPadding
   readonly property int frame: Style.spacing.sm
   readonly property int thumbWidth: Style.space(240)
@@ -32,7 +35,7 @@ Item {
   readonly property int menuRowHeight: Math.max(Style.spacing.popupRowHeight, Style.font.body + Style.spacing.controlPaddingY * 2)
   readonly property int displayMs: 5000
   readonly property int lingerMs: 2500
-  readonly property bool held: root.hovered || root.dragging || root.menuOpen || root.flash !== ""
+  readonly property bool held: root.hovered || root.dragging || root.probing || root.menuOpen || root.flash !== ""
 
   readonly property var menuItems: [
     { label: "Copy", action: "copy" },
@@ -48,7 +51,7 @@ Item {
   function open(payloadJson) {
     var payload = {}
     try { payload = JSON.parse(payloadJson || "{}") } catch (e) { return }
-    if (!payload.path || root.dragging) return
+    if (!payload.path || root.dragging || root.probing) return
 
     root.stopMotion()
     root.closeMenu()
@@ -92,6 +95,7 @@ Item {
     root.dismissing = false
     root.launching = false
     root.dragging = false
+    root.probing = false
     root.pressedVisual = false
     root.menuOpen = false
     root.swipe = 0
@@ -148,10 +152,28 @@ Item {
   }
 
   function endDrag(dropAction) {
-    root.dragging = false
     dragProxy.x = 0
     dragProxy.y = 0
     if (dropAction !== Qt.IgnoreAction) {
+      root.unmount()
+      return
+    }
+    // Qt on Wayland reports many accepted drops as ignored, so ask Hyprland where the pointer
+    // landed. Probing keeps the card held until the answer arrives.
+    root.probing = true
+    root.dragging = false
+    dropProbe.running = true
+  }
+
+  function finishDrop(output) {
+    var landed = {}
+    try { landed = JSON.parse(output) } catch (e) {}
+    root.probing = false
+
+    var onCard = landed.x >= hitArea.x && landed.x < hitArea.x + hitArea.width
+      && landed.y >= hitArea.y && landed.y < hitArea.y + hitArea.height
+
+    if (landed.window === true && !onCard) {
       root.unmount()
       return
     }
@@ -187,6 +209,14 @@ Item {
     if (!item || item.separator) return
     root.closeMenu()
     root[item.action]()
+  }
+
+  Process {
+    id: dropProbe
+    command: ["bash", root.dropTargetScript]
+    stdout: StdioCollector {
+      onStreamFinished: root.finishDrop(text)
+    }
   }
 
   Timer {
@@ -356,7 +386,7 @@ Item {
 
         Drag.active: pointer.drag.active
         Drag.dragType: Drag.Automatic
-        Drag.supportedActions: Qt.CopyAction
+        Drag.supportedActions: Qt.CopyAction | Qt.MoveAction | Qt.LinkAction
         Drag.proposedAction: Qt.CopyAction
         Drag.mimeData: ({ "text/uri-list": root.fileUrl + "\r\n", "text/plain": root.path })
         Drag.onDragStarted: root.beginDrag()
@@ -368,7 +398,7 @@ Item {
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         hoverEnabled: true
-        enabled: root.mounted && !root.dismissing && !root.launching
+        enabled: root.mounted && !root.dismissing && !root.launching && !root.probing
         cursorShape: root.dragging ? Qt.ClosedHandCursor : Qt.PointingHandCursor
         drag.target: root.menuOpen ? null : dragProxy
         drag.threshold: Style.space(8)
