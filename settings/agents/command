@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# omahub:title=Omahub command
+# omahub:summary=Puts omahub on your PATH, so you and your agents can run it from any terminal
+# omahub:section=agents
+# omahub:kind=toggle
+# omahub:icon=󰆍
+# omahub:keywords=terminal command path cli shell agent
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+
+omahub_link_toggle_setting "$HOME/.local/bin/omahub" "$OMAHUB_PATH/bin/omahub" agents/command "$@"

@@ -76,6 +76,7 @@ Source `lib/settings.sh` through `$OMAHUB_PATH`:
 | `omahub_block_read <file> <id> <comment>` | Print what is inside the block |
 | `omahub_block_remove <file> <id> <comment>` | Remove the block, and the file if nothing else is left |
 | `omahub_backup <file> <comment>` | Back up a user file before changing it |
+| `omahub_link_toggle_setting <link> <target> <id> <verb> [value]` | Every verb of a toggle that owns one symlink. Never removes a file it did not create |
 | `omahub_fail <message>` | Print an error and exit |
 
 `<comment>` is the file's comment prefix, such as `#` for shell files or `--` for Lua.

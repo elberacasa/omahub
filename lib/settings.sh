@@ -159,6 +159,56 @@ omahub_block_write() {
   } >>"$file"
 }
 
+# Links let a setting own one symlink, such as a skill in ~/.agents/skills. A link is only
+# removed when it points at the setting's own target, so a file the user put there is never
+# touched.
+omahub_link_has() {
+  local link="$1" target="$2"
+  [[ -L $link && $(readlink -- "$link") == "$target" ]]
+}
+
+omahub_link_on() {
+  local link="$1" target="$2"
+  if omahub_link_has "$link" "$target"; then
+    return 0
+  elif [[ -e $link || -L $link ]]; then
+    omahub_fail "$link already exists. Move it away, then try again."
+  fi
+  mkdir -p "$(dirname "$link")"
+  ln -s "$target" "$link"
+}
+
+omahub_link_off() {
+  local link="$1" target="$2"
+  if omahub_link_has "$link" "$target"; then
+    rm -f -- "$link"
+  fi
+}
+
+# The get, set, and reset verbs of a toggle that owns one link.
+omahub_link_toggle_setting() {
+  local link="$1" target="$2" id="$3" verb="${4:-}" value="${5:-}"
+
+  case "$verb" in
+    get) ;;
+    set)
+      case "$value" in
+        on | true) omahub_link_on "$link" "$target" ;;
+        off | false) omahub_link_off "$link" "$target" ;;
+        *) omahub_fail "usage: omahub set $id on|off" ;;
+      esac
+      ;;
+    reset) omahub_link_off "$link" "$target" ;;
+    *) omahub_fail "usage: omahub get|set|reset $id" ;;
+  esac
+
+  if omahub_link_has "$link" "$target"; then
+    omahub_state true "On"
+  else
+    omahub_state false "Off"
+  fi
+}
+
 # Back up a user file before changing it. Skips files that hold only Omahub blocks, and
 # skips when the newest backup is already identical.
 omahub_backup() {

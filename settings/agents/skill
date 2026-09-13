@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# omahub:title=Let agents use Omahub
+# omahub:summary=Adds the Omahub skill to ~/.agents/skills, so coding agents can read and change these settings for you
+# omahub:section=agents
+# omahub:kind=toggle
+# omahub:icon=󰚩
+# omahub:keywords=agent skill ai assistant claude codex opencode coding
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+
+omahub_link_toggle_setting "$HOME/.agents/skills/omahub" "$OMAHUB_PATH/agents/skills/omahub" agents/skill "$@"
