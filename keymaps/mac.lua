@@ -1,11 +1,16 @@
--- Omahub Mac layout. Screenshots move to the macOS keys, and "move window to workspace"
--- moves to SUPER + SHIFT + ALT for every workspace so the rule stays the same for all ten.
--- Omarchy's "move window silently" is the binding given up to make room.
+-- Omahub Mac layout. Screenshots take the macOS keys, and every Omarchy action they displace
+-- gets a new home, the same for all ten workspaces:
+--   Move window to workspace           SUPER + SHIFT + number  ->  SUPER + SHIFT + ALT + number
+--   Move window silently to workspace  SUPER + SHIFT + ALT + number  ->  SUPER + CTRL + ALT + number
 
 for workspace = 1, 10 do
-  local key = "SUPER + SHIFT + ALT + code:" .. tostring(workspace + 9)
-  hl.unbind(key)
-  o.bind(key, "Move window to workspace " .. workspace, hl.dsp.window.move({ workspace = tostring(workspace) }))
+  local digit = "code:" .. tostring(workspace + 9)
+  local follow = "SUPER + SHIFT + ALT + " .. digit
+  local silent = "SUPER + CTRL + ALT + " .. digit
+
+  hl.unbind(follow)
+  o.bind(follow, "Move window to workspace " .. workspace, hl.dsp.window.move({ workspace = tostring(workspace) }))
+  o.bind(silent, "Move window silently to workspace " .. workspace, hl.dsp.window.move({ workspace = tostring(workspace), follow = false }))
 end
 
 -- Omahub Capture shows a Mac-style thumbnail when installed. Checked at key press, so

@@ -54,7 +54,7 @@ Installing Omahub never changes your keybindings. Pick a layout when you want on
 ~/.config/omarchy/plugins/io.github.elberacasa.omahub/scripts/keymap.sh off       # remove everything Omahub added
 ```
 
-The Mac layout changes only these keys:
+The Mac layout changes only these keys, and every Omarchy action it displaces keeps a key:
 
 | Keys | Mac layout | Omarchy default |
 |---|---|---|
@@ -63,6 +63,7 @@ The Mac layout changes only these keys:
 | SUPER + SHIFT + 5 | Capture menu | Move window to workspace 5 |
 | SUPER + SHIFT + CTRL + 3 or 4 | Screenshot to clipboard | Unbound |
 | SUPER + SHIFT + ALT + 1 to 0 | Move window to workspace | Move window silently |
+| SUPER + CTRL + ALT + 1 to 0 | Move window silently to workspace | Unbound |
 
 With Omahub Capture installed, the screenshot keys show the floating thumbnail. Without it, they use Omarchy's own screenshot flow.
 
