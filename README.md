@@ -1,6 +1,16 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/omahub-capture-mark-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="assets/omahub-capture-mark-light.svg">
+    <img alt="Omahub Capture" src="assets/omahub-capture-mark-dark.svg" width="96">
+  </picture>
+</p>
+
 # Omahub Capture
 
 Mac-style screenshots for Omarchy. Take a shot and a thumbnail slides into the corner.
+
+Part of [Omahub](https://github.com/elberacasa/omahub).
 
 - Click it to open the editor
 - Drag it into any app to drop the file: a terminal, a browser, Files
