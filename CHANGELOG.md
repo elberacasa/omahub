@@ -21,6 +21,8 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - `keyboard/size`: detects the keyboard from known models and its name, and recommends the keyboard settings that fit it. Contributors add a keyboard with one file in `keyboards/`.
 - The hub. SUPER + A opens a search-first overlay of every setting, grouped by section, with live state, a keyboard card that shows the detected keyboard and turns on its recommended settings, and full keyboard control: j and k move, h and l switch sections, Space changes, / searches, Esc closes. Settings are read when the shell starts, so the hub opens on real state with nothing shifting into place.
 - An agent skill in `agents/skills/omahub`, and an Agents section: "Let agents use Omahub" links the skill into `~/.agents/skills`, and "Omahub command" puts `omahub` on the PATH. Both are off until turned on, and neither ever replaces a file already there.
+- `agents/setup.md`, a guide any coding agent can follow to install Omahub and set it up with the person, asking before every change.
+- `agents/claude-usage`, `agents/codex-usage`, and `agents/fireworks-usage` choose which subscriptions show in Omarchy's Agents bar panel, through `omarchy bar set`.
 - Folder settings in the hub: the current folder and quick places as chips, plus Choose… for any folder. Omahub Capture's screenshot folder is the first.
 - The welcome. The first time Omahub loads, it opens once with the detected keyboard and the settings recommended for it. `omahub open welcome` brings it back.
 

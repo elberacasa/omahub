@@ -12,8 +12,8 @@ for id in keyboard/omahub-key keyboard/mac-screenshot-keys; do
   assert_eq "$id is listed" "$(jq -r --arg id "$id" 'map(select(.id == $id)) | length' <<<"$catalog")" "1"
 done
 
-shipped=$(find "$OMAHUB_PATH/settings" -type f | wc -l)
-assert_eq "every shipped setting is executable and listed" "$(jq length <<<"$catalog")" "$shipped"
+shipped=$(find "$OMAHUB_PATH/settings" -type f -exec grep -L '^# omahub:requires=' {} + | wc -l)
+assert_eq "every shipped setting without a requirement is executable and listed" "$(jq 'map(select(.requires == "")) | length' <<<"$catalog")" "$shipped"
 
 mkdir -p "$HOME/.config/omahub/settings/keyboard"
 cat >"$HOME/.config/omahub/settings/keyboard/omahub-key" <<'EOF'

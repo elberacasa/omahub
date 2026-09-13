@@ -24,12 +24,22 @@ Every setting in Omahub is a small, readable file. People change them from the h
 |---|---|
 | The hub | SUPER + A opens it. Search every setting, move with j and k, change it with Space. Every row shows the real state of your system. The first time it loads, a welcome offers the settings recommended for your keyboard |
 | Keyboard | Detects your keyboard and recommends keys for it: Mac screenshots, Vim focus, agent keys, and mouse buttons. No Omarchy action loses its key |
-| Agents | Turn on "Let agents use Omahub" and any coding agent can read and change these settings through the `omahub` command |
+| Agents | Turn on "Let agents use Omahub" and any coding agent can read and change these settings through the `omahub` command. Pick which subscriptions, such as Claude and Codex, show in the bar's Agents panel |
 | [Omahub Capture](https://github.com/elberacasa/omahub-capture) | A thumbnail after every screenshot. Click to edit, drag into any app, drag right to throw away, right-click to save it anywhere |
 
 ## Building now
 
 - **More sections.** Appearance and plugins, each one a folder of setting files.
+
+## Tell your agent
+
+Omarchy is agent first, so setup can be one sentence. Paste this into Claude Code, Codex, or any coding agent on your Omarchy machine:
+
+```text
+Set up my Omarchy with Omahub. I come from a Mac. Follow https://raw.githubusercontent.com/elberacasa/omahub/main/agents/setup.md
+```
+
+Your agent installs Omahub in a terminal where you confirm, finds your keyboard, and asks before turning anything on.
 
 ## Install
 

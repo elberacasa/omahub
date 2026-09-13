@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# omahub:title=Claude usage
+# omahub:summary=Shows your Claude Code limits and daily tokens in the bar's Agents panel
+# omahub:section=agents
+# omahub:kind=toggle
+# omahub:icon=󰊚
+# omahub:keywords=claude anthropic subscription plan usage limits tokens bar panel meter
+# omahub:requires=omarchy-agent-usage-claude
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/agents.sh"
+
+omahub_agents_toggle_setting claude agents/claude-usage "$@"
