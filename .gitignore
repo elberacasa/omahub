@@ -11,12 +11,6 @@ id_*
 tmp/
 /screenshot-*.png
 
-# Private working notes
-CLAUDE.md
-HANDOFF.md
-notes/
-.claude/
-
 # Editors
 .vscode/
 .idea/
