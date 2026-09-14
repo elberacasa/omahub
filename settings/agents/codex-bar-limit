@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# omahub:title=Codex on the bar
+# omahub:summary=Which Codex limit the bar shows, from the limits your plan reports. Auto is the weekly limit unless a shorter one is nearly full
+# omahub:section=agents
+# omahub:kind=choice
+# omahub:icon=󰄨
+# omahub:keywords=codex openai weekly session bar limit fullest percent subscription
+# omahub:requires=omarchy-agent-usage-codex
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/agents.sh"
+
+omahub_agents_bar_limit_setting codex agents/codex-bar-limit "$@"

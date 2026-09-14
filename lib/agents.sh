@@ -46,25 +46,20 @@ omahub_agents_write() {
   fi
 }
 
+# Change one subscription's options: omahub_agents_provider_write <provider> <jq filter on its entry>.
+# An entry left empty is dropped, so Omarchy's own defaults apply again.
+omahub_agents_provider_write() {
+  local provider="$1" filter="$2" providers
+  providers=$(omahub_agents_providers | jq -c --arg provider "$provider" \
+    ".[\$provider] = ((.[\$provider] // {}) | $filter) | if .[\$provider] == {} then del(.[\$provider]) else . end")
+  if [[ $providers != "$(omahub_agents_providers)" ]]; then
+    omahub_agents_write providers "$providers"
+  fi
+}
+
 # Omarchy shows every provider unless its settings say enabled is false.
 omahub_agents_enabled() {
   omahub_agents_providers | jq -e --arg provider "$1" '.[$provider].enabled != false' >/dev/null
-}
-
-omahub_agents_set() {
-  local provider="$1" enabled="$2" providers
-  providers=$(omahub_agents_providers | jq -c --arg provider "$provider" --argjson enabled "$enabled" \
-    '.[$provider] = ((.[$provider] // {}) + {enabled: $enabled})')
-  omahub_agents_write providers "$providers"
-}
-
-# Drop the provider from the settings, so Omarchy's own default applies again.
-omahub_agents_forget() {
-  local provider="$1" providers
-  providers=$(omahub_agents_providers)
-  if jq -e --arg provider "$provider" 'has($provider)' <<<"$providers" >/dev/null; then
-    omahub_agents_write providers "$(jq -c --arg provider "$provider" 'del(.[$provider])' <<<"$providers")"
-  fi
 }
 
 # The get, set, and reset verbs of a toggle that shows or hides one subscription.
@@ -75,12 +70,12 @@ omahub_agents_toggle_setting() {
     get) ;;
     set)
       case "$value" in
-        on | true) omahub_agents_set "$provider" true ;;
-        off | false) omahub_agents_set "$provider" false ;;
+        on | true) omahub_agents_provider_write "$provider" '.enabled = true' ;;
+        off | false) omahub_agents_provider_write "$provider" '.enabled = false' ;;
         *) omahub_fail "usage: omahub set $id on|off" ;;
       esac
       ;;
-    reset) omahub_agents_forget "$provider" ;;
+    reset) omahub_agents_provider_write "$provider" 'del(.enabled)' ;;
     *) omahub_fail "usage: omahub get|set|reset $id" ;;
   esac
 
@@ -126,50 +121,67 @@ omahub_agents_bar_limits_setting() {
   fi
 }
 
-# Every limit the bar can show: the fixed choices, then each model limit a subscription reports
-# today, such as "Fable Weekly", read from the records Omarchy's usage collectors write.
+# The limits one subscription reports today, titled the way the Agents widget titles them: Session,
+# Weekly, and Monthly for the plan, and a model limit by its own name, such as "Fable Weekly".
+omahub_agents_limit_titles() {
+  local record="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/agents/usage/$1.json"
+  if [[ -s $record ]]; then
+    jq -r '.limits[]? | select((.percent // -1) >= 0)
+      | if (.title // "") != "" then .title
+        else (.label // "") as $label | ($label | ascii_downcase) as $text
+          | if ($text | test("month|30-day")) then "Monthly"
+            elif ($text | test("week|7-day|seven")) then "Weekly"
+            elif ($text | test("session|[0-9]+\\s*-?\\s*h(our)?\\b|[0-9]+\\s*-?\\s*m(in(ute)?s?)?\\b")) then "Session"
+            else ($label | sub("\\s*\\(.*\\)\\s*"; "") | if . == "" then "Limit" else . end)
+            end
+        end' "$record" 2>/dev/null | awk '!seen[$0]++'
+  fi
+}
+
+# What the bar can show for one subscription: Auto, each limit it reports, and Fullest when there
+# is more than one to compare.
 omahub_agents_bar_limit_choices() {
-  local usage="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/agents/usage"
-  printf '%s\n' Auto Weekly Session Fullest
-  if [[ -d $usage ]]; then
-    find "$usage" -maxdepth 1 -name '*.json' -exec jq -r '.limits[]? | .title // empty' {} + 2>/dev/null | sort -u
+  local titles
+  titles=$(omahub_agents_limit_titles "$1")
+  echo Auto
+  if [[ -n $titles ]]; then
+    echo "$titles"
+    if (( $(wc -l <<<"$titles") > 1 )); then
+      echo Fullest
+    fi
   fi
 }
 
 omahub_agents_bar_limit() {
-  omahub_agents_entry | jq -r '.barLimit // "Auto"'
+  omahub_agents_providers | jq -r --arg provider "$1" '.[$provider].barLimit // "Auto"'
 }
 
-# The get, options, set, and reset verbs of the choice of which limit the bar shows.
+# The get, options, set, and reset verbs of the choice of which limit the bar shows for one
+# subscription.
 omahub_agents_bar_limit_setting() {
-  local id="$1" verb="${2:-}" value="${3:-}" current choice
+  local provider="$1" id="$2" verb="${3:-}" value="${4:-}" current
 
   case "$verb" in
     get) ;;
     options)
-      current=$(omahub_agents_bar_limit)
-      { omahub_agents_bar_limit_choices; echo "$current"; } | awk '!seen[$0]++' | while IFS= read -r choice; do
-        jq -nc --arg value "$choice" --arg current "$current" '{value: $value, label: $value, current: ($value == $current)}'
-      done | jq -sc '.'
+      current=$(omahub_agents_bar_limit "$provider")
+      { omahub_agents_bar_limit_choices "$provider"; echo "$current"; } | awk '!seen[$0]++' \
+        | jq -Rnc --arg current "$current" '[inputs | {value: ., label: ., current: (. == $current)}]'
       return
       ;;
     set)
-      if ! grep -qxF -- "$value" <<<"$(omahub_agents_bar_limit_choices)"; then
-        omahub_fail "usage: omahub set $id <limit>. Run 'omahub options $id' to list them."
+      if ! grep -qxF -- "$value" <<<"$(omahub_agents_bar_limit_choices "$provider")"; then
+        omahub_fail "usage: omahub set $id <limit>. Run 'omahub options $id' to list the limits this plan reports."
       fi
       if ! omahub_agents_supports barLimit; then
         omahub_fail "your Agents widget cannot choose its bar limit yet"
       fi
-      omahub_agents_write barLimit "$(jq -nc --arg value "$value" '$value')"
+      omahub_agents_provider_write "$provider" ".barLimit = $(jq -nc --arg value "$value" '$value')"
       ;;
-    reset)
-      if omahub_agents_supports barLimit; then
-        omahub_agents_write barLimit '"Auto"'
-      fi
-      ;;
+    reset) omahub_agents_provider_write "$provider" 'del(.barLimit)' ;;
     *) omahub_fail "usage: omahub get|set|options|reset $id" ;;
   esac
 
-  current=$(omahub_agents_bar_limit)
+  current=$(omahub_agents_bar_limit "$provider")
   omahub_state "$(jq -nc --arg value "$current" '$value')" "$current"
 }

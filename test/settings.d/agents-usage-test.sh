@@ -75,14 +75,16 @@ assert_eq "the widget shows the icon" "$(entry .barDisplay)" '"Icon"'
 
 usage="$HOME/.local/state/omarchy/agents/usage"
 mkdir -p "$usage"
-echo '{"limits":[{"label":"Weekly (7-day)","percent":0.6},{"label":"Fable Weekly","title":"Fable Weekly","percent":0.9}]}' >"$usage/claude.json"
+echo '{"limits":[{"label":"Session (5-hour)","percent":0.2},{"label":"Weekly (7-day)","percent":0.6},{"label":"Fable Weekly","title":"Fable Weekly","percent":0.9}]}' >"$usage/claude.json"
 echo '{"limits":[{"label":"Weekly (7-day)","percent":0.3}]}' >"$usage/codex.json"
 
-assert_eq "the bar limit starts on Auto" "$(omahub get agents/bar-limit | jq -r .value)" "Auto"
-assert_eq "choices include the model limits subscriptions report" \
-  "$(omahub options agents/bar-limit | jq -c 'map(.value)')" '["Auto","Weekly","Session","Fullest","Fable Weekly"]'
-assert_eq "Auto is marked current" "$(omahub options agents/bar-limit | jq -r '.[] | select(.current) | .value')" "Auto"
-if omahub set agents/bar-limit Weekly 2>"$TEST_ROOT/stderr"; then
+assert_eq "each subscription with limits has a bar limit" "$(omahub settings --json | jq -c '[.[] | select(.id | endswith("-bar-limit")) | .id] | sort')" '["agents/claude-bar-limit","agents/codex-bar-limit"]'
+assert_eq "a bar limit starts on Auto" "$(omahub get agents/claude-bar-limit | jq -r .value)" "Auto"
+assert_eq "Claude offers the limits its plan reports" \
+  "$(omahub options agents/claude-bar-limit | jq -c 'map(.value)')" '["Auto","Session","Weekly","Fable Weekly","Fullest"]'
+assert_eq "Codex offers only its own" "$(omahub options agents/codex-bar-limit | jq -c 'map(.value)')" '["Auto","Weekly"]'
+assert_eq "Auto is marked current" "$(omahub options agents/codex-bar-limit | jq -r '.[] | select(.current) | .value')" "Auto"
+if omahub set agents/claude-bar-limit Weekly 2>"$TEST_ROOT/stderr"; then
   fail "a bar limit needs a widget that offers the choice"
 else
   pass "a bar limit needs a widget that offers the choice"
@@ -90,17 +92,22 @@ fi
 assert_true "the failure says the widget cannot choose" grep -q "cannot choose its bar limit" "$TEST_ROOT/stderr"
 
 echo '{"barWidget":{"schema":[{"key":"barDisplay"},{"key":"barLimit"}]}}' >"$TEST_ROOT/agents.json"
-assert_eq "a model limit can be chosen" "$(omahub set agents/bar-limit 'Fable Weekly' | jq -r .label)" "Fable Weekly"
-assert_eq "the widget stores the choice" "$(entry .barLimit)" '"Fable Weekly"'
-if omahub set agents/bar-limit Monthly 2>/dev/null; then
-  fail "a limit no subscription reports fails"
+if omahub set agents/codex-bar-limit Session 2>/dev/null; then
+  fail "a limit the plan does not report fails"
 else
-  pass "a limit no subscription reports fails"
+  pass "a limit the plan does not report fails"
 fi
+assert_eq "a model limit can be chosen" "$(omahub set agents/claude-bar-limit 'Fable Weekly' | jq -r .label)" "Fable Weekly"
+assert_eq "the widget stores it on that subscription" "$(entry .providers.claude)" '{"barLimit":"Fable Weekly"}'
+assert_eq "other subscriptions stay on Auto" "$(omahub get agents/codex-bar-limit | jq -r .value)" "Auto"
+omahub set agents/claude-usage off >/dev/null
+omahub reset agents/claude-usage >/dev/null
+assert_eq "resetting the usage switch keeps the bar limit" "$(entry .providers.claude)" '{"barLimit":"Fable Weekly"}'
 rm "$usage/claude.json"
 assert_eq "a chosen limit stays listed after its record goes" \
-  "$(omahub options agents/bar-limit | jq -r '.[] | select(.current) | .value')" "Fable Weekly"
-assert_eq "reset goes back to Auto" "$(omahub reset agents/bar-limit | jq -r .value)" "Auto"
+  "$(omahub options agents/claude-bar-limit | jq -r '.[] | select(.current) | .value')" "Fable Weekly"
+assert_eq "reset goes back to Auto" "$(omahub reset agents/claude-bar-limit | jq -r .value)" "Auto"
+assert_eq "reset leaves no empty entry" "$(entry '.providers | has("claude")')" "false"
 
 echo '[{"id":"omarchy.agents","clonedFrom":""},{"id":"me.agents","clonedFrom":"omarchy.agents"}]' >"$HOME/plugins.json"
 jq '.bar.layout.right[0].id = "me.agents"' "$config" >"$config.tmp"
