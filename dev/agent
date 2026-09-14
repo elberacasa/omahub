@@ -633,7 +633,7 @@ raw_keys() {
 type_text() {
   require_sandbox
   local text="$1" char keys=() index
-  if state | jq -e '.omahub.overview.opened and (.omahub.overview.searching | not)' >/dev/null 2>&1; then
+  if state | jq -e '.omahub.overview.opened and (.omahub.overview.searching | not) and ((.omahub.overview.renaming // 0) == 0)' >/dev/null 2>&1; then
     die "type is for text; the overview reads letters as commands. Use chord"
   fi
   guard_keys "a" false false false

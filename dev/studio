@@ -314,8 +314,24 @@ down() {
   echo "The studio is down."
 }
 
+# record <scene> [seconds]: records dev/demos/studio-<scene>.sh on the staged desktops and tiles its
+# frames for review. Export the take with dev/export-media, which checks it for personal data.
+record() {
+  local scene="$ROOT/dev/demos/studio-$1.sh" seconds="${2:-14}" name="studio-$1"
+  [[ -f $STATE/windows.json ]] || die "bring the studio up first: dev/studio up"
+  [[ -f $scene ]] || die "no scene dev/demos/studio-$1.sh"
+  bash "$scene" setup
+  "$ROOT/dev/take" "$name" "$seconds" --quiet --run "bash $scene take" | grep -E '^run at'
+  "$ROOT/dev/frames" "$ROOT/tmp/takes/$name.mp4" 0 "$seconds" --fps 2 --width 400 --cols 6 --out "$ROOT/tmp/demos/$name.png" >/dev/null
+  echo "take: tmp/takes/$name.mp4, review: tmp/demos/$name.png"
+  if [[ -s $STATE/stash-shown ]]; then
+    die "the hidden desktop came into view during the take, so it must not be published"
+  fi
+}
+
 case "${1:-}" in
   up) up ;;
   down) down ;;
+  record) record "${2:?usage: dev/studio record <scene> [seconds]}" "${3:-14}" ;;
   *) sed -n '3,13p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
