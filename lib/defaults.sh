@@ -128,7 +128,7 @@ omahub_default_editor_set() {
     omahub_fail "usage: omahub set projects/editor <editor>. Run 'omahub options projects/editor' to list them."
   fi
   if ! omahub_defaults_installed "$editor"; then
-    omahub_fail "$(omahub_defaults_label omarchy-default-editor editor "$editor") is not installed"
+    omahub_fail "$(omahub_defaults_label omarchy-default-editor editor "$editor") is not installed. Install it with: omarchy default editor $editor"
   fi
   omahub_remember_file editor "$OMAHUB_EDITOR_FILE"
   omarchy-default-editor "$editor" >/dev/null
@@ -188,7 +188,7 @@ omahub_project_new() {
   root=$(omahub_projects_folder)
   dir="$root/$name"
   if [[ -e $dir ]]; then
-    omahub_fail "$(omahub_home_label "$dir") already exists"
+    omahub_fail "$(omahub_home_label "$dir") already exists. Pick another name"
   fi
   mkdir -p "$dir"
   if omarchy-cmd-present git && ! git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then

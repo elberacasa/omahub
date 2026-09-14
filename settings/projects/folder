@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # omahub:title=Projects folder
-# omahub:summary=Where new agent sessions start and your editor opens. Choose any folder, or create one
+# omahub:summary=Where new agent sessions start and your editor opens
 # omahub:section=projects
 # omahub:kind=folder
 # omahub:icon=󰉋

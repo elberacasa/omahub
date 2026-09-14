@@ -924,7 +924,7 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             visible: !root.searchActive
             textFormat: Text.PlainText
-            text: "Enter to go there"
+            text: "Press Enter to go there"
             color: Color.menu.text
             opacity: 0.5
             font.family: Style.font.menuFamily

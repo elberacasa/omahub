@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # omahub:title=Screenshot folder
-# omahub:summary=Where new screenshots are saved. Save to in the thumbnail menu changes it too
+# omahub:summary=Where new screenshots are saved
 # omahub:section=capture
 # omahub:kind=folder
 # omahub:icon=󰉋

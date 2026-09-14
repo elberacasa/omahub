@@ -52,7 +52,7 @@ Item {
   readonly property var menuItems: {
     var items = [
       { label: "Copy", action: "copy" },
-      { label: "Open in Editor", action: "edit" },
+      { label: "Open in editor", action: "edit" },
       { label: "Show in Files", action: "reveal" },
       { separator: true },
       { header: "Save to" }
@@ -61,9 +61,9 @@ Item {
       var place = root.places[i]
       items.push({ label: place.name, action: "saveTo", arg: place.path, checked: place.current === true })
     }
-    items.push({ label: "Choose Folder…", action: "saveTo", arg: "" })
+    items.push({ label: "Choose folder…", action: "saveTo", arg: "" })
     items.push({ separator: true })
-    items.push({ label: "Move to Trash", action: "trash" })
+    items.push({ label: "Move to trash", action: "trash" })
     items.push({ label: "Close", action: "dismiss" })
     return items
   }

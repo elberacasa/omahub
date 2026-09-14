@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # omahub:title=Codex on the bar
-# omahub:summary=Which Codex limit the bar shows, from the limits your plan reports. Auto is the weekly limit unless a shorter one is nearly full
+# omahub:summary=Which Codex limit the bar shows, with Auto for the weekly limit
 # omahub:section=agents
 # omahub:kind=choice
 # omahub:icon=󰄨

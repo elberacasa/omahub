@@ -17,6 +17,9 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - Everything in the hub works from the keyboard: Shift + Space steps a choice back, Shift + Enter opens More… or Choose…, k from the first row reaches Turn on recommended, and Enter tries again after an error.
 - Search has a button to clear it, a click away from a name field cancels it, and the hub opens scrolled to the top.
 - The hub says what to do when Omarchy's folder chooser is missing, and its loading rows leave room for the keyboard card so nothing jumps.
+- Error messages say what went wrong and how to fix it, and name a value that was not understood.
+- Setting summaries say one thing each, and the README, the agent guide, and the skill match what ships, including how to remove Omahub.
+- Menu items and hints use sentence case, such as "Open in editor" and "Press Enter to go there".
 
 ## 0.1.0 - 2026-09-13
 

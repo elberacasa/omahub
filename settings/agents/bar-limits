@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # omahub:title=Limits on the bar
-# omahub:summary=Shows every subscription's mark and chosen limit in the bar, such as Claude and Codex side by side
+# omahub:summary=Shows every subscription's icon and chosen limit on the bar, such as Claude and Codex side by side
 # omahub:section=agents
 # omahub:kind=toggle
 # omahub:icon=󰄨

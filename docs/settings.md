@@ -10,7 +10,7 @@ The format mirrors Omarchy's own commands, which describe themselves with `# oma
 #!/bin/bash
 
 # omahub:title=Mac screenshot keys
-# omahub:summary=SUPER + SHIFT + 3, 4, and 5 take screenshots, like Command + Shift on a Mac
+# omahub:summary=SUPER + SHIFT + 3, 4, and 5 take screenshots, like a Mac
 # omahub:section=keyboard
 # omahub:kind=toggle
 # omahub:icon=󰹑

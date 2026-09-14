@@ -215,7 +215,7 @@ omahub_link_toggle_setting() {
       case "$value" in
         on | true) omahub_link_on "$link" "$target" ;;
         off | false) omahub_link_off "$link" "$target" ;;
-        *) omahub_fail "usage: omahub set $id on|off" ;;
+        *) omahub_fail "'$value' is not on or off. Use: omahub set $id on|off" ;;
       esac
       ;;
     reset) omahub_link_off "$link" "$target" ;;

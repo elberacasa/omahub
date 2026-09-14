@@ -3,7 +3,7 @@ name: omahub
 description: >
   Read and change Omahub settings on an Omarchy machine: keyboard layers such as Mac
   screenshot keys, Vim focus, agent keys, and SUPER + TAB, the dock (position, size,
-  magnification, hiding, pinned apps), subscription limits on the bar, the screenshot folder,
+  magnification, hiding, kept apps), subscription limits on the bar, the screenshot folder,
   the default agent and editor, and anything else the Omahub hub shows. Use when asked to
   change a keybinding Omahub manages, turn a Mac touch on or off, move or resize the dock,
   start work in a project, or remove Omahub. Triggers: omahub, SUPER + A hub, Mac keys,

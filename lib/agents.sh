@@ -49,7 +49,7 @@ omahub_agents_supports() {
 # Set one option on the widget: omahub_agents_write <key> <json value>.
 omahub_agents_write() {
   if ! omarchy bar set "$(omahub_agents_widget)" "$1" "$2" --json >/dev/null; then
-    omahub_fail "Omarchy could not update the Agents widget. Is the shell running?"
+    omahub_fail "Omarchy could not update the Agents panel. Run 'omarchy restart shell', then try again"
   fi
 }
 
@@ -79,7 +79,7 @@ omahub_agents_toggle_setting() {
       case "$value" in
         on | true) omahub_agents_provider_write "$provider" '.enabled = true' ;;
         off | false) omahub_agents_provider_write "$provider" '.enabled = false' ;;
-        *) omahub_fail "usage: omahub set $id on|off" ;;
+        *) omahub_fail "'$value' is not on or off. Use: omahub set $id on|off" ;;
       esac
       ;;
     reset) omahub_agents_provider_write "$provider" 'del(.enabled)' ;;
@@ -95,7 +95,7 @@ omahub_agents_toggle_setting() {
 
 omahub_agents_bar_display() {
   if ! omahub_agents_supports barDisplay; then
-    omahub_fail "your Agents widget has no Limits mode yet"
+    omahub_fail "Your Agents panel has no Limits mode yet. Update Omarchy with 'omarchy update', then try again"
   fi
   omahub_agents_write barDisplay "\"$1\""
 }
@@ -110,7 +110,7 @@ omahub_agents_bar_limits_setting() {
       case "$value" in
         on | true) omahub_agents_bar_display Limits ;;
         off | false) omahub_agents_bar_display Icon ;;
-        *) omahub_fail "usage: omahub set $id on|off" ;;
+        *) omahub_fail "'$value' is not on or off. Use: omahub set $id on|off" ;;
       esac
       ;;
     reset)
@@ -180,10 +180,10 @@ omahub_agents_bar_limit_setting() {
       ;;
     set)
       if ! grep -qxF -- "$value" <<<"$(omahub_agents_bar_limit_choices "$provider")"; then
-        omahub_fail "usage: omahub set $id <limit>. Run 'omahub options $id' to list the limits this plan reports."
+        omahub_fail "'$value' is not a limit this plan reports. Run 'omahub options $id' to list them"
       fi
       if ! omahub_agents_supports barLimit; then
-        omahub_fail "your Agents widget cannot choose its bar limit yet"
+        omahub_fail "Your Agents panel cannot choose its bar limit yet. Update Omarchy with 'omarchy update', then try again"
       fi
       omahub_agents_provider_write "$provider" ".barLimit = $(jq -nc --arg value "$value" '$value')"
       ;;

@@ -66,8 +66,8 @@ After that, `omahub` works in any new terminal, and the skill in `~/.agents/skil
 
 `keyboard/size` names the keyboard, its size, and a `recommended` list of setting ids. Explain each recommended setting in one line, using its `summary` from the catalog. For example:
 
-- Mac screenshot keys: SUPER + SHIFT + 3, 4, and 5 take screenshots, like Command + Shift on a Mac
-- Vim focus: H, J, K, and L move between windows, which suits small keyboards without arrow keys
+- Mac screenshot keys: SUPER + SHIFT + 3, 4, and 5 take screenshots, like a Mac
+- Vim focus: H, J, K, and L focus, swap, and group windows, which suits small keyboards without arrow keys
 
 If `value` is `null`, the keyboard was not recognized. Ask its size and set it with a value from `"$omahub" options keyboard/size`, then read the recommendations again.
 
@@ -137,6 +137,7 @@ If they use Claude or Codex, ask whether they want each plan's limit on the bar,
 ```bash
 "$omahub" set agents/bar-limits on
 "$omahub" options agents/claude-bar-limit
+"$omahub" options agents/codex-bar-limit
 ```
 
 ## 9. Show them

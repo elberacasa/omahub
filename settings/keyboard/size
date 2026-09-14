@@ -20,7 +20,7 @@ case "${1:-}" in
     ;;
   set)
     if ! omahub_keyboard_valid_size "${2:-}"; then
-      omahub_fail "usage: omahub set keyboard/size $(IFS='|'; echo "${OMAHUB_KEYBOARD_SIZES[*]}")"
+      omahub_fail "'${2:-}' is not a keyboard size. Use: omahub set keyboard/size $(IFS='|'; echo "${OMAHUB_KEYBOARD_SIZES[*]}")"
     fi
     mkdir -p "$OMAHUB_STATE_DIR"
     printf '%s\n' "$2" >"$OMAHUB_KEYBOARD_SIZE_FILE"

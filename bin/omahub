@@ -18,7 +18,7 @@ Usage: omahub <command>
   set <setting> <value>       Change a setting
   options <setting>           Print a setting's choices as JSON
   reset <setting>             Undo everything a setting changed
-  open [where]                Open the hub at a section, a setting, or the welcome
+  open [where]                Open the hub at a section, a setting, or the welcome, or open the overview
   agent [agent] [--pick]      Start a coding agent in your projects folder, or a folder you pick
   edit [--pick]               Open your projects folder, or a folder you pick, in your editor
   project new <name>          Create a project and start your agent there (--editor, --no-open)
@@ -77,7 +77,7 @@ start_agent() {
 
   source "$OMAHUB_PATH/lib/defaults.sh"
   if [[ -n $agent && $agent != "$(omahub_default_agent)" ]] && ! omahub_defaults_installed "$agent"; then
-    omahub_fail "$agent is not installed"
+    omahub_fail "$agent is not installed. Run 'omahub options projects/default-agent' to see the agents you have"
   fi
 
   folder=$(work_folder "$pick" "Start an agent in")
