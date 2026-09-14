@@ -34,7 +34,10 @@ Item {
   readonly property bool indicators: root.config.indicators !== false
   readonly property bool showOpen: root.config.recents !== false
   readonly property bool bounce: root.config.bounce !== false
-  readonly property var savedPins: Array.isArray(root.config.pins) ? root.config.pins : []
+  // With no apps saved yet, the dock keeps the defaults `omahub dock pins` reports, the same list the
+  // first keep or remove starts from.
+  property var defaultPins: []
+  readonly property var savedPins: Array.isArray(root.config.pins) ? root.config.pins : root.defaultPins
   // A new order from a drag shows at once, while it is being saved.
   property var pinsOverride: null
   readonly property var pins: root.pinsOverride !== null ? root.pinsOverride : root.savedPins
@@ -546,9 +549,26 @@ Item {
     onLoaded: {
       var parsed = Model.parseConfig(text())
       if (parsed !== null) root.config = parsed
+      if (parsed !== null && !Array.isArray(parsed.pins)) defaultPinsRead.running = true
     }
     onFileChanged: reload()
-    onLoadFailed: root.config = ({})
+    onLoadFailed: {
+      root.config = ({})
+      defaultPinsRead.running = true
+    }
+  }
+
+  Process {
+    id: defaultPinsRead
+    command: [root.omahub, "dock", "pins"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        try {
+          var pins = JSON.parse(text)
+          if (Array.isArray(pins)) root.defaultPins = pins
+        } catch (e) {}
+      }
+    }
   }
 
   Timer {

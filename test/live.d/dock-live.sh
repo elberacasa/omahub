@@ -95,4 +95,31 @@ spot=$(agent state ".omahub.dock.apps[] | select(.id == \"$gone\") | \"\((.x + .
 agent drag "dock.app:$gone" "$spot"
 check "$gone is gone from the dock" "any(.omahub.dock.apps[]; .id == \"$gone\") | not" 2
 
+section "With no apps saved, the dock shows the defaults and keeping one adds just that one"
+"$(dirname "$0")/../../bin/omahub" reset dock/pins >/dev/null
+defaults=$("$(dirname "$0")/../../bin/omahub" dock pins)
+check "every default app is in the dock" "[.omahub.dock.apps[].id | ascii_downcase] as \$ids | all($defaults[]; ascii_downcase as \$p | \$ids | index(\$p) != null)" 2
+count=$(agent state '.omahub.dock.apps | length')
+agent chord SUPER+D
+agent chord space
+for _ in $(seq 8); do
+  agent state '.omahub.dock.menuEntry' | grep -q "Add apps" && break
+  agent chord Down || break
+done
+agent chord Return || true
+check "Add apps opens" '.omahub.dock.picker != null' 1
+for _ in $(seq 60); do
+  agent state '.omahub.dock.picker.selected as $s | ($s.kept | not) and (any(.omahub.dock.apps[]; .id == $s.id) | not)' | grep -q true && break
+  agent chord Down || break
+done
+app=$(agent state '.omahub.dock.picker.selected.id // empty')
+if [[ -n $app ]]; then
+  agent chord Return || true
+  check "keeping $app adds only $app" "(.omahub.dock.apps | length) == $((count + 1)) and any(.omahub.dock.apps[]; .id == \"$app\")" 2
+else
+  skip "no app outside the dock to keep"
+fi
+agent chord Escape || true
+agent chord Escape || true
+
 finish_live

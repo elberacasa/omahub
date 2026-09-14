@@ -23,6 +23,8 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 
 - Walking windows with SUPER + TAB and back with SHIFT + TAB, then letting go, jumps to the window chosen instead of leaving the overview open.
 - A desktop's thumbnail in the overview shows a window that just moved or resized as it looks once it settles, not a frame from halfway through.
+- A dock with no apps saved shows the default apps, so keeping one more adds just that one.
+
 - Switches and choices in the hub change the moment you pick them. If a change fails or takes too long, the row goes back to how it was and says why.
 - A setting that could not be read says so, instead of looking switched off.
 - New project keeps the name you typed until the project exists, and asks for a name when there is none.
