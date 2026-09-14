@@ -143,6 +143,10 @@ Item {
       opened: root.opened, view: root.view, section: root.sectionId, loading: root.loading,
       searching: root.searching, query: root.query, cursor: root.cursor,
       row: row ? row.id : null, rows: root.rows.map(function(item) { return item.id }),
+      rowValue: row && root.states[row.id] ? root.states[row.id].value : null,
+      rowLabel: row && root.states[row.id] ? root.states[row.id].label || null : null,
+      rowError: row && root.errors[row.id] ? String(root.errors[row.id]) : null,
+      queued: root.queuedIds,
       busy: root.busyId || null, prompt: root.promptId || null, error: root.loadError || null
     })
   }
@@ -163,7 +167,7 @@ Item {
     root.catalog = list
     if (list.length > 0 && !Model.hasSection(list, root.sectionId)) root.sectionId = Model.sections(list)[0].id
     root.readStates()
-    Qt.callLater(root.applyPendingSetting)
+    Qt.callLater(function() { root.applyPendingSetting(true) })
   }
 
   function readStates() {
@@ -400,9 +404,22 @@ Item {
 
   // `omahub open <setting>` lands on that row, and starts its prompt when it has one. A setting the
   // catalog has not loaded yet stays wanted until it has, since loading the catalog tries again.
-  function applyPendingSetting() {
+  // Lands on the setting asked for, in whatever section it lives. A setting missing from a freshly read
+  // catalog does not exist, so it is forgotten and a later open never jumps somewhere unexpected; one
+  // missing from the catalog read before is kept until the new read arrives, since it may be new.
+  function applyPendingSetting(fresh) {
     if (!root.pendingSetting || root.catalog.length === 0) return
     var id = root.pendingSetting
+    var setting = root.catalog.find(function(item) { return item.id === id })
+    if (!setting) {
+      if (fresh === true) root.pendingSetting = ""
+      return
+    }
+    if (root.view === "hub" && (root.query !== "" || root.sectionId !== setting.section)) {
+      root.query = ""
+      root.searching = false
+      root.sectionId = setting.section
+    }
     for (var i = 0; i < root.rows.length; i++) {
       if (root.rows[i].id !== id) continue
       root.pendingSetting = ""
