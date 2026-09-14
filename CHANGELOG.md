@@ -40,6 +40,7 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - A quick SUPER + TAB where TAB and SUPER come up together flips to the last window, instead of leaving the overview open waiting for SUPER.
 - Opening the hub on a setting lands on it in whatever section it lives, instead of staying on the section already open.
 - The dock's right-click menu stays open instead of closing the moment it appears.
+- The dock's menu and Add apps are never cut off at any dock position or magnification: the room beside the dock grows to fit what is open.
 - After SUPER + D, the arrows, Enter, and Space reach the dock even with SUPER still held, instead of Omarchy's own shortcuts. Clicking a window, changing desktop, or SUPER + D again gives the keyboard back.
 - Many desktops fit in the overview's strip, long names and searches are shortened instead of spilling, and a window with no title reads "Untitled window".
 - The screenshot thumbnail slides in at its real size, instead of resizing after it appears, and shows the file's name when the image can't be shown.

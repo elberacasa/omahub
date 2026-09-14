@@ -94,7 +94,13 @@ Item {
   // Room in from the edge for magnified icons and the app name.
   readonly property int bandHeight: Math.ceil(root.iconSize * root.maxScale) + root.dockPadding * 2
     + root.dotSpace + root.edgeGap + Style.space(40)
-  readonly property int menuSpace: Style.space(root.pickerOpen ? 580 : 300)
+  // Room beside the dock for what is open on it, measured from the menu or the Add apps panel itself, so
+  // a menu that grows never runs past the edge of the dock's window.
+  readonly property int menuSpace: {
+    var card = root.pickerOpen ? pickerCard : (root.menuOpen ? menuCard : null)
+    var needed = card ? (root.vertical ? card.width : card.height) + root.labelGap + Style.gapsOut : 0
+    return Math.max(Style.space(300), Math.ceil(needed))
+  }
   readonly property int labelGap: Style.space(10)
   // How far a click still counts from an icon: past its magnified size away from the edge, and all the
   // way to the screen edge, so the dock is easy to hit.
@@ -216,6 +222,10 @@ Item {
     return JSON.stringify({
       shown: root.shown, position: root.edge, keyboard: root.keyboardActive, cursor: root.keyCursor,
       menu: root.menuOpen, apps: apps, overview: place(overviewButton), pressed: root.iconPressed,
+      screen: { x: screenX, y: screenY, width: screenWidth, height: screenHeight },
+      window: { x: originX, y: originY, width: Math.round(dockWindow.width), height: Math.round(dockWindow.height) },
+      shelf: place(dockBackground),
+      menuCard: root.menuOpen ? place(menuCard) : null,
       busy: dockCommand.running || root.commandQueue.length > 0,
       menuItem: root.menuOpen && root.menuItem ? root.menuItem.id : null,
       menuEntry: root.menuOpen && root.menuIndex >= 0 && root.menuEntries[root.menuIndex] ? root.menuEntries[root.menuIndex].label || null : null,
