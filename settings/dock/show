@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# omahub:title=Dock
+# omahub:summary=Your pinned and open apps at the bottom of the screen. Right-click the dock for its options
+# omahub:section=dock
+# omahub:kind=toggle
+# omahub:icon=󰀻
+# omahub:keywords=dock apps launcher taskbar mac pinned open running bottom
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/dock.sh"
+
+omahub_dock_toggle_setting show false dock/show "$@"

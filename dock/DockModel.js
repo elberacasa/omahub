@@ -1,0 +1,107 @@
+.pragma library
+
+// Pure shaping for the dock: pinned apps first, then open apps that are not pinned, and the
+// magnification curve.
+
+function key(value) {
+  return String(value || "").toLowerCase().replace(/\.desktop$/, "")
+}
+
+function parseConfig(text) {
+  try {
+    const value = JSON.parse(text)
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {}
+  } catch (e) {
+    return {}
+  }
+}
+
+function makeItem(id, entry, windows, pinned, fallback) {
+  const first = windows.length > 0 ? windows[0] : null
+  return {
+    id: entry ? String(entry.id) : id,
+    name: entry ? String(entry.name || entry.id) : String((first && first.title) || id),
+    icon: entry ? String(entry.icon || "") : (fallback ? String(fallback.icon || "") : id),
+    launchable: !!entry,
+    pinned: pinned,
+    windows: windows,
+    divider: false
+  }
+}
+
+// Chromium names an app window after its address: https://x.com/ opens as chrome-x.com__-Default.
+function webHost(appId) {
+  const match = /^chrome-([^_]+)__/.exec(appId)
+  return match ? match[1] : ""
+}
+
+// Pinned apps in their order, then apps with open windows. A window finds its app by the entry's
+// startup class or id, compared without case, so "Cursor" and "cursor" meet. A web app window finds
+// the Omarchy web app that opens its site.
+function items(pins, entries, toplevels) {
+  const byId = {}
+  const byClass = {}
+  const byHost = {}
+  for (const entry of entries) {
+    if (!entry || !entry.id) continue
+    byId[key(entry.id)] = entry
+    const startupClass = key(entry.startupClass)
+    if (startupClass && !byClass[startupClass]) byClass[startupClass] = entry
+    const site = /omarchy-launch-webapp\s+\S*?:\/\/([^\/\s]+)/.exec(String(entry.execString || ""))
+    if (site && !byHost[site[1].toLowerCase()]) byHost[site[1].toLowerCase()] = entry
+  }
+  const browser = byId["chromium"] || byId["google-chrome"] || byId["brave-browser"] || null
+
+  const windows = {}
+  const order = []
+  for (const toplevel of toplevels) {
+    if (!toplevel) continue
+    const app = key(toplevel.appId)
+    if (!app) continue
+    const host = webHost(app)
+    const entry = byClass[app] || byId[app] || (host ? byHost[host] : null)
+    const id = entry ? key(entry.id) : app
+    if (!windows[id]) {
+      windows[id] = { entry: entry || null, fallback: app.indexOf("chrome-") === 0 ? browser : null, list: [] }
+      order.push(id)
+    }
+    windows[id].list.push(toplevel)
+  }
+
+  const result = []
+  const seen = {}
+  for (const pin of pins) {
+    const id = key(pin)
+    const entry = byId[id]
+    if (!entry || seen[id]) continue
+    seen[id] = true
+    result.push(makeItem(id, entry, windows[id] ? windows[id].list : [], true))
+  }
+
+  const pinnedCount = result.length
+  for (const id of order) {
+    if (seen[id]) continue
+    seen[id] = true
+    const item = makeItem(id, windows[id].entry, windows[id].list, false, windows[id].fallback)
+    item.divider = pinnedCount > 0 && result.length === pinnedCount
+    result.push(item)
+  }
+  return result
+}
+
+// Where each icon's center sits in the unscaled dock, so magnification never chases its own layout.
+function layout(items, cellWidth, dividerWidth) {
+  const centers = []
+  let x = 0
+  for (const item of items) {
+    if (item.divider) x += dividerWidth
+    centers.push(x + cellWidth / 2)
+    x += cellWidth
+  }
+  return { centers: centers, width: x }
+}
+
+function magnification(distance, range, maxScale) {
+  const t = Math.min(1, Math.abs(distance) / range)
+  return 1 + (maxScale - 1) * Math.cos(t * Math.PI / 2)
+}

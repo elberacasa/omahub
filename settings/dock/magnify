@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# omahub:title=Magnification
+# omahub:summary=Icons grow as the pointer passes over them
+# omahub:section=dock
+# omahub:kind=toggle
+# omahub:icon=󰍉
+# omahub:keywords=dock magnify magnification zoom icons grow hover
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/dock.sh"
+
+omahub_dock_toggle_setting magnify true dock/magnify "$@"

@@ -22,6 +22,7 @@ Usage: omahub <command>
   agent [agent] [--pick]      Start a coding agent in your projects folder, or a folder you pick
   edit [--pick]               Open your projects folder, or a folder you pick, in your editor
   project new <name>          Create a project and start your agent there (--editor, --no-open)
+  dock pins|pin|unpin <app>   List, add, or remove the apps kept in the dock
   version                     Print the Omahub version
 
 Settings are named <section>/<name>, for example keyboard/mac-screenshot-keys.
@@ -120,6 +121,26 @@ new_project() {
   fi
 }
 
+dock_command() {
+  local usage="usage: omahub dock pins|pin <app>|unpin <app>"
+  source "$OMAHUB_PATH/lib/dock.sh"
+  case "${1:-}" in
+    pins)
+      omahub_dock_pins
+      ;;
+    pin | unpin)
+      if [[ -z ${2:-} ]]; then
+        omahub_fail "$usage"
+      fi
+      "omahub_dock_$1" "$2"
+      omahub_dock_pins
+      ;;
+    *)
+      omahub_fail "$usage"
+      ;;
+  esac
+}
+
 open_editor() {
   local folder
   source "$OMAHUB_PATH/lib/defaults.sh"
@@ -159,6 +180,10 @@ case "${1:-help}" in
   project)
     shift
     new_project "$@"
+    ;;
+  dock)
+    shift
+    dock_command "$@"
     ;;
   version)
     jq -r .version "$OMAHUB_PATH/manifest.json"

@@ -25,6 +25,7 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - `agents/claude-usage`, `agents/codex-usage`, and `agents/fireworks-usage` choose which subscriptions show in Omarchy's Agents bar panel, through `omarchy bar set`. They follow a clone of the widget made with `omarchy plugin clone`.
 - `agents/bar-limits` shows every subscription's limit on the bar when the Agents widget offers a Limits mode.
 - `projects/default-agent`, `projects/editor`, and `projects/folder`, built on Omarchy's own `omarchy default` commands, so agents and editors Omarchy adds appear on their own. Reset restores what was chosen before.
+- The dock. Turn on `dock/show` for your pinned and open apps at the bottom of the screen, starting from Omarchy's default terminal, browser, file manager, and editor. Click opens or cycles windows, icons magnify, it hides when a window reaches it, and its right-click menu keeps apps and changes `dock/autohide` and `dock/magnify`. `omahub dock pin <app>` does the same from a terminal.
 - New project: name it in the hub, or run `omahub project new <name>`, and Omahub creates the folder in your projects folder, starts git, and opens your agent or editor there. `omahub open projects/new` jumps straight to the name.
 - Action settings with an inline prompt, and a More… chip on the default agent and editor that opens Omarchy's own menu to install and pick others.
 - `omahub agent [agent] [--pick]` starts a coding agent in your projects folder or a folder you pick, and `omahub edit [--pick]` opens it in your editor.

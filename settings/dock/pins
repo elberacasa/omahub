@@ -1,0 +1,35 @@
+#!/bin/bash
+
+# omahub:title=Dock apps
+# omahub:summary=The apps kept in the dock, in order. Change them from the dock's menu or with omahub dock pin
+# omahub:section=dock
+# omahub:kind=action
+# omahub:icon=󰀻
+# omahub:keywords=dock apps pinned keep order
+# omahub:hidden=true
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/dock.sh"
+
+state() {
+  local pins
+  pins=$(omahub_dock_pins)
+  omahub_state "$pins" "$(jq -r 'length | "\(.) apps"' <<<"$pins")"
+}
+
+case "${1:-}" in
+  get)
+    state
+    ;;
+  reset)
+    omahub_dock_update 'del(.pins)'
+    state
+    ;;
+  set)
+    omahub_fail "use omahub dock pin <app> or omahub dock unpin <app>"
+    ;;
+  *)
+    omahub_fail "usage: omahub get|reset dock/pins"
+    ;;
+esac
