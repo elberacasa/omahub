@@ -30,6 +30,16 @@ Every setting in Omahub is a small, readable file. People change them from the h
 | Projects | Type a name and Omahub creates the project, starts git, and opens your agent there. Pick your default agent, editor, and projects folder, and add more agents and editors from Omarchy's own menu |
 | Capture | Turn on the thumbnail and every screenshot slides into the corner. Click to edit, drag into any app, drag right to throw away, right-click to save it anywhere. Pick the screenshot folder in the same section |
 
+## See it
+
+<p align="center">
+  <img alt="SUPER + TAB opens the overview on the window used before. l and h walk the desktops, a window is dragged onto another desktop, and a click goes there" src="assets/omahub-overview.gif" width="720">
+</p>
+
+<p align="center">
+  <img alt="The dock slides up at the bottom edge, icons magnify under the pointer, a right-click shows its options, and it slides away again" src="assets/omahub-dock.gif" width="720">
+</p>
+
 ## Building now
 
 - **More sections.** Appearance and plugins, each one a folder of setting files.
