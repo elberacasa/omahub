@@ -5,26 +5,33 @@
 
 OMAHUB_AGENTS_SOURCE="omarchy.agents"
 
+# Omarchy's shell config, or an empty object when it is missing or not valid JSON, so a half-written
+# or hand-edited file reads as Omarchy's defaults instead of failing every Agents setting.
+omahub_agents_config() {
+  local config="$HOME/.config/omarchy/shell.json"
+  if [[ -s $config ]] && jq -e 'type == "object"' "$config" >/dev/null 2>&1; then
+    cat "$config"
+  else
+    echo '{}'
+  fi
+}
+
 # The Agents widget on the bar: Omarchy's own, or a copy made with `omarchy plugin clone`.
 omahub_agents_widget() {
-  local config="$HOME/.config/omarchy/shell.json" id
+  local config id
+  config=$(omahub_agents_config)
   while IFS= read -r id; do
-    if [[ -s $config ]] && jq -e --arg id "$id" 'any(.bar.layout[]?[]?; type == "object" and .id == $id)' "$config" >/dev/null; then
+    if jq -e --arg id "$id" 'any(.bar.layout[]?[]?; type == "object" and .id == $id)' <<<"$config" >/dev/null 2>&1; then
       echo "$id"
       return
     fi
   done < <(omarchy plugin list --json 2>/dev/null \
-    | jq -r --arg source "$OMAHUB_AGENTS_SOURCE" '.[]? | select(.id == $source or .clonedFrom == $source) | .id')
+    | jq -r --arg source "$OMAHUB_AGENTS_SOURCE" '.[]? | select(.id == $source or .clonedFrom == $source) | .id' 2>/dev/null)
   echo "$OMAHUB_AGENTS_SOURCE"
 }
 
 omahub_agents_entry() {
-  local config="$HOME/.config/omarchy/shell.json"
-  if [[ -s $config ]]; then
-    jq -c --arg id "$(omahub_agents_widget)" '[.bar.layout[]?[]? | objects | select(.id == $id)][0] // {}' "$config"
-  else
-    echo '{}'
-  fi
+  omahub_agents_config | jq -c --arg id "$(omahub_agents_widget)" '[.bar.layout[]?[]? | objects | select(.id == $id)][0] // {}'
 }
 
 omahub_agents_providers() {
@@ -125,8 +132,10 @@ omahub_agents_bar_limits_setting() {
 # Weekly, and Monthly for the plan, and a model limit by its own name, such as "Fable Weekly".
 omahub_agents_limit_titles() {
   local record="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/agents/usage/$1.json"
-  if [[ -s $record ]]; then
-    jq -r '.limits[]? | select((.percent // -1) >= 0)
+  # A record in a shape this does not know reads as no limits, never as a failure.
+  if [[ -s $record ]] && jq -e 'type == "object"' "$record" >/dev/null 2>&1; then
+    jq -r '(.limits // []) | if type == "array" then .[] else empty end | objects
+      | select(((.percent // -1) | tonumber? // -1) >= 0)
       | if (.title // "") != "" then .title
         else (.label // "") as $label | ($label | ascii_downcase) as $text
           | if ($text | test("month|30-day")) then "Monthly"

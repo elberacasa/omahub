@@ -5,6 +5,8 @@
 
 OMAHUB_BINDINGS="$HOME/.config/hypr/bindings.lua"
 OMAHUB_KEYMAP_ORDER=(hotkey thumbnail overview mac vim agents mouse)
+# Layers that fail to load, one "name: error" per line, written by the block while Hyprland loads it.
+OMAHUB_KEYMAP_ERRORS="$HOME/.local/state/omahub/keymap-errors"
 
 omahub_keymap_layers() {
   local names
@@ -20,14 +22,24 @@ omahub_keymap_block() {
   local layers="$1"
   cat <<EOF
 -- Managed by Omahub. Change it in Omahub instead of editing this block.
+-- A layer that fails to load, for example after Omarchy renames a helper, is skipped and noted, so
+-- it never stops the rest of this file from loading.
 do
-  local dir = (os.getenv("HOME") or "") .. "/.config/omarchy/plugins/$OMAHUB_PLUGIN_ID/keymaps/"
+  local home = os.getenv("HOME") or ""
+  local dir = home .. "/.config/omarchy/plugins/$OMAHUB_PLUGIN_ID/keymaps/"
   for _, name in ipairs({ $layers }) do
     local path = dir .. name .. ".lua"
     local file = io.open(path)
     if file then
       file:close()
-      dofile(path)
+      local ok, err = pcall(dofile, path)
+      if not ok then
+        local log = io.open(home .. "/.local/state/omahub/keymap-errors", "a")
+        if log then
+          log:write(name, ": ", tostring(err), "\n")
+          log:close()
+        end
+      end
     end
   end
 end
@@ -92,10 +104,16 @@ omahub_keymap_set() {
     touch "$OMAHUB_BINDINGS"
   fi
 
+  mkdir -p "$(dirname "$OMAHUB_KEYMAP_ERRORS")"
+  rm -f "$OMAHUB_KEYMAP_ERRORS"
   hyprctl reload >/dev/null
   if [[ -n $(hyprctl configerrors 2>/dev/null | grep -v '^\s*$') ]]; then
     omahub_keymap_restore "$backup"
     omahub_fail "Hyprland reported config errors, so the change was undone"
+  fi
+  if [[ -s $OMAHUB_KEYMAP_ERRORS ]]; then
+    omahub_keymap_restore "$backup"
+    omahub_fail "a keyboard layer did not load, so the change was undone: $(paste -sd ';' "$OMAHUB_KEYMAP_ERRORS")"
   fi
   sleep 0.2
 

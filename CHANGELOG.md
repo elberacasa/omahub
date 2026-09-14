@@ -60,3 +60,5 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - A slow SUPER + TAB always browses the window used before. It could snap back to the current window a moment after the overview opened.
 - A window opened moments before the overview shows on its desktop from the first frame, instead of the desktop reading "Empty desktop" until Hyprland reported its size.
 - A long list in the hub or the welcome fades out at the bottom instead of cutting its last row in half.
+- A keyboard layer that fails to load, for example after an Omarchy update renames a helper, is skipped instead of stopping the rest of `bindings.lua`. Turning a setting on undoes itself and names the layer when that happens.
+- Agents settings read a `shell.json` that is not valid JSON, and usage records in shapes they do not know, as Omarchy's defaults instead of failing.

@@ -109,6 +109,25 @@ assert_eq "a chosen limit stays listed after its record goes" \
 assert_eq "reset goes back to Auto" "$(omahub reset agents/claude-bar-limit | jq -r .value)" "Auto"
 assert_eq "reset leaves no empty entry" "$(entry '.providers | has("claude")')" "false"
 
+# Omarchy may change the shape of what it writes. Settings read an unknown shape as defaults.
+for record in '{"limits":{"weekly":0.5}}' '{"limits":["weekly",3]}' '{"limits":[' '{"limits":[{"label":"Weekly (7-day)","percent":"0.5"}]}'; do
+  printf '%s' "$record" >"$usage/codex.json"
+  if choices=$(omahub options agents/codex-bar-limit 2>"$TEST_ROOT/stderr"); then
+    pass "a usage record shaped $record still lists choices"
+  else
+    fail "a usage record shaped $record still lists choices"
+  fi
+  assert_eq "it prints no errors for $record" "$(cat "$TEST_ROOT/stderr")" ""
+done
+assert_eq "a limit given as text still counts" "$(jq -c 'map(.value)' <<<"$choices")" '["Auto","Weekly"]'
+
+cp "$config" "$TEST_ROOT/shell.json.good"
+printf 'bar: yes' >"$config"
+assert_eq "a shell config that is not JSON reads as Omarchy's defaults" "$(omahub get agents/claude-usage 2>"$TEST_ROOT/stderr" | jq -r .value)" "true"
+assert_eq "it prints no errors" "$(cat "$TEST_ROOT/stderr")" ""
+assert_eq "the bar limit still reads" "$(omahub get agents/claude-bar-limit 2>/dev/null | jq -r .value)" "Auto"
+cp "$TEST_ROOT/shell.json.good" "$config"
+
 echo '[{"id":"omarchy.agents","clonedFrom":""},{"id":"me.agents","clonedFrom":"omarchy.agents"}]' >"$HOME/plugins.json"
 jq '.bar.layout.right[0].id = "me.agents"' "$config" >"$config.tmp"
 mv "$config.tmp" "$config"
