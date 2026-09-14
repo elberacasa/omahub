@@ -35,6 +35,7 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - Shift + a number moves a window on every keyboard layout, not only US ones.
 - Esc during a drag in the overview cancels it, instead of leaving the dragged card stuck.
 - While the overview is open, Omarchy's SUPER shortcuts step aside, so dragging a card with SUPER still held from SUPER + TAB no longer moves a window behind it, and SUPER + SHIFT + a number moves a window once.
+- A quick SUPER + TAB where TAB and SUPER come up together flips to the last window, instead of leaving the overview open waiting for SUPER.
 - The dock's right-click menu stays open instead of closing the moment it appears.
 - After SUPER + D, the arrows, Enter, and Space reach the dock even with SUPER still held, instead of Omarchy's own shortcuts. Clicking a window, changing desktop, or SUPER + D again gives the keyboard back.
 - Many desktops fit in the overview's strip, long names and searches are shortened instead of spilling, and a window with no title reads "Untitled window".

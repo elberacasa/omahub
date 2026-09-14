@@ -124,6 +124,7 @@ Item {
     var selected = root.selectedWindow
     return JSON.stringify({
       opened: root.opened, cycling: root.cycling, numbersLit: root.numbersLit, held: root.superHeld, choice: root.heldChoice,
+      searching: root.searching, query: root.query,
       undo: root.lastMove ? root.lastMove.to : null, flying: flight.running,
       selected: selected ? { address: selected.address, workspace: selected.workspace, title: selected.title } : null,
       cards: cards, desktops: desktops, newDesktop: place(newTile)
@@ -166,7 +167,15 @@ Item {
     }))
   }
 
-  function open(mode) {
+  // Each SUPER + TAB press is numbered by keymaps/overview.lua, and letting go of SUPER carries the
+  // number of the latest press. Hyprland runs the two as separate commands that can arrive in either
+  // order, so the number, not the order they arrive in, says whether SUPER already came up.
+  property int lastPress: 0
+  property int releasedPress: 0
+
+  function open(mode, press) {
+    var number = Number(press) || 0
+    if (number > 0) root.lastPress = number
     if (root.opened) {
       if (mode === "next") {
         root.superHeld = true
@@ -194,8 +203,12 @@ Item {
     // so a quick tap flips between the last two windows.
     if (switching) root.cycle(1)
 
-    // SUPER already came up: this was the quickest tap, so flip without showing anything.
-    if (switching && Date.now() - root.releasedAt < 250) {
+    // SUPER already came up: this was the quickest tap, so flip without showing anything. Without a
+    // press number, from an older keymap, a release just before counts.
+    var alreadyUp = number > 0
+      ? root.releasedPress === number && Date.now() - root.releasedAt < 2000
+      : Date.now() - root.releasedAt < 250
+    if (switching && alreadyUp) {
       var target = root.selectedWindow
       root.cycling = false
       if (target) root.dispatch('hl.dsp.focus({ window = "' + Model.selector(target.address) + '" })')
@@ -244,12 +257,16 @@ Item {
   }
 
   // SUPER came up. Hyprland reports it even when a quick tap ends before the overview has the keyboard.
-  function release() {
+  function release(press) {
+    var number = Number(press) || 0
     if (!root.opened) {
       root.releasedAt = Date.now()
+      root.releasedPress = number
       return
     }
     if (!root.superHeld) return
+    // A release that belongs to a press before this session's latest one is from an earlier gesture.
+    if (number > 0 && number < root.lastPress) return
     root.superHeld = false
     // Letting go in the middle of a drag leaves the drag to finish.
     if (root.dragWindow !== null) return
@@ -779,6 +796,12 @@ Item {
           // moves and jumps the same way.
           var digit = event.nativeScanCode >= 10 && event.nativeScanCode <= 19 ? ((event.nativeScanCode - 9) % 10 || 10) : -1
 
+          // A key that arrives without SUPER means SUPER is already up, even if the release never
+          // reached the overview, so letting go can never be waited on forever.
+          if (root.superHeld && !(event.modifiers & Qt.MetaModifier) && event.key !== Qt.Key_Super_L
+              && event.key !== Qt.Key_Super_R && event.key !== Qt.Key_Meta) {
+            root.superHeld = false
+          }
           if (event.key === Qt.Key_Shift) {
             root.shiftHeld = true
             return
@@ -833,6 +856,16 @@ Item {
             // SUPER may still be held from SUPER + TAB, and the overview's key set leaves numbers to it.
             if (shifted) root.moveSelectedTo(digit)
             else root.goToDesktopNumber(digit)
+          } else if ((event.modifiers & Qt.MetaModifier) && !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier))
+                     && [Qt.Key_H, Qt.Key_J, Qt.Key_K, Qt.Key_L].indexOf(event.key) >= 0) {
+            // With SUPER still held from SUPER + TAB, h j k l pick a window and Shift + h and l a desktop,
+            // matched by key since SUPER changes the text they type.
+            if (shifted && event.key === Qt.Key_H) root.selectDesktop(root.desktopIndex - 1)
+            else if (shifted && event.key === Qt.Key_L) root.selectDesktop(root.desktopIndex + 1)
+            else if (event.key === Qt.Key_H) root.moveSelection(-1, 0)
+            else if (event.key === Qt.Key_L) root.moveSelection(1, 0)
+            else if (event.key === Qt.Key_K) root.moveSelection(0, -1)
+            else root.moveSelection(0, 1)
           } else if (!plain) {
             return
           } else if (event.text === "h") {

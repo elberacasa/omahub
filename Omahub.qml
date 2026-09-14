@@ -28,7 +28,7 @@ Item {
       capture.open(JSON.stringify(payload.capture))
     } else if (payload.overview) {
       hub.close()
-      overview.open(String(payload.overview))
+      overview.open(String(payload.overview), Number(payload.press) || 0)
     } else {
       overview.close()
       hub.open(payloadJson)
@@ -56,8 +56,9 @@ Item {
     return capture.openMenuFromKeyboard()
   }
 
-  function overviewRelease() {
-    overview.release()
+  // SUPER came up. The number is the latest SUPER + TAB press, from keymaps/overview.lua.
+  function overviewRelease(press) {
+    overview.release(Number(press) || 0)
   }
   // Where the overview's and the dock's pieces are on screen, for demo scripts and agents.
   function overviewLayout() {
