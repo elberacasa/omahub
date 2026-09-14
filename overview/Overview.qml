@@ -28,6 +28,9 @@ Item {
   // While switching, the choice is how many windows back, not a particular window, so it survives
   // Hyprland's fresher window list arriving a moment after the key press.
   property int cycleSteps: 0
+  property real switchStartedAt: 0
+  // A quick tap can let go of SUPER before the overview even opens; that release is remembered.
+  property real releasedAt: 0
   property var dragWindow: null
   property point dragPoint: Qt.point(0, 0)
   property var dropTarget: null
@@ -141,6 +144,14 @@ Item {
     // so a quick tap flips between the last two windows.
     if (switching) root.cycle(1)
 
+    // SUPER already came up: this was the quickest tap, so flip without showing anything.
+    if (switching && Date.now() - root.releasedAt < 250) {
+      var target = root.selectedWindow
+      root.cycling = false
+      if (target) root.dispatch('hl.dsp.focus({ window = "' + Model.selector(target.address) + '" })')
+      return
+    }
+
     exitAnimation.stop()
     root.mounted = true
     root.opened = true
@@ -158,6 +169,7 @@ Item {
       root.query = ""
       root.cycling = true
       root.cycleSteps = 0
+      root.switchStartedAt = Date.now()
     }
     root.cycleSteps += step
     root.selectWindow(root.cycleSteps)
@@ -165,7 +177,29 @@ Item {
 
   // SUPER came up. Hyprland reports it even when a quick tap ends before the overview has the keyboard.
   function release() {
-    if (root.opened && root.cycling) root.goToSelected()
+    if (!root.opened) {
+      root.releasedAt = Date.now()
+      return
+    }
+    if (!root.cycling) return
+    // A slow press with no extra TAB means looking around, so the overview stays open on the choice.
+    // A quick tap, or walking with TAB, jumps.
+    if (root.cycleSteps === 1 && Date.now() - root.switchStartedAt >= 350) {
+      root.browseSelection()
+    } else {
+      root.goToSelected()
+    }
+  }
+
+  // Leave switching for browsing, keeping the chosen window selected on its own desktop.
+  function browseSelection() {
+    var chosen = root.selectedWindow
+    root.cycling = false
+    root.userMoved = true
+    if (!chosen) return
+    var desktop = root.desktops.findIndex(function(item) { return item.id === chosen.workspace })
+    if (desktop >= 0) root.desktopIndex = desktop
+    root.windowIndex = Math.max(0, root.shownWindows.findIndex(function(item) { return item.address === chosen.address }))
   }
 
   function close() {
@@ -180,8 +214,10 @@ Item {
     var count = root.shownWindows.length
     if (count === 0) return
     root.windowIndex = ((index % count) + count) % count
-    // While walking, the strip follows the chosen window's desktop.
+    // While walking, the strip follows the chosen window's desktop, and a window picked with the
+    // pointer becomes the step to keep.
     if (root.cycling) {
+      if (fromPointer) root.cycleSteps = root.windowIndex
       var chosen = root.shownWindows[root.windowIndex]
       var desktop = chosen ? root.desktops.findIndex(function(item) { return item.id === chosen.workspace }) : -1
       if (desktop >= 0) root.desktopIndex = desktop
@@ -195,6 +231,7 @@ Item {
   function selectDesktop(index) {
     if (root.desktops.length === 0) return
     var next = Math.max(0, Math.min(root.desktops.length - 1, index))
+    root.cycling = false
     root.searching = false
     root.query = ""
     root.userMoved = true
@@ -830,9 +867,9 @@ Item {
               }
               onPositionChanged: function(mouse) {
                 if (!cardMouse.pressed) {
-                  // Cards zoom in under a resting pointer as the overview opens, and switching with
-                  // SUPER + TAB belongs to the keyboard, so neither may move the selection.
-                  if (root.cycling || enterAnimation.running) return
+                  // Cards zoom in under a resting pointer as the overview opens, so only a pointer
+                  // that really moves after that picks a window.
+                  if (enterAnimation.running) return
                   if (pointerGate.moved(card, mouse)) root.selectWindow(card.index, true)
                   return
                 }
@@ -932,7 +969,7 @@ Item {
         Repeater {
           model: root.cycling
             ? [{ keys: ["tab"], label: "Next window" }, { keys: ["⇧", "tab"], label: "Previous" },
-               { keys: ["super"], label: "Let go to jump" }, { keys: ["esc"], label: "Cancel" }]
+               { keys: ["super"], label: "Let go to jump" }, { keys: ["click"], label: "Go" }, { keys: ["esc"], label: "Cancel" }]
             : root.searching
             ? [{ keys: ["↑", "↓"], label: "Move" }, { keys: ["enter"], label: "Go" }, { keys: ["esc"], label: "Clear" }]
             : [{ keys: ["h", "l"], label: "Desktops" }, { keys: ["j", "k"], label: "Windows" }, { keys: ["enter"], label: "Go" },
