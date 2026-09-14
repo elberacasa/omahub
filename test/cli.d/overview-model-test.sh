@@ -36,6 +36,13 @@ const list = Model.desktops(
 
 check("desktops are the regular workspaces on this screen, in id order", JSON.stringify(list.map(d => d.id)) === "[1,2]")
 
+const numbered = Model.desktops([workspace(2), workspace(3, "HDMI-1"), workspace(7)], [], monitor.name, 5)
+check("desktops 1 to 5 are always there, and any open beyond them", JSON.stringify(numbered.map(d => d.id)) === "[1,2,4,5,7]")
+check("a number open on another screen is left out", !numbered.some(d => d.id === 3))
+check("desktops not opened yet are marked, open ones are not",
+  numbered.find(d => d.id === 1).unopened === true && numbered.find(d => d.id === 2).unopened === false)
+check("without a count, only open desktops show", Model.desktops([workspace(2)], [], monitor.name).length === 1)
+
 // QML hands Hyprland's lists over as array-like wrappers, not arrays.
 const listLike = values => Object.assign(Object.create(null), values, { length: values.length })
 const wrapped = Model.desktops([workspace(1)], [{

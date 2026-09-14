@@ -10,8 +10,8 @@ import "OverviewModel.js" as Model
 // Every desktop on the focused screen as a live thumbnail, and the selected desktop's windows laid
 // out large with live previews. Keyboard first: h, j, k, and l move between windows like the arrows,
 // and past the end of a row to the next desktop. Shift + h and l jump desktops, Tab walks windows,
-// Enter goes, x closes, Shift + a number moves a window, Shift + n moves it to a new desktop, and
-// typing searches.
+// Enter goes, x closes, a number shows that desktop, Shift + a number moves a window there, Shift + n
+// moves it to a new desktop, u undoes a move, and typing searches. Desktops 1 to 5 are always there.
 // Opened again while SUPER is held, it walks windows and letting go of SUPER jumps to the choice.
 Item {
   id: root
@@ -58,11 +58,18 @@ Item {
   readonly property var selectedDesktop: root.desktops.length > 0
     ? root.desktops[Math.max(0, Math.min(root.desktopIndex, root.desktops.length - 1))] : null
   readonly property bool searchActive: root.searching && root.query !== ""
-  readonly property var shownWindows: root.cycling
-    ? Model.recent(root.desktops, root.focusOrder)
-    : root.searchActive
+  readonly property var shownWindows: {
+    if (root.cycling) return Model.recent(root.desktops, root.focusOrder)
+    var list = root.searchActive
       ? Model.search(root.desktops, root.query)
       : (root.selectedDesktop ? root.selectedDesktop.windows : [])
+    var leaving = root.leaving
+    return list.filter(function(item) { return leaving[item.address] !== item.workspace })
+  }
+  // Holding Shift, or dragging a window, lights the desktop numbers that move a window there.
+  property bool shiftHeld: false
+  readonly property bool numbersLit: (root.shiftHeld && !root.searching || root.dragWindow !== null) && !root.cycling
+  readonly property bool hasUnopened: root.desktops.some(function(item) { return item.unopened })
   readonly property var rects: Model.pack(root.shownWindows, mainArea.width, mainArea.height, root.cardGap)
   readonly property var selectedWindow: root.shownWindows.length > 0 ? root.shownWindows[root.windowIndex] || null : null
 
@@ -70,7 +77,7 @@ Item {
   readonly property int stripGap: Style.space(14)
   // Many desktops shrink their thumbnails before the strip would run off the screen.
   readonly property int thumbWidth: Math.max(Style.space(56), Math.min(Style.space(210),
-    (overviewWindow.width - Style.space(160) - root.stripGap * root.desktops.length) / Math.max(1, root.desktops.length + 1)))
+    (overviewWindow.width - Style.space(160) - root.stripGap * root.desktops.length) / Math.max(1, root.desktops.length + (root.hasUnopened ? 0 : 1))))
   readonly property int thumbHeight: Math.round(root.thumbWidth * root.monitorHeight / root.monitorWidth)
   readonly property int labelSpace: Style.space(28)
 
@@ -92,11 +99,12 @@ Item {
     var desktops = []
     for (var j = 0; j < thumbRepeater.count; j++) {
       var thumb = thumbRepeater.itemAt(j)
-      if (thumb) desktops.push(Object.assign({ id: thumb.modelData.id }, place(thumb.frame)))
+      if (thumb) desktops.push(Object.assign({ id: thumb.modelData.id, unopened: thumb.modelData.unopened }, place(thumb.frame)))
     }
     var selected = root.selectedWindow
     return JSON.stringify({
-      opened: root.opened, cycling: root.cycling,
+      opened: root.opened, cycling: root.cycling, numbersLit: root.numbersLit,
+      undo: root.lastMove ? root.lastMove.to : null, flying: flight.running,
       selected: selected ? { address: selected.address, workspace: selected.workspace, title: selected.title } : null,
       cards: cards, desktops: desktops, newDesktop: place(newTile)
     })
@@ -115,8 +123,9 @@ Item {
   function rebuild() {
     var keepAddress = root.selectedWindow ? root.selectedWindow.address : ""
     var keepDesktop = root.selectedDesktop ? root.selectedDesktop.id : -1
+    // Desktops 1 to 5 always show, so there is always somewhere to move a window and its number to press.
     root.desktops = Model.desktops(Hyprland.workspaces.values || [], Hyprland.toplevels.values || [],
-      root.monitor ? root.monitor.name : "")
+      root.monitor ? root.monitor.name : "", 5)
 
     var desktop = root.desktops.findIndex(function(item) { return item.id === keepDesktop })
     root.desktopIndex = desktop >= 0 ? desktop : Math.max(0, Math.min(root.desktopIndex, root.desktops.length - 1))
@@ -151,6 +160,9 @@ Item {
     root.searching = false
     root.cycling = false
     root.userMoved = false
+    root.shiftHeld = false
+    root.leaving = ({})
+    root.lastMove = null
     root.rebuild()
     root.selectCurrent()
     // SUPER + TAB is a switcher from the first press: it already points at the window used before,
@@ -239,6 +251,8 @@ Item {
     root.leaveKeySet()
     root.opened = false
     root.cycling = false
+    root.shiftHeld = false
+    root.lastMove = null
     enterAnimation.stop()
     exitAnimation.restart()
   }
@@ -324,11 +338,143 @@ Item {
     settleTimer.restart()
   }
 
-  function moveWindow(window, workspace) {
+  // Moves a window to a desktop by number, or to a new one with "empty". Its card leaves the layout at
+  // once and flies into the desktop's thumbnail, and u puts it back. A drop flies from the pointer.
+  function moveWindow(window, workspace, dropPoint) {
     if (!window) return
-    root.dispatchChecked('hl.dsp.window.move({ workspace = "' + workspace + '", window = "' + Model.selector(window.address) + '", follow = false })',
-      "Couldn't move " + (window.title || "the window"))
+    var target = String(workspace)
+    if (target === String(window.workspace)) return
+    var card = root.cardFor(window.address)
+    var landing = root.landingFor(target)
+    var title = window.title || window.appId || "the window"
+
+    var begin = function(image, from) {
+      var marked = Object.assign({}, root.leaving)
+      marked[window.address] = window.workspace
+      root.leaving = marked
+      leavingTimer.restart()
+      root.windowIndex = Math.max(0, Math.min(root.windowIndex, root.shownWindows.length - 1))
+      root.lastMove = { address: window.address, from: window.workspace, title: title,
+        to: target === "empty" ? "a new desktop" : "desktop " + target }
+      undoTimer.restart()
+      root.dispatchChecked('hl.dsp.window.move({ workspace = "' + target + '", window = "' + Model.selector(window.address) + '", follow = false })',
+        "Couldn't move " + title)
+      settleTimer.restart()
+      if (image !== "" && landing) {
+        root.fly(image, from, landing)
+      } else if (landing) {
+        root.pulseUntil = Date.now() + 260
+        root.landed(landing.id)
+      }
+    }
+
+    // A drop already happens on the thumbnail, so only a move from the keyboard flies.
+    if (!dropPoint && card && landing && card.width > 0 && card.height > 0) {
+      var corner = card.mapToItem(scene, 0, 0)
+      var from = { x: corner.x, y: corner.y, width: card.width, height: card.height }
+      var grabbing = card.grabToImage(function(result) {
+        root.flightGrab = result
+        begin(String(result.url), from)
+      })
+      if (grabbing) return
+    }
+    begin("", null)
+  }
+
+  function cardFor(address) {
+    for (var i = 0; i < cardRepeater.count; i++) {
+      var card = cardRepeater.itemAt(i)
+      if (card && card.modelData.address === address) return card
+    }
+    return null
+  }
+
+  // Where a moved window lands: the thumbnail of its desktop, and for a new desktop the first one not
+  // opened yet, which is the one Hyprland picks, or the New tile.
+  function landingFor(target) {
+    for (var i = 0; i < thumbRepeater.count; i++) {
+      var thumb = thumbRepeater.itemAt(i)
+      if (!thumb) continue
+      if (target === "empty" ? thumb.modelData.unopened : String(thumb.modelData.id) === target) {
+        return { item: thumb.frame, id: thumb.modelData.id }
+      }
+    }
+    return target === "empty" && newTile.visible ? { item: newFrame, id: "empty" } : null
+  }
+
+  // The card shrinks into the middle of the thumbnail, keeping its shape, and the thumbnail answers.
+  function fly(image, from, landing) {
+    var corner = landing.item.mapToItem(scene, 0, 0)
+    var fit = Math.min(landing.item.width * 0.7 / from.width, landing.item.height * 0.7 / from.height)
+    var width = from.width * fit
+    var height = from.height * fit
+    flyer.source = image
+    flyer.landingId = landing.id
+    flyer.x = from.x
+    flyer.y = from.y
+    flyer.width = from.width
+    flyer.height = from.height
+    flyer.opacity = 1
+    flyX.to = corner.x + (landing.item.width - width) / 2
+    flyY.to = corner.y + (landing.item.height - height) / 2
+    flyWidth.to = width
+    flyHeight.to = height
+    flight.restart()
+  }
+
+  function undoMove() {
+    var move = root.lastMove
+    if (!move) return
+    root.lastMove = null
+    var marked = Object.assign({}, root.leaving)
+    delete marked[move.address]
+    root.leaving = marked
+    root.dispatchChecked('hl.dsp.window.move({ workspace = "' + move.from + '", window = "' + Model.selector(move.address) + '", follow = false })',
+      "Couldn't move " + move.title + " back")
     settleTimer.restart()
+  }
+
+  // Windows on their way to another desktop, by address, with the desktop they left. Hyprland reports a
+  // move a moment after it happens, so until then their cards stay out of the old desktop.
+  property var leaving: ({})
+  property var lastMove: null
+  property var flightGrab: null
+  // When the thumbnail answering a landing has finished, so a rebuild does not cut it short.
+  property real pulseUntil: 0
+  signal landed(var id)
+
+  Timer {
+    id: leavingTimer
+    interval: 2500
+    onTriggered: root.leaving = ({})
+  }
+
+  Timer {
+    id: undoTimer
+    interval: 6000
+    onTriggered: root.lastMove = null
+  }
+
+  SequentialAnimation {
+    id: flight
+    ParallelAnimation {
+      NumberAnimation { id: flyX; target: flyer; property: "x"; duration: 300; easing.type: Easing.InOutCubic }
+      NumberAnimation { id: flyY; target: flyer; property: "y"; duration: 300; easing.type: Easing.InOutCubic }
+      NumberAnimation { id: flyWidth; target: flyer; property: "width"; duration: 300; easing.type: Easing.InOutCubic }
+      NumberAnimation { id: flyHeight; target: flyer; property: "height"; duration: 300; easing.type: Easing.InOutCubic }
+      SequentialAnimation {
+        PauseAnimation { duration: 210 }
+        NumberAnimation { target: flyer; property: "opacity"; to: 0; duration: 90; easing.type: Easing.InCubic }
+      }
+    }
+    ScriptAction {
+      script: {
+        root.pulseUntil = Date.now() + 260
+        root.landed(flyer.landingId)
+        flyer.source = ""
+        root.flightGrab = null
+      }
+    }
   }
 
   // Closing and moving windows are checked, so a window Hyprland refuses to close or move says so
@@ -378,6 +524,13 @@ Item {
     }
   }
 
+  // A refused move or close leaves every card where Hyprland has it, and nothing to undo.
+  onNoticeChanged: {
+    if (root.notice === "") return
+    root.leaving = ({})
+    root.lastMove = null
+  }
+
   function moveSelectedTo(number) {
     root.moveWindow(root.selectedWindow, String(number))
   }
@@ -403,7 +556,7 @@ Item {
     root.dragWindow = null
     root.dropTarget = null
     if (!window || !target || target.id === window.workspace) return
-    root.moveWindow(window, String(target.id))
+    root.moveWindow(window, String(target.id), point)
   }
 
   // A drag that ends without a drop, from Esc, closing the overview, or the pointer being taken
@@ -446,8 +599,9 @@ Item {
     id: settleTimer
     interval: 140
     onTriggered: {
-      // Rebuilding replaces the cards, so it waits for a drag to finish.
-      if (root.dragWindow !== null) {
+      // Rebuilding replaces the cards and thumbnails, so it waits for a drag, a flying card, and the
+      // thumbnail it landed in to finish.
+      if (root.dragWindow !== null || flight.running || Date.now() < root.pulseUntil) {
         settleTimer.restart()
         return
       }
@@ -528,6 +682,10 @@ Item {
           // moves and jumps the same way.
           var digit = event.nativeScanCode >= 10 && event.nativeScanCode <= 19 ? ((event.nativeScanCode - 9) % 10 || 10) : -1
 
+          if (event.key === Qt.Key_Shift) {
+            root.shiftHeld = true
+            return
+          }
           if (event.key === Qt.Key_Escape) {
             if (root.dragWindow !== null) {
               root.cancelDrag()
@@ -598,6 +756,8 @@ Item {
             root.newDesktop()
           } else if (event.text === "N") {
             root.moveWindow(root.selectedWindow, "empty")
+          } else if (event.text === "u" && root.lastMove !== null) {
+            root.undoMove()
           } else if (event.text === "/") {
             root.searching = true
           } else if (printable) {
@@ -611,6 +771,7 @@ Item {
 
         // Walking windows with SUPER held ends when SUPER comes up.
         Keys.onReleased: function(event) {
+          if (event.key === Qt.Key_Shift) root.shiftHeld = false
           if (!root.cycling) return
           if (event.key === Qt.Key_Super_L || event.key === Qt.Key_Super_R || event.key === Qt.Key_Meta) {
             root.release()
@@ -649,6 +810,13 @@ Item {
               width: root.thumbWidth
               height: root.thumbHeight + root.labelSpace
 
+              Connections {
+                target: root
+                function onLanded(id) {
+                  if (id === thumb.modelData.id) landingPulse.restart()
+                }
+              }
+
               Rectangle {
                 id: thumbFrame
                 width: root.thumbWidth
@@ -656,17 +824,44 @@ Item {
                 radius: Style.cornerRadius
                 clip: true
                 scale: thumb.dropping ? 1.06 : 1
+                transform: Scale {
+                  id: pulseScale
+                  origin.x: thumbFrame.width / 2
+                  origin.y: thumbFrame.height / 2
+                }
 
                 Behavior on scale {
                   NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
                 }
-                color: Util.alpha(Color.menu.background, 0.92)
-                border.width: thumb.selected ? Style.space(3) : Math.max(1, Style.space(1))
-                border.color: thumb.selected ? Color.accent
-                  : (thumb.current ? Util.alpha(Color.accent, 0.55) : Util.alpha(Color.menu.text, 0.18))
 
-                Behavior on border.color {
-                  ColorAnimation { duration: 120 }
+                SequentialAnimation {
+                  id: landingPulse
+                  ParallelAnimation {
+                    NumberAnimation { target: pulseScale; property: "xScale"; to: 1.08; duration: 90; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: pulseScale; property: "yScale"; to: 1.08; duration: 90; easing.type: Easing.OutCubic }
+                  }
+                  ParallelAnimation {
+                    NumberAnimation { target: pulseScale; property: "xScale"; to: 1; duration: 160; easing.type: Easing.InOutCubic }
+                    NumberAnimation { target: pulseScale; property: "yScale"; to: 1; duration: 160; easing.type: Easing.InOutCubic }
+                  }
+                }
+
+                // A desktop not opened yet is an outline, like the New tile, until something is on it.
+                color: thumb.modelData.unopened && !thumb.dropping ? "transparent" : Util.alpha(Color.menu.background, 0.92)
+
+                // The outline is drawn over the miniatures, so their square corners stay inside it.
+                Rectangle {
+                  z: 1
+                  anchors.fill: parent
+                  radius: parent.radius
+                  color: "transparent"
+                  border.width: thumb.selected ? Style.space(3) : Math.max(1, Style.space(1))
+                  border.color: thumb.selected ? Color.accent
+                    : (thumb.current ? Util.alpha(Color.accent, 0.55) : Util.alpha(Color.menu.text, thumb.modelData.unopened ? 0.22 : 0.18))
+
+                  Behavior on border.color {
+                    ColorAnimation { duration: 120 }
+                  }
                 }
 
                 Repeater {
@@ -693,6 +888,39 @@ Item {
                     }
                   }
                 }
+
+                // The number key that reaches this desktop, and with Shift moves a window to it.
+                Rectangle {
+                  visible: thumb.modelData.id <= 10
+                  anchors.left: parent.left
+                  anchors.top: parent.top
+                  anchors.margins: Style.space(6)
+                  width: Math.max(height, badgeText.implicitWidth + Style.spacing.sm * 2)
+                  height: badgeText.implicitHeight + Style.spacing.xxs * 2
+                  radius: Style.cornerRadius
+                  color: root.numbersLit ? Color.accent : Util.alpha(Color.menu.background, 0.85)
+                  border.width: Style.normalBorderWidth
+                  border.color: root.numbersLit ? Color.accent : Util.alpha(Color.menu.text, 0.28)
+                  scale: root.numbersLit ? 1.12 : 1
+
+                  Behavior on color {
+                    ColorAnimation { duration: 120 }
+                  }
+                  Behavior on scale {
+                    NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+                  }
+
+                  Text {
+                    id: badgeText
+                    anchors.centerIn: parent
+                    textFormat: Text.PlainText
+                    text: thumb.modelData.id === 10 ? "0" : String(thumb.modelData.id)
+                    color: root.numbersLit ? Color.menu.background : Color.menu.text
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                    font.bold: true
+                  }
+                }
               }
 
               Text {
@@ -700,7 +928,13 @@ Item {
                 anchors.topMargin: Style.space(6)
                 anchors.horizontalCenter: thumbFrame.horizontalCenter
                 textFormat: Text.PlainText
-                text: thumb.modelData.name
+                // The number is on the thumbnail, so the label says what is on the desktop.
+                text: {
+                  var count = thumb.modelData.windows.length
+                  if (thumb.dropping) return "Move here"
+                  if (thumb.modelData.name !== String(thumb.modelData.id)) return thumb.modelData.name
+                  return count === 0 ? "Empty" : count === 1 ? "1 window" : count + " windows"
+                }
                 width: Math.min(implicitWidth, root.thumbWidth)
                 elide: Text.ElideRight
                 color: thumb.selected ? Color.accent : Color.menu.text
@@ -721,8 +955,10 @@ Item {
             }
           }
 
+          // Desktops not opened yet already stand for new ones, so the New tile shows once they are all in use.
           Item {
             id: newTile
+            visible: !root.hasUnopened
             readonly property bool isNewDesktop: true
             readonly property bool dropping: root.dropTarget !== null && root.dropTarget.id === "empty"
             width: root.thumbWidth
@@ -758,7 +994,7 @@ Item {
               anchors.topMargin: Style.space(6)
               anchors.horizontalCenter: newFrame.horizontalCenter
               textFormat: Text.PlainText
-              text: "New"
+              text: parent.dropping ? "Move here" : "New"
               color: Color.menu.text
               opacity: 0.6
               font.family: Style.font.menuFamily
@@ -773,6 +1009,107 @@ Item {
               onClicked: root.newDesktop()
             }
           }
+        }
+      }
+
+      // A moved window's card on its way into the desktop's thumbnail.
+      Image {
+        id: flyer
+        property var landingId: null
+        z: 3
+        visible: flight.running
+        fillMode: Image.Stretch
+        smooth: true
+
+        // The selected card's outline travels with it, so a dark window still reads as a card in flight.
+        Rectangle {
+          anchors.fill: parent
+          radius: Style.cornerRadius
+          color: "transparent"
+          border.width: Style.space(2)
+          border.color: Color.accent
+        }
+      }
+
+      // After a move, what happened and how to take it back.
+      Rectangle {
+        id: undoToast
+        z: 2
+        visible: opacity > 0
+        opacity: root.lastMove !== null && root.notice === "" ? 1 : 0
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Style.space(72)
+        width: undoRow.implicitWidth + Style.spacing.lg * 2
+        height: undoRow.implicitHeight + Style.spacing.sm * 2
+        radius: height / 2
+        color: Util.alpha(Color.menu.background, 0.94)
+        border.width: Math.max(1, Style.space(1))
+        border.color: undoMouse.containsMouse ? Color.accent : Util.alpha(Color.menu.text, 0.28)
+
+        Behavior on opacity {
+          NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+        }
+
+        property string text: root.lastMove ? "Moved " + root.lastMove.title + " to " + root.lastMove.to : ""
+
+        Row {
+          id: undoRow
+          anchors.centerIn: parent
+          spacing: Style.spacing.md
+
+          Text {
+            anchors.verticalCenter: parent.verticalCenter
+            width: Math.min(implicitWidth, Style.space(420))
+            elide: Text.ElideMiddle
+            textFormat: Text.PlainText
+            text: undoToast.text
+            color: Color.menu.text
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.body
+          }
+
+          Rectangle {
+            anchors.verticalCenter: parent.verticalCenter
+            width: Math.max(height, undoKey.implicitWidth + Style.spacing.md * 2)
+            height: undoKey.implicitHeight + Style.spacing.xxs * 2
+            radius: Style.cornerRadius
+            color: "transparent"
+            border.width: Style.normalBorderWidth
+            border.color: Util.alpha(Color.menu.text, 0.28)
+
+            Text {
+              id: undoKey
+              anchors.centerIn: parent
+              textFormat: Text.PlainText
+              text: "u"
+              color: Color.menu.text
+              opacity: 0.8
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+            }
+          }
+
+          Text {
+            anchors.verticalCenter: parent.verticalCenter
+            textFormat: Text.PlainText
+            text: "Undo"
+            color: Color.accent
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.body
+            font.bold: true
+          }
+        }
+
+        MouseArea {
+          id: undoMouse
+          anchors.fill: parent
+          enabled: root.lastMove !== null
+          hoverEnabled: true
+          cursorShape: Qt.PointingHandCursor
+          // Hovering keeps the offer open while the pointer is on its way to it.
+          onContainsMouseChanged: if (containsMouse) undoTimer.restart()
+          onClicked: root.undoMove()
         }
       }
 
@@ -1122,14 +1459,19 @@ Item {
         spacing: Style.spacing.xxl
 
         Repeater {
+          // The keys for what is on screen now. Holding Shift shows the keys that move windows.
           model: root.cycling
-            ? [{ keys: ["tab"], label: "Next window" }, { keys: ["⇧", "tab"], label: "Previous" },
+            ? [{ keys: ["tab"], label: "Next window" }, { keys: ["shift", "tab"], label: "Previous" },
                { keys: ["super"], label: "Let go to jump" }, { keys: ["click"], label: "Go" }, { keys: ["esc"], label: "Cancel" }]
+            : root.dragWindow !== null
+            ? [{ keys: [], label: "Drop on a desktop to move the window there" }, { keys: ["esc"], label: "Cancel" }]
             : root.searching
             ? [{ keys: ["↑", "↓"], label: "Move" }, { keys: ["enter"], label: "Go" }, { keys: ["esc"], label: "Clear" }]
-            : [{ keys: ["h", "j", "k", "l"], label: "Move" }, { keys: ["⇧", "h", "l"], label: "Desktops" }, { keys: ["enter"], label: "Go" },
-               { keys: ["x"], label: "Close" }, { keys: ["⇧", "1-9"], label: "Move to" }, { keys: ["n"], label: "New" },
-               { keys: ["⇧", "n"], label: "To new desktop" },
+            : root.shiftHeld
+            ? [{ keys: ["shift", "1-9"], label: "Move the window to that desktop" }, { keys: ["shift", "n"], label: "Move it to a new desktop" },
+               { keys: ["shift", "h", "l"], label: "Previous or next desktop" }]
+            : [{ keys: ["h", "j", "k", "l"], label: "Move" }, { keys: ["1-9"], label: "Desktop" }, { keys: ["shift"], label: "Hold to move windows" },
+               { keys: ["enter"], label: "Go" }, { keys: ["x"], label: "Close" }, { keys: ["n"], label: "New desktop" },
                { keys: ["/"], label: "Search" }, { keys: ["esc"], label: "Back" }]
 
           delegate: Row {

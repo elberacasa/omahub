@@ -4,6 +4,13 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 
 ## Unreleased
 
+### Added
+
+- The overview always shows desktops 1 to 5, each numbered with the key that reaches it, so an empty desktop is one key or one drop away. The New tile appears once they are all in use.
+- A window moved with Shift + a number flies into its desktop's thumbnail, and u or Undo puts it back.
+- Holding Shift in the overview lights the desktop numbers and shows the keys that move windows. Dragging a window lights them too, and the desktop under it reads "Move here".
+- Each desktop's label says how many windows are on it.
+
 ### Fixed
 
 - Switches and choices in the hub change the moment you pick them. If a change fails or takes too long, the row goes back to how it was and says why.

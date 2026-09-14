@@ -67,12 +67,24 @@ function readingOrder(a, b) {
 }
 
 // Regular desktops on the named screen, in id order, each with its windows in reading order.
-function desktops(workspaces, toplevels, monitorName) {
+// With atLeast, desktops 1 to atLeast are always there, the ones not opened yet included, so the strip
+// and SUPER + a number line up and a window can be moved to any of them. A number already open on
+// another screen is left out.
+function desktops(workspaces, toplevels, monitorName, atLeast) {
   const list = []
+  const elsewhere = {}
   for (const workspace of workspaces) {
     if (!workspace || workspace.id <= 0) continue
-    if (monitorName && workspace.monitor && workspace.monitor.name !== monitorName) continue
-    list.push({ id: workspace.id, name: String(workspace.name || workspace.id), windows: [] })
+    if (monitorName && workspace.monitor && workspace.monitor.name !== monitorName) {
+      elsewhere[workspace.id] = true
+      continue
+    }
+    list.push({ id: workspace.id, name: String(workspace.name || workspace.id), windows: [], unopened: false })
+  }
+  const present = {}
+  for (const desktop of list) present[desktop.id] = true
+  for (let id = 1; id <= (atLeast || 0); id++) {
+    if (!present[id] && !elsewhere[id]) list.push({ id: id, name: String(id), windows: [], unopened: true })
   }
   list.sort((a, b) => a.id - b.id)
 
