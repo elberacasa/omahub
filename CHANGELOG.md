@@ -7,7 +7,8 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 ### Added
 
 - The overview always shows desktops 1 to 5, each numbered with the key that reaches it, so an empty desktop is one key or one drop away. The New tile appears once they are all in use.
-- A window moved with Shift + a number flies into its desktop's thumbnail, and u or Undo puts it back.
+- A window moved with Shift + a number moves the moment the key is pressed and flies into its desktop's thumbnail, and u or Undo puts it back. The other windows slide into the room it leaves.
+- Holding SUPER from SUPER + TAB is one gesture: pick a desktop with a number, a window with h j k l, the arrows, or the pointer, and letting go of SUPER goes there. Moving windows while holding it keeps the overview open to keep organizing.
 - Holding Shift in the overview lights the desktop numbers and shows the keys that move windows. Dragging a window lights them too, and the desktop under it reads "Move here".
 - Each desktop's label says how many windows are on it.
 - Add apps in the dock's menu lists every installed app with the ones in the dock checked. Type to search, and click or press Enter to keep or remove an app.
