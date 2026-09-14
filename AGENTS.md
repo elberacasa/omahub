@@ -13,6 +13,7 @@ Omahub is a plugin for the [Omarchy](https://omarchy.org) shell, written in QML 
 | `manifest.json` | Plugin manifest. `version` follows semver |
 | `Omahub.qml` | The entry the shell loads. Routes each summon to the feature it is for |
 | `hub/` | The hub window: search, sections, and rows read from `omahub settings --json`, plus pure data shaping in `HubModel.js` |
+| `overview/` | The overview: `Overview.qml` with live previews, and desktops, Exposé packing, search, and grid moves in `OverviewModel.js` |
 | `dock/` | The dock: `Dock.qml`, layout and magnification in `DockModel.js`, and `covered.sh`, which tells an auto-hiding dock when a window reaches it |
 | `capture/` | The screenshot thumbnail: `Capture.qml` and the scripts it runs. `capture/thumbnail` turns it on as a keyboard layer |
 | `bin/omahub` | The command the hub, people, and agents use to list and change settings |

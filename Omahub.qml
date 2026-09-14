@@ -2,11 +2,13 @@ import QtQuick
 import "hub"
 import "capture"
 import "dock"
+import "overview"
 
 // The one entry the shell loads for Omahub. The shell summons it with a payload and each
-// feature takes the payloads meant for it: a screenshot carries `capture`, everything else
-// goes to the hub. SUPER + A toggles the hub, so the shell reads `opened` from the hub. The dock
-// runs on its own and reloads its settings when `omahub` asks through `dockReload`.
+// feature takes the payloads meant for it: a screenshot carries `capture`, the overview key
+// carries `overview`, and everything else goes to the hub. SUPER + A toggles the hub, so the
+// shell reads `opened` from the hub. The dock runs on its own and reloads its settings when
+// `omahub` asks through `dockReload`.
 Item {
   id: root
 
@@ -18,7 +20,11 @@ Item {
 
     if (payload.capture) {
       capture.open(JSON.stringify(payload.capture))
+    } else if (payload.overview) {
+      hub.close()
+      overview.open(String(payload.overview))
     } else {
+      overview.close()
       hub.open(payloadJson)
     }
   }
@@ -41,5 +47,9 @@ Item {
 
   Dock {
     id: dock
+  }
+
+  Overview {
+    id: overview
   }
 }

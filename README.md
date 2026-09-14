@@ -25,6 +25,7 @@ Every setting in Omahub is a small, readable file. People change them from the h
 | The hub | SUPER + A opens it. Search every setting, move with j and k, change it with Space. Every row shows the real state of your system. The first time it loads, a welcome offers the settings recommended for your keyboard |
 | Keyboard | Detects your keyboard and recommends keys for it: Mac screenshots, Vim focus, agent keys, and mouse buttons. No Omarchy action loses its key |
 | Agents | Turn on "Let agents use Omahub" and any coding agent can read and change these settings through the `omahub` command. Pick which subscriptions, such as Claude and Codex, show in the bar's Agents panel, and put their limits on the bar when your Agents widget offers it |
+| Overview | SUPER + TAB shows every desktop and window with live previews. Move with h, j, k, and l, type to find any window, move or close windows, and let go of SUPER to jump |
 | Dock | Your pinned and open apps at the bottom of the screen. Icons magnify under the pointer, it slides away when a window reaches it, and a right-click keeps an app or changes how it behaves |
 | Projects | Type a name and Omahub creates the project, starts git, and opens your agent there. Pick your default agent, editor, and projects folder, and add more agents and editors from Omarchy's own menu |
 | Capture | Turn on the thumbnail and every screenshot slides into the corner. Click to edit, drag into any app, drag right to throw away, right-click to save it anywhere. Pick the screenshot folder in the same section |
@@ -74,6 +75,7 @@ $omahub settings                   # everything you can change
 | `keyboard/agent-keys` | Agent on SUPER + SHIFT + A, browser on SUPER + B, dictation on SUPER + R | Every keyboard |
 | `keyboard/vim-focus` | H, J, K, and L focus, swap, and group windows wherever Omarchy uses arrows | 60% and 65% keyboards |
 | `keyboard/mouse-buttons` | Hold SUPER and press a mouse side button to take a screenshot or start dictation | Mice with side buttons |
+| `keyboard/overview` | SUPER + TAB shows every desktop and window with live previews. Hold SUPER and tap TAB to walk windows | Every keyboard |
 
 Every Omarchy action these settings take a key from moves to a new one:
 
@@ -89,6 +91,7 @@ Every Omarchy action these settings take a key from moves to a new one:
 | Tmux keybindings | SUPER + ALT + K | SUPER + ALT + / |
 | Herdr keybindings | SUPER + CTRL + K | SUPER + CTRL + / |
 | Monitor scaling up and down | SUPER + / and SUPER + ALT + / | SUPER + CTRL + ALT + = and - |
+| Next workspace | SUPER + TAB | SUPER + CTRL + ALT + TAB |
 
 After every change, Omahub compares the actions Omarchy has keys for before and after, and undoes the change if any action lost its key. It edits one marked block in `~/.config/hypr/bindings.lua` and backs the file up first. With the screenshot thumbnail on, PRINT and the screenshot keys show it after every shot.
 

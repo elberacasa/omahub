@@ -162,6 +162,8 @@ case "${1:-help}" in
   open)
     if [[ ${2:-} == "welcome" ]]; then
       payload='{"view":"welcome"}'
+    elif [[ ${2:-} == "overview" ]]; then
+      payload='{"overview":"open"}'
     elif [[ ${2:-} == */* ]]; then
       payload=$(jq -nc --arg id "$2" '{section: ($id | split("/")[0]), setting: $id}')
     else

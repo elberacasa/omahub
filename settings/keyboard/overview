@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# omahub:title=Overview
+# omahub:summary=SUPER + TAB shows every desktop and window with live previews. Next workspace moves to SUPER + CTRL + ALT + TAB
+# omahub:section=keyboard
+# omahub:kind=toggle
+# omahub:icon=󰖯
+# omahub:keywords=overview mission control expose desktops workspaces windows switcher previews tab alt tab
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/keymap.sh"
+
+omahub_keymap_toggle_setting overview keyboard/overview "$@"
