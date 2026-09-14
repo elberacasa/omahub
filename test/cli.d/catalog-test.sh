@@ -76,4 +76,7 @@ assert_true "the failure explains how to list settings" grep -q "omahub settings
 
 assert_eq "version comes from the manifest" "$(omahub version)" "$(jq -r .version "$OMAHUB_PATH/manifest.json")"
 
+assert_eq "an order header is read as a number" "$(jq -r '.[] | select(.id == "dock/show") | .order' <<<"$catalog")" "10"
+assert_eq "a setting without an order header gets 100" "$(jq -r '.[] | select(.id == "keyboard/omahub-key") | .order' <<<"$catalog")" "100"
+
 finish

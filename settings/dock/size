@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# omahub:title=Size
+# omahub:summary=How large the dock's icons are
+# omahub:section=dock
+# omahub:order=20
+# omahub:kind=choice
+# omahub:icon=󰁌
+# omahub:keywords=dock size icon small medium large big bigger
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/dock.sh"
+
+omahub_dock_choice_setting size medium "small=Small medium=Medium large=Large" dock/size "$@"

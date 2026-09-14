@@ -3,6 +3,7 @@
 # omahub:title=Automatically hide
 # omahub:summary=The dock slides away when a window reaches it, and the bottom edge brings it back. Off keeps it on screen, with windows sized to sit above it
 # omahub:section=dock
+# omahub:order=40
 # omahub:kind=toggle
 # omahub:icon=󰁅
 # omahub:keywords=dock hide autohide automatically bottom edge reveal

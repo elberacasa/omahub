@@ -3,6 +3,7 @@
 # omahub:title=Dock
 # omahub:summary=Your pinned and open apps at the bottom of the screen. Right-click the dock for its options
 # omahub:section=dock
+# omahub:order=10
 # omahub:kind=toggle
 # omahub:icon=󰀻
 # omahub:keywords=dock apps launcher taskbar mac pinned open running bottom

@@ -26,7 +26,7 @@ Every setting in Omahub is a small, readable file. People change them from the h
 | Keyboard | Detects your keyboard and recommends keys for it: Mac screenshots, Vim focus, agent keys, and mouse buttons. No Omarchy action loses its key |
 | Agents | Turn on "Let agents use Omahub" and any coding agent can read and change these settings through the `omahub` command. Pick which subscriptions, such as Claude and Codex, show in the bar's Agents panel, and put their limits on the bar when your Agents widget offers it, choosing for each plan which of its limits shows |
 | Overview | SUPER + TAB flips to your last window with a tap, and held, walks every window on every desktop with live previews. Move with h, j, k, and l, type to find any window, drag windows between desktops, click any desktop to go there, and let go of SUPER to jump |
-| Dock | Your pinned and open apps at the bottom of the screen. Icons magnify under the pointer, it slides away when a window reaches it or stays on screen with windows sized above it, and a right-click keeps an app or changes how it behaves |
+| Dock | Your pinned and open apps at the bottom of the screen. Pick its size and magnification, the open app dots, and whether open apps join it. It slides away when a window reaches it or stays on screen with windows sized above it, and a right-click keeps an app or changes how it behaves |
 | Projects | Type a name and Omahub creates the project, starts git, and opens your agent there. Pick your default agent, editor, and projects folder, and add more agents and editors from Omarchy's own menu |
 | Capture | Turn on the thumbnail and every screenshot slides into the corner. Click to edit, drag into any app, drag right to throw away, right-click to save it anywhere. Pick the screenshot folder in the same section |
 
@@ -64,6 +64,13 @@ omarchy restart shell
 That is everything. The hub, the screenshot thumbnail, and every setting come in one plugin, and nothing turns on until you choose it.
 
 Plugins land disabled until you enable them, so you can read the code first. Omahub never uses sudo. Anything that needs your password opens in a visible terminal.
+
+To remove it, put everything back first, then remove the plugin:
+
+```bash
+~/.config/omarchy/plugins/io.github.elberacasa.omahub/bin/omahub uninstall
+omarchy plugin remove io.github.elberacasa.omahub
+```
 
 ## Keyboard
 

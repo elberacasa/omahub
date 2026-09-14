@@ -35,10 +35,10 @@ function webHost(appId) {
   return match ? match[1] : ""
 }
 
-// Pinned apps in their order, then apps with open windows. A window finds its app by the entry's
-// startup class or id, compared without case, so "Cursor" and "cursor" meet. A web app window finds
-// the Omarchy web app that opens its site.
-function items(pins, entries, toplevels) {
+// Pinned apps in their order, then apps with open windows, unless showOpen is false. A window finds
+// its app by the entry's startup class or id, compared without case, so "Cursor" and "cursor" meet.
+// A web app window finds the Omarchy web app that opens its site.
+function items(pins, entries, toplevels, showOpen) {
   const byId = {}
   const byClass = {}
   const byHost = {}
@@ -79,6 +79,7 @@ function items(pins, entries, toplevels) {
   }
 
   const pinnedCount = result.length
+  if (showOpen === false) return result
   for (const id of order) {
     if (seen[id]) continue
     seen[id] = true
@@ -99,6 +100,35 @@ function layout(items, cellWidth, dividerWidth) {
     x += cellWidth
   }
   return { centers: centers, width: x }
+}
+
+// QML hands Hyprland's lists over as array-like wrappers, not arrays.
+function listValue(value) {
+  const out = []
+  const length = value && value.length ? value.length : 0
+  for (let i = 0; i < length; i++) out.push(value[i])
+  return out
+}
+
+// True when a window on the monitor's visible desktop, or on its open special workspace, reaches
+// into the band the dock uses at the bottom of the screen. `monitor` and `clients` are Hyprland's
+// own records, the ones `hyprctl monitors -j` and `hyprctl clients -j` print.
+function covered(monitor, clients, width, height) {
+  if (!monitor || !(monitor.scale > 0)) return false
+  const left = monitor.x + (monitor.width / monitor.scale - width) / 2
+  const right = left + width
+  const top = monitor.y + monitor.height / monitor.scale - height
+  const active = monitor.activeWorkspace ? monitor.activeWorkspace.id : null
+  const special = monitor.specialWorkspace ? monitor.specialWorkspace.id || 0 : 0
+  return listValue(clients).some(client => {
+    if (!client || client.mapped !== true || client.hidden === true) return false
+    const workspace = client.workspace ? client.workspace.id : null
+    if (workspace !== active && !(special !== 0 && workspace === special)) return false
+    const at = listValue(client.at)
+    const size = listValue(client.size)
+    if (at.length < 2 || size.length < 2) return false
+    return at[0] < right && at[0] + size[0] > left && at[1] + size[1] > top
+  })
 }
 
 function magnification(distance, range, maxScale) {

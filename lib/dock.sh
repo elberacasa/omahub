@@ -118,6 +118,53 @@ omahub_dock_unpin() {
   omahub_dock_update --arg id "$1" '.pins -= [$id]'
 }
 
+# The current value of a dock choice, one of its values. A switch saved before the setting became a
+# choice reads as the default when it was on, and as off when it was off.
+omahub_dock_choice() {
+  local key="$1" default="$2" choices="$3" value
+  value=$(omahub_dock_flag "$key" "\"$default\"")
+  if [[ $value == "false" && " $choices " == *" off="* ]]; then
+    value="off"
+  fi
+  if [[ " $choices " != *" $value="* ]]; then
+    value="$default"
+  fi
+  printf '%s\n' "$value"
+}
+
+# The get, options, set, and reset verbs of a dock choice stored under <key>. Choices are given as
+# "value=Label" words, for example "small=Small medium=Medium large=Large".
+omahub_dock_choice_setting() {
+  local key="$1" default="$2" choices="$3" id="$4" verb="${5:-}" value="${6:-}" current pair
+
+  case "$verb" in
+    get) ;;
+    options)
+      current=$(omahub_dock_choice "$key" "$default" "$choices")
+      for pair in $choices; do
+        jq -nc --arg value "${pair%%=*}" --arg label "${pair#*=}" --arg current "$current" \
+          '{value: $value, label: $label, current: ($value == $current)}'
+      done | jq -sc '.'
+      return
+      ;;
+    set)
+      if [[ -z $value || " $choices " != *" $value="* ]]; then
+        omahub_fail "usage: omahub set $id <$(tr ' ' '\n' <<<"$choices" | cut -d= -f1 | paste -sd '|')>"
+      fi
+      omahub_dock_update --arg key "$key" --arg value "$value" '.[$key] = $value'
+      ;;
+    reset) omahub_dock_update --arg key "$key" 'del(.[$key])' ;;
+    *) omahub_fail "usage: omahub get|set|options|reset $id" ;;
+  esac
+
+  current=$(omahub_dock_choice "$key" "$default" "$choices")
+  for pair in $choices; do
+    if [[ ${pair%%=*} == "$current" ]]; then
+      omahub_state "$(jq -nc --arg value "$current" '$value')" "${pair#*=}"
+    fi
+  done
+}
+
 # The get, set, and reset verbs of a dock switch stored under <key>, with its default.
 omahub_dock_toggle_setting() {
   local key="$1" default="$2" id="$3" verb="${4:-}" value="${5:-}"

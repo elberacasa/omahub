@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# omahub:title=Animate opening apps
+# omahub:summary=An icon lifts once when its app starts
+# omahub:section=dock
+# omahub:order=70
+# omahub:kind=toggle
+# omahub:icon=󱓞
+# omahub:keywords=dock bounce animate animation opening launch lift
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/dock.sh"
+
+omahub_dock_toggle_setting bounce true dock/bounce "$@"

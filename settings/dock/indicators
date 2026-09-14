@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# omahub:title=Open app dots
+# omahub:summary=A dot under every app with an open window
+# omahub:section=dock
+# omahub:order=50
+# omahub:kind=toggle
+# omahub:icon=󰧞
+# omahub:keywords=dock indicators dots running open apps lights
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/dock.sh"
+
+omahub_dock_toggle_setting indicators true dock/indicators "$@"

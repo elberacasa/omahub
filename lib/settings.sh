@@ -72,7 +72,8 @@ omahub_setting_json() {
           prompt: ($h.prompt // ""),
           closes: ($h.closes == "true"),
           more: ($h.more // ""),
-          hidden: ($h.hidden == "true")
+          hidden: ($h.hidden == "true"),
+          order: (try ($h.order | tonumber) catch 100)
         }
       else
         empty

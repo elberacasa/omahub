@@ -32,6 +32,12 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - An Overview button leads the dock.
 - The dock looks at home next to the Mac's: a soft rounded shelf with a hairline edge, larger icons that stay sharp when magnified, an Overview tile, and names in small pills. With `dock/autohide` off it stays on screen and windows are sized to sit above it.
 - Clicking a desktop in the overview goes there at once.
+- Dock settings that a Mac user knows, in the hub's Dock section: Size, Magnification with Off, Subtle, and Large, open app dots, showing open apps that are not kept, and the bounce when an app opens. A magnification switch saved before keeps working.
+- `omahub uninstall` resets every setting and removes Omahub's data, then shows the command that removes the plugin. It asks first, or takes `--yes`.
+
+### Performance
+
+- An auto-hiding dock decides when to step aside from what the shell already knows about windows, instead of starting several processes every second and a half.
 - The overview and the dock report where their pieces are on screen through `omarchy-shell shell call io.github.elberacasa.omahub overviewLayout ""` and `dockLayout`, for agents and scripted demos.
 - The dock. Turn on `dock/show` for your pinned and open apps at the bottom of the screen, starting from Omarchy's default terminal, browser, file manager, and editor. Click opens or cycles windows, icons magnify, it hides when a window reaches it, and its right-click menu keeps apps and changes `dock/autohide` and `dock/magnify`. `omahub dock pin <app>` does the same from a terminal.
 - New project: name it in the hub, or run `omahub project new <name>`, and Omahub creates the folder in your projects folder, starts git, and opens your agent or editor there. `omahub open projects/new` jumps straight to the name.

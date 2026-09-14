@@ -51,7 +51,8 @@ function rows(catalog, section, query) {
   const searching = (query || "").trim().length > 0
   return catalog
     .filter(setting => searching ? matches(setting, query) : setting.section === section)
-    .sort((a, b) => (KIND_ORDER[a.kind] ?? 9) - (KIND_ORDER[b.kind] ?? 9) || a.title.localeCompare(b.title))
+    .sort((a, b) => (a.order ?? 100) - (b.order ?? 100)
+      || (KIND_ORDER[a.kind] ?? 9) - (KIND_ORDER[b.kind] ?? 9) || a.title.localeCompare(b.title))
 }
 
 function parseJson(text) {

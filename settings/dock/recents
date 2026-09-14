@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# omahub:title=Show open apps
+# omahub:summary=Apps you have open but have not kept in the dock appear after a divider
+# omahub:section=dock
+# omahub:order=60
+# omahub:kind=toggle
+# omahub:icon=󰋚
+# omahub:keywords=dock recent open running apps divider suggested
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/dock.sh"
+
+omahub_dock_toggle_setting recents true dock/recents "$@"

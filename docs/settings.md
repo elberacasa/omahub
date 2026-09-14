@@ -53,6 +53,7 @@ Only executable files are read. `chmod +x` a new setting.
 | `requires` | no | A plugin id (contains a dot) or a command. The setting is hidden when it is missing |
 | `privileged` | no | `true` makes the hub run `set` in Omarchy's floating terminal |
 | `hidden` | no | `true` keeps it out of the hub but available to `omahub` |
+| `order` | no | A number that places the row in its section, lowest first. Rows without one come after, by kind and title |
 | `action` | no | Button label for an `action` setting, such as `Create`. Its `set` runs the action |
 | `prompt` | no | For an `action`: the hub asks for a value inline, with this placeholder, then runs `set <value>` |
 | `closes` | no | `true` closes the hub after `set` succeeds, for actions that open a window |

@@ -15,19 +15,25 @@ Item {
 
   readonly property string stateFile: Quickshell.env("HOME") + "/.local/state/omahub/dock.json"
   readonly property string omahub: Qt.resolvedUrl("../bin/omahub").toString().replace("file://", "")
-  readonly property string coverScript: Qt.resolvedUrl("covered.sh").toString().replace("file://", "")
 
   property var config: ({})
   readonly property bool enabled: root.config.show === true
   readonly property bool autohide: root.config.autohide !== false
-  readonly property bool magnify: root.config.magnify !== false
+  // Magnification was a switch before it had strengths: on reads as large, off as off.
+  readonly property string magnification: root.config.magnify === false || root.config.magnify === "off" ? "off"
+    : (root.config.magnify === "subtle" ? "subtle" : "large")
+  readonly property bool magnify: root.magnification !== "off"
+  readonly property string size: ["small", "medium", "large"].indexOf(root.config.size) >= 0 ? root.config.size : "medium"
+  readonly property bool indicators: root.config.indicators !== false
+  readonly property bool showOpen: root.config.recents !== false
+  readonly property bool bounce: root.config.bounce !== false
   readonly property var pins: Array.isArray(root.config.pins) ? root.config.pins : []
 
   readonly property var items: Model.items(root.pins,
-    DesktopEntries.applications.values || [], ToplevelManager.toplevels.values || [])
+    DesktopEntries.applications.values || [], ToplevelManager.toplevels.values || [], root.showOpen)
   readonly property var layout: Model.layout(root.items, root.cellWidth, root.dividerWidth)
 
-  readonly property int iconSize: Style.space(50)
+  readonly property int iconSize: Style.space(root.size === "small" ? 40 : (root.size === "large" ? 62 : 50))
   readonly property int cellPadding: Style.space(5)
   readonly property int cellWidth: root.iconSize + root.cellPadding * 2
   readonly property int dividerWidth: Style.space(17)
@@ -39,7 +45,7 @@ Item {
   readonly property int shelfRadius: Math.round(root.baseHeight * 0.32)
   readonly property color hairline: Util.alpha(Color.menu.text, 0.14)
   readonly property int edgeGap: Style.gapsOut
-  readonly property real maxScale: root.magnify ? 1.5 : 1
+  readonly property real maxScale: root.magnification === "large" ? 1.5 : (root.magnification === "subtle" ? 1.25 : 1)
   readonly property real magnifyRange: root.cellWidth * 2.5
   // The overview button leads the dock, set off from the apps by a divider.
   readonly property int overviewButtonWidth: root.cellWidth + root.dividerWidth
@@ -54,7 +60,6 @@ Item {
   property bool pointerInside: false
   property bool lingering: false
   property bool covered: false
-  property bool coverPending: false
   property bool menuOpen: false
   property var menuItem: null
   property real menuCenter: 0
@@ -181,23 +186,31 @@ Item {
     } else if (entry.action === "autohide") {
       Quickshell.execDetached([root.omahub, "set", "dock/autohide", root.autohide ? "off" : "on"])
     } else if (entry.action === "magnify") {
-      Quickshell.execDetached([root.omahub, "set", "dock/magnify", root.magnify ? "off" : "on"])
+      Quickshell.execDetached([root.omahub, "set", "dock/magnify", root.magnify ? "off" : "large"])
     } else if (entry.action === "settings") {
       Quickshell.execDetached([root.omahub, "open", "dock"])
     }
   }
 
+  // Whether a window reaches the dock's band, read from Hyprland's own records. Refreshing them is a
+  // request over Hyprland's socket, so checking often starts no processes. The answers arrive a
+  // moment later, so the check is read again a few times.
   function checkCover() {
     if (!root.enabled || !root.autohide) {
+      coverRead.stop()
       root.covered = false
       return
     }
-    if (coverProcess.running) {
-      root.coverPending = true
-      return
-    }
-    coverProcess.command = [root.coverScript, String(root.baseWidth + root.edgeGap * 2), String(root.baseHeight + root.edgeGap)]
-    coverProcess.running = true
+    Hyprland.refreshMonitors()
+    Hyprland.refreshToplevels()
+    coverRead.passes = 0
+    coverRead.restart()
+  }
+
+  function readCover() {
+    var monitor = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.lastIpcObject : null
+    var clients = (Hyprland.toplevels.values || []).map(function(toplevel) { return toplevel.lastIpcObject })
+    root.covered = Model.covered(monitor, clients, root.baseWidth + root.edgeGap * 2, root.baseHeight + root.edgeGap)
   }
 
   onEnabledChanged: root.checkCover()
@@ -214,16 +227,15 @@ Item {
     onLoadFailed: root.config = ({})
   }
 
-  Process {
-    id: coverProcess
-    stdout: StdioCollector {
-      onStreamFinished: root.covered = text.trim() === "covered"
-    }
-    onExited: {
-      if (root.coverPending) {
-        root.coverPending = false
-        Qt.callLater(root.checkCover)
-      }
+  Timer {
+    id: coverRead
+    property int passes: 0
+    interval: 70
+    repeat: true
+    onTriggered: {
+      root.readCover()
+      coverRead.passes += 1
+      if (coverRead.passes >= 3) coverRead.stop()
     }
   }
 
@@ -518,7 +530,7 @@ Item {
             }
 
             Rectangle {
-              visible: cell.windowCount > 0
+              visible: root.indicators && cell.windowCount > 0
               width: Style.space(4)
               height: width
               radius: width / 2
@@ -543,10 +555,10 @@ Item {
                 if (mouse.button === Qt.RightButton) {
                   root.openMenu(cell.modelData, cell)
                 } else if (mouse.button === Qt.MiddleButton) {
-                  hopAnimation.restart()
+                  if (root.bounce) hopAnimation.restart()
                   root.launch(cell.modelData)
                 } else {
-                  if (cell.windowCount === 0) hopAnimation.restart()
+                  if (root.bounce && cell.windowCount === 0) hopAnimation.restart()
                   root.openItem(cell.modelData)
                 }
               }
