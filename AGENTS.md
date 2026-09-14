@@ -82,7 +82,29 @@ Look for pops, flicker, jumps, and states that skip.
 dev/demo dev/demos/overview-drag.sh 12   # review tmp/demos/overview-drag.png and its .log
 ```
 
-Demo scripts source `dev/demo-lib.sh` for `move`, `click`, `drag`, `key`, `summon`, `layout`, and throwaway windows. Takes meant for the README or a post use `dev/demo <script> <seconds> --stage`, which moves every real window to a hidden desktop first and brings each one back to its desktop afterwards. Omahub reports where its pieces are on screen with `omarchy-shell shell call io.github.elberacasa.omahub overviewLayout ""` and `dockLayout`, so scripts never guess pixels. Never send SUPER combinations with wtype: its keys reach Hyprland as other keys. Drive what a keybind does through `summon` instead.
+Demo scripts source `dev/demo-lib.sh` for `move`, `click`, `drag`, `key`, `summon`, `layout`, and throwaway windows. Takes meant for the README or a post use `dev/demo <script> <seconds> --stage`, which moves every real window to a hidden desktop first and brings each one back to its desktop afterwards. Omahub reports where its pieces are on screen with `omarchy-shell shell call io.github.elberacasa.omahub overviewLayout ""` and `dockLayout`, so scripts never guess pixels. Never send SUPER combinations with wtype: it brings its own keymap, so its keys reach Hyprland as other keys. Use `dev/agent chord` instead.
+
+- Anything a person does with keys, clicks, or drags gets a live check in `test/live.d/`. `dev/live` runs them on this desktop inside a sandbox: test windows on two free desktops, with Omahub's settings and the Hyprland bindings backed up and verified when it ends, even after a failure. Each run is saved to `tmp/agent/live.log`.
+
+```bash
+dev/live --deploy            # sync, restart the shell, run every live check
+dev/live overview            # only test/live.d/overview-live.sh
+```
+
+Live checks, and agents testing or debugging by hand, use `dev/agent`. It reads what Omahub shows from Omahub itself and waits on conditions instead of sleeping:
+
+```bash
+dev/agent sandbox start
+dev/agent state '.omahub.overview'                      # what Omahub shows, as JSON
+dev/agent hold SUPER; dev/agent chord TAB; dev/agent chord 7; dev/agent let-go SUPER
+dev/agent expect "went to desktop 7" '.desktop == 7' 1  # waits up to a second
+dev/agent drag overview.card:a overview.desktop:7
+dev/agent motion undo -- dev/agent chord u              # tiles the frames around the key
+dev/agent errors                                        # warnings Omahub logged
+dev/agent sandbox end
+```
+
+Keys go through a virtual keyboard with the real keymap, so Hyprland's bindings, release bindings, and key sets behave exactly as they do for a person. Because the keys are real, `dev/agent` refuses SUPER combinations other than Omahub's own outside Omahub's key sets, keys for a window that is not a test window, and keys that would close or move a real window or change a real setting. Shots from `dev/agent shot` can show real windows, so they stay in `tmp/`.
 
 ## Commits and releases
 

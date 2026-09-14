@@ -215,7 +215,10 @@ Item {
         : { x: screenX + screenWidth / 2, y: screenY + screenHeight - 1 })
     return JSON.stringify({
       shown: root.shown, position: root.edge, keyboard: root.keyboardActive, cursor: root.keyCursor,
-      menu: root.menuOpen, apps: apps, overview: place(overviewButton),
+      menu: root.menuOpen, apps: apps, overview: place(overviewButton), pressed: root.iconPressed,
+      busy: dockCommand.running || root.commandQueue.length > 0,
+      menuItem: root.menuOpen && root.menuItem ? root.menuItem.id : null,
+      menuEntry: root.menuOpen && root.menuIndex >= 0 && root.menuEntries[root.menuIndex] ? root.menuEntries[root.menuIndex].label || null : null,
       drag: root.dragIndex >= 0 ? { index: root.dragIndex, along: Math.round(root.dragAlong), away: Math.round(root.dragAway),
         removing: root.dragRemoving, slot: root.dragSlot } : null,
       picker: root.pickerOpen ? { query: root.pickerQuery, index: root.pickerIndex, rows: root.pickerRows.length,
@@ -315,6 +318,16 @@ Item {
     root.dispatch('hl.dsp.submap("omahub-dock")')
     Qt.callLater(function() { dockKeys.forceActiveFocus() })
     return "ok"
+  }
+
+  // Close the menu, the Add apps panel, any drag, and keyboard mode at once.
+  function dismiss() {
+    root.dragIndex = -1
+    root.iconPressed = false
+    root.menuOpen = false
+    root.menuIndex = -1
+    root.closePicker()
+    root.leaveKeyboard()
   }
 
   function leaveKeyboard() {

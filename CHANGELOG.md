@@ -14,6 +14,7 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - Add apps in the dock's menu lists every installed app with the ones in the dock checked. Type to search, and click or press Enter to keep or remove an app.
 - Drag an icon along the dock to move it, drag an open app among the kept ones to keep it there, or drag an icon off the dock to remove it. Shift + h and l move the app under the cursor after SUPER + D.
 - `omahub dock order <app>...` keeps exactly those apps, in that order.
+- For contributors and their agents: `dev/live` runs live checks of the overview and the dock on a real desktop, and `dev/agent` reads what Omahub shows and types on a virtual keyboard with the real keymap. Both work inside a sandbox of test windows that puts every setting back when it ends.
 
 ### Fixed
 

@@ -1,0 +1,695 @@
+#!/bin/bash
+
+# Eyes and hands for agents that test Omahub on a live Omarchy desktop.
+#
+# It reads what Omahub reports about itself instead of guessing from pixels, types on a virtual
+# keyboard with the real keymap, so every key goes through Hyprland's bindings like a physical one,
+# and acts only inside a sandbox: throwaway windows on free desktops, with Omahub's settings and the
+# Hyprland bindings backed up and verified on the way out.
+#
+#   dev/agent state [jq filter]            what Omahub shows, focus, desktops, windows, and the key set
+#   dev/agent wait-for <jq> [seconds]      wait until the state matches, 3 seconds by default
+#   dev/agent expect <name> <jq> [seconds] check the state, waiting up to the seconds given, ok or FAIL
+#   dev/agent errors                       warnings and errors Omahub logged since the shell started
+#   dev/agent shot [screen|dock|picker]    a screenshot kept in tmp/agent/shots, never for publishing
+#   dev/agent motion <name> -- <command>   record a command and tile the frames around it
+#   dev/agent deploy                       sync the working tree, restart the shell, wait for Omahub
+#
+#   dev/agent sandbox start|end|status     free desktops with test windows a and b, and c on the next
+#   dev/agent reset                        let go of keys, close Omahub's surfaces, put windows back
+#   dev/agent focus <test window>          focus test window a, b, or c
+#   dev/agent chord <keys>                 press keys together, such as SUPER+TAB, SHIFT+6, Escape, u
+#   dev/agent hold SUPER | let-go SUPER    keep SUPER down across chords, then let it go
+#   dev/agent keys <commands...>           exact timing: down Super_L tap Tab wait 40 up Super_L
+#   dev/agent point|click <target> [left|right|middle]
+#   dev/agent drag <from> <to>
+#   dev/agent call <function> [argument]   one of Omahub's shell functions, such as open or dismiss
+#
+# Targets are names from the state, never guessed pixels: dock.app:<id>, dock.overview, dock.picker,
+# overview.card:<test window>, overview.desktop:<number>, overview.new, or x,y.
+#
+# Real keys run real actions, so the keyboard refuses what could reach the desktop outside the test:
+# SUPER combinations other than Omahub's own outside Omahub's key sets, keys for a window that is not
+# a test window, and keys that would close or move a real window or change a real setting.
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ID="io.github.elberacasa.omahub"
+AGENT_DIR="$ROOT/tmp/agent"
+SANDBOX="$AGENT_DIR/sandbox"
+HELD="$AGENT_DIR/held-super"
+KEYBOARD_DIR="$AGENT_DIR/keyboard"
+KEYBOARD_BIN="$ROOT/tmp/bin/omahub-keyboard"
+TEST_PREFIX="omahub-demo-"
+BACKUP_PATHS=("$HOME/.local/state/omahub" "$HOME/.config/omahub" "$HOME/.config/hypr/bindings.lua")
+
+source "$ROOT/dev/demo-lib.sh"
+
+die() {
+  echo "dev/agent: $*" >&2
+  exit 2
+}
+
+omahub_call() {
+  omarchy-shell shell call "$ID" "$1" "${2:-}"
+}
+
+usage() {
+  sed -n '3,31p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+# Eyes
+
+sandbox_json() {
+  if [[ -f $SANDBOX/sandbox.json ]]; then
+    cat "$SANDBOX/sandbox.json"
+  else
+    echo null
+  fi
+}
+
+state() {
+  local omahub focus
+  omahub=$(omahub_call inspect 2>/dev/null || true)
+  jq -e . >/dev/null 2>&1 <<<"$omahub" || omahub=null
+  focus=$(hyprctl activewindow -j 2>/dev/null \
+    | jq -c --arg p "$TEST_PREFIX" 'if .address then {address, class, desktop: .workspace.id, test: (.class | startswith($p))} else null end' 2>/dev/null \
+    || echo null)
+  jq -n \
+    --argjson omahub "$omahub" \
+    --argjson focus "${focus:-null}" \
+    --argjson desktop "$(hyprctl activeworkspace -j | jq .id)" \
+    --argjson desktops "$(hyprctl workspaces -j | jq -c '[.[] | select(.id > 0) | {id, windows, monitor}] | sort_by(.id)')" \
+    --argjson windows "$(hyprctl clients -j | jq -c --arg p "$TEST_PREFIX" '[.[] | {address, class, desktop: .workspace.id, test: (.class | startswith($p))}]')" \
+    --arg keyset "$(hyprctl submap | head -1)" \
+    --argjson held "$([[ -f $HELD ]] && echo true || echo false)" \
+    --argjson sandbox "$(sandbox_json)" \
+    '{omahub: $omahub, focus: $focus, desktop: $desktop, desktops: $desktops, windows: $windows,
+      keyset: $keyset, heldSuper: $held, sandbox: $sandbox}'
+}
+
+milliseconds() {
+  awk -v s="$1" 'BEGIN { printf "%d", s * 1000 }'
+}
+
+wait_for() {
+  local expr="$1" limit start elapsed
+  limit=$(milliseconds "${2:-3}")
+  start=$(date +%s%N)
+  while true; do
+    if state | jq -e "$expr" >/dev/null 2>&1; then
+      echo "$(( ($(date +%s%N) - start) / 1000000 ))ms"
+      return 0
+    fi
+    elapsed=$(( ($(date +%s%N) - start) / 1000000 ))
+    if (( elapsed >= limit )); then
+      echo "timed out after ${2:-3}s waiting for: $expr" >&2
+      return 1
+    fi
+    sleep 0.04
+  done
+}
+
+expect_state() {
+  local name="$1" expr="$2" seconds="${3:-0}"
+  if wait_for "$expr" "$seconds" >/dev/null 2>&1; then
+    echo "  ok    $name"
+  else
+    echo "  FAIL  $name"
+    echo "        expected: $expr" >&2
+    return 1
+  fi
+}
+
+# The newest log of the running Omarchy shell, found without a pipe that a closed reader could break.
+shell_log() {
+  local log newest=""
+  for log in /run/user/"$(id -u)"/quickshell/by-id/*/log.log; do
+    [[ -f $log ]] || continue
+    grep -q 'omarchy/shell' "$log" || continue
+    if [[ -z $newest || $log -nt $newest ]]; then
+      newest=$log
+    fi
+  done
+  printf '%s\n' "$newest"
+}
+
+errors() {
+  local log
+  log=$(shell_log)
+  if [[ -z $log ]]; then
+    echo '[]'
+    return
+  fi
+  { grep -aE 'WARN|ERROR|TypeError|ReferenceError' "$log" || true; } \
+    | { grep -a "$ID" || true; } \
+    | sed -e 's/\x1b\[[0-9;]*m//g' -e "s|$HOME|~|g" \
+    | jq -Rsc 'split("\n") | map(select(length > 0))'
+}
+
+focused_monitor() {
+  hyprctl monitors -j | jq -r '.[] | select(.focused) | .name'
+}
+
+shot() {
+  local surface="${1:-screen}" file geometry
+  mkdir -p "$AGENT_DIR/shots"
+  file="$AGENT_DIR/shots/$surface-$(date +%H%M%S-%N | cut -c1-10).png"
+  case "$surface" in
+    screen) grim -o "$(focused_monitor)" "$file" ;;
+    dock)
+      geometry=$(state | jq -r '[.omahub.dock.overview] + (.omahub.dock.apps // []) | map(select(. != null))
+        | if length == 0 then empty else
+          {x: (map(.x) | min), y: (map(.y) | min), r: (map(.x + .width) | max), b: (map(.y + .height) | max)}
+          | "\(.x - 80),\(.y - 80) \(.r - .x + 160)x\(.b - .y + 110)" end')
+      [[ -n $geometry ]] || die "the dock is not on screen"
+      grim -g "$geometry" "$file"
+      ;;
+    picker)
+      geometry=$(state | jq -r '.omahub.dock.picker.card // empty | "\(.x - 20),\(.y - 20) \(.width + 40)x\(.height + 40)"')
+      [[ -n $geometry ]] || die "the Add apps panel is not open"
+      grim -g "$geometry" "$file"
+      ;;
+    *) die "unknown surface '$surface'. Use screen, dock, or picker" ;;
+  esac
+  printf '%s\n' "$file"
+}
+
+motion() {
+  local name="$1" offset run
+  shift
+  [[ ${1:-} == "--" ]] && shift
+  (( $# )) || die "usage: dev/agent motion <name> -- <command>"
+  run=$(printf '%q ' "$@")
+  offset=$("$ROOT/dev/take" "agent-$name" 2 --quiet --run "$run" 2>&1 | sed -n 's/^run at +\([0-9.]*\)s.*/\1/p' | head -1)
+  [[ -n $offset ]] || die "the take did not run the command"
+  "$ROOT/dev/frames" "$ROOT/tmp/takes/agent-$name.mp4" \
+    "$(awk -v o="$offset" 'BEGIN { printf "%.2f", (o > 0.05 ? o - 0.05 : 0) }')" \
+    "$(awk -v o="$offset" 'BEGIN { printf "%.2f", o + 0.6 }')" --fps 30 2>&1 | tail -1
+}
+
+deploy() {
+  "$ROOT/dev/sync" --restart >/dev/null 2>&1 || true
+  sleep 1
+  for _ in $(seq 100); do
+    if omahub_call inspect >/dev/null 2>&1; then
+      sleep 0.3
+      echo "Omahub is answering"
+      return 0
+    fi
+    sleep 0.2
+  done
+  die "Omahub did not answer within 20 seconds of the restart. Run dev/agent errors"
+}
+
+# Keyboard
+
+keyboard_build() {
+  local source="$ROOT/dev/keyboard" build="$ROOT/tmp/keyboard" protocol
+  protocol="$source/virtual-keyboard-unstable-v1.xml"
+  if [[ -x $KEYBOARD_BIN && $KEYBOARD_BIN -nt $source/keyboard.c ]]; then
+    return 0
+  fi
+  mkdir -p "$build" "$(dirname "$KEYBOARD_BIN")"
+  wayland-scanner client-header "$protocol" "$build/virtual-keyboard-unstable-v1-client-protocol.h"
+  wayland-scanner private-code "$protocol" "$build/virtual-keyboard-unstable-v1-protocol.c"
+  # shellcheck disable=SC2046
+  gcc -O2 -Wall -Wextra -I"$build" -o "$KEYBOARD_BIN" "$source/keyboard.c" \
+    "$build/virtual-keyboard-unstable-v1-protocol.c" $(pkg-config --cflags --libs wayland-client xkbcommon)
+}
+
+keyboard_running() {
+  pgrep -f "omahub-keyboard .* serve $KEYBOARD_DIR/command" >/dev/null
+}
+
+# keyboard <commands...>: run commands on the virtual keyboard and wait until Hyprland has the keys.
+keyboard() {
+  local id answer
+  keyboard_running || die "the virtual keyboard is not running. End the sandbox and start it again"
+  id="$RANDOM$RANDOM"
+  timeout 2 bash -c 'printf "%s\n" "$1" >"$2"' _ "$id $*" "$KEYBOARD_DIR/command" || die "the virtual keyboard did not take the keys"
+  answer=$(timeout 3 head -n 1 "$KEYBOARD_DIR/reply" || true)
+  case "$answer" in
+    "$id ok") ;;
+    "$id error "*) die "keyboard: ${answer#"$id error "}" ;;
+    *) die "the virtual keyboard did not answer" ;;
+  esac
+}
+
+keyboard_start() {
+  local layout
+  keyboard_build || die "could not build the virtual keyboard. It needs gcc, wayland-scanner, and xkbcommon"
+  keyboard_stop
+  mkdir -p "$KEYBOARD_DIR"
+  mkfifo "$KEYBOARD_DIR/command" "$KEYBOARD_DIR/reply"
+  layout=$(hyprctl devices -j | jq -c '.keyboards | (map(select(.main)) + .)[0] | {layout, variant, options, rules, model}')
+  setsid -f "$KEYBOARD_BIN" \
+    --layout "$(jq -r '.layout // "us"' <<<"$layout")" --variant "$(jq -r '.variant // ""' <<<"$layout")" \
+    --options "$(jq -r '.options // ""' <<<"$layout")" --rules "$(jq -r '.rules // ""' <<<"$layout")" \
+    --model "$(jq -r '.model // ""' <<<"$layout")" \
+    serve "$KEYBOARD_DIR/command" "$KEYBOARD_DIR/reply" >"$KEYBOARD_DIR/log" 2>&1 </dev/null
+  for _ in $(seq 40); do
+    keyboard_running && break
+    sleep 0.05
+  done
+  keyboard ping
+}
+
+keyboard_stop() {
+  if keyboard_running; then
+    timeout 2 bash -c 'printf "stop release quit\n" >"$1"' _ "$KEYBOARD_DIR/command" || true
+    for _ in $(seq 40); do
+      keyboard_running || break
+      sleep 0.05
+    done
+    pkill -f "omahub-keyboard .* serve $KEYBOARD_DIR/command" || true
+  fi
+  rm -rf "$KEYBOARD_DIR"
+  rm -f "$HELD"
+}
+
+# Sandbox
+
+require_sandbox() {
+  [[ -f $SANDBOX/sandbox.json ]] || die "start a sandbox first: dev/agent sandbox start"
+}
+
+manifest() {
+  local path
+  for path in "${BACKUP_PATHS[@]}"; do
+    if [[ -d $path ]]; then
+      find "$path" -type f -print0 | sort -z | xargs -0 -r sha256sum
+    elif [[ -f $path ]]; then
+      sha256sum "$path"
+    else
+      echo "absent  $path"
+    fi
+  done
+}
+
+# Two desktops from 6 to 10 that nothing uses on any screen, reachable by number keys.
+free_desktops() {
+  local used
+  used=$(hyprctl workspaces -j | jq -c '[.[].id]')
+  jq -nr --argjson used "$used" '[range(6; 11) | select(. as $id | $used | index($id) | not)][:2] | join(" ")'
+}
+
+open_test_window() {
+  local name="$1" desktop="$2" app="$TEST_PREFIX$1"
+  # No shell prompt, so the title stays the window's name and never shows a user or host.
+  hyprctl eval "hl.exec_cmd('foot --app-id=$app --title=Test-${name^^} sh -c \"sleep infinity\"', { workspace = '$desktop silent' })" >/dev/null
+  demo_wait_for "$app"
+}
+
+test_address() {
+  hyprctl clients -j | jq -r --arg c "$TEST_PREFIX$1" '.[] | select(.class == $c) | .address' | head -1
+}
+
+sandbox_start() {
+  local home away return_window return_desktop existing=() path
+  [[ ! -f $SANDBOX/sandbox.json ]] || die "a sandbox is already running. End it with dev/agent sandbox end"
+  read -r home away <<<"$(free_desktops)"
+  [[ -n ${home:-} && -n ${away:-} ]] || die "the sandbox needs two free desktops from 6 to 10"
+  keyboard_start
+
+  return_desktop=$(hyprctl activeworkspace -j | jq .id)
+  return_window=$(hyprctl activewindow -j 2>/dev/null | jq -r '.address // ""' 2>/dev/null || true)
+  mkdir -p "$SANDBOX"
+  for path in "${BACKUP_PATHS[@]}"; do
+    if [[ -e $path ]]; then
+      existing+=("${path#/}")
+    fi
+  done
+  tar -C / -czf "$SANDBOX/backup.tgz" "${existing[@]}"
+  manifest >"$SANDBOX/manifest"
+  jq -n --argjson home "$home" --argjson away "$away" --argjson desktop "$return_desktop" --arg window "$return_window" \
+    '{home: $home, away: $away, returnDesktop: $desktop, returnWindow: $window,
+      windows: [{name: "a", desktop: $home}, {name: "b", desktop: $home}, {name: "c", desktop: $away}]}' \
+    >"$SANDBOX/sandbox.json"
+
+  omahub_call dismiss >/dev/null 2>&1 || true
+  ensure_windows
+  hyprctl dispatch "hl.dsp.focus({ workspace = \"$home\" })" >/dev/null
+  park_pointer
+  sandbox_json
+}
+
+ensure_windows() {
+  local name desktop
+  while IFS=$'\t' read -r name desktop; do
+    if [[ -z $(test_address "$name") ]]; then
+      open_test_window "$name" "$desktop" || die "test window $name did not open"
+    fi
+  done < <(jq -r '.windows[] | "\(.name)\t\(.desktop)"' "$SANDBOX/sandbox.json")
+}
+
+park_pointer() {
+  local spot
+  spot=$(hyprctl monitors -j | jq -r '.[] | select(.focused) | "\((.x + .width / .scale / 2) | floor) \(.y + 4)"')
+  demo_build_pointer
+  # shellcheck disable=SC2086
+  pointer move $spot 120
+}
+
+close_surfaces() {
+  if keyboard_running; then
+    keyboard release
+  fi
+  rm -f "$HELD"
+  omahub_call dismiss >/dev/null 2>&1 || true
+  if [[ $(hyprctl submap | head -1) != "default" ]]; then
+    hyprctl dispatch 'hl.dsp.submap("reset")' >/dev/null
+  fi
+}
+
+reset() {
+  require_sandbox
+  local name desktop address home
+  close_surfaces
+  ensure_windows
+  while IFS=$'\t' read -r name desktop; do
+    address=$(test_address "$name")
+    if [[ -n $address && $(hyprctl clients -j | jq -r --arg a "$address" '.[] | select(.address == $a) | .workspace.id') != "$desktop" ]]; then
+      hyprctl dispatch "hl.dsp.window.move({ workspace = \"$desktop\", window = \"address:$address\", follow = false })" >/dev/null
+    fi
+  done < <(jq -r '.windows[] | "\(.name)\t\(.desktop)"' "$SANDBOX/sandbox.json")
+  home=$(jq -r .home "$SANDBOX/sandbox.json")
+  hyprctl dispatch "hl.dsp.focus({ workspace = \"$home\" })" >/dev/null
+  park_pointer
+  wait_for '(.omahub.overview.opened | not) and (.omahub.dock.menu | not) and .omahub.dock.picker == null and .keyset == "default"' 2 >/dev/null || true
+}
+
+restore_settings() {
+  local unpacked path
+  tar -tzf "$SANDBOX/backup.tgz" >/dev/null 2>&1 || die "the sandbox backup is unreadable, so nothing was restored. It is kept at $SANDBOX/backup.tgz"
+  unpacked=$(mktemp -d)
+  tar -C "$unpacked" -xzf "$SANDBOX/backup.tgz"
+  for path in "${BACKUP_PATHS[@]}"; do
+    if [[ -d $unpacked/${path#/} ]]; then
+      mkdir -p "$path"
+      rsync -a --delete "$unpacked/${path#/}/" "$path/"
+    elif [[ -f $unpacked/${path#/} ]]; then
+      cp -p "$unpacked/${path#/}" "$path"
+    else
+      rm -rf "$path"
+    fi
+  done
+  rm -rf "$unpacked"
+}
+
+sandbox_end() {
+  local info changed restored=false clean address
+  if [[ ! -f $SANDBOX/sandbox.json ]]; then
+    keyboard_stop
+    echo '{"ended": false, "reason": "no sandbox was running"}'
+    return 0
+  fi
+  info=$(cat "$SANDBOX/sandbox.json")
+  close_surfaces
+  keyboard_stop
+  close_demo_windows
+  for _ in $(seq 50); do
+    [[ $(hyprctl clients -j | jq --arg p "$TEST_PREFIX" '[.[] | select(.class | startswith($p))] | length') == 0 ]] && break
+    sleep 0.05
+  done
+  # Changes Omahub still has queued would write after the restore, so they finish first.
+  if ! wait_for '((.omahub.dock.busy // false) | not) and ((.omahub.hub.busy // null) == null)' 15 >/dev/null 2>&1; then
+    echo "dev/agent: Omahub still had changes running after 15 seconds; restoring anyway" >&2
+  fi
+  for _ in $(seq 100); do
+    pgrep -f "$ID/bin/omahub" >/dev/null || break
+    sleep 0.1
+  done
+
+  # diff exits 1 when anything changed, which is the case this is here for.
+  changed=$({ diff <(manifest) "$SANDBOX/manifest" || true; } | sed -n 's/^[<>] [0-9a-f]\{64\}  //p; s/^[<>] absent  //p' \
+    | sed "s|$HOME|~|" | sort -u | jq -Rsc 'split("\n") | map(select(length > 0))')
+  if [[ $changed != "[]" ]]; then
+    restore_settings
+    restored=true
+    omahub_call dockReload >/dev/null 2>&1 || true
+    if jq -e 'any(.[]; endswith("bindings.lua"))' <<<"$changed" >/dev/null; then
+      hyprctl reload >/dev/null
+    fi
+  fi
+  if diff -q <(manifest) "$SANDBOX/manifest" >/dev/null; then clean=true; else clean=false; fi
+
+  hyprctl dispatch "hl.dsp.focus({ workspace = \"$(jq -r .returnDesktop <<<"$info")\" })" >/dev/null
+  address=$(jq -r .returnWindow <<<"$info")
+  if [[ -n $address ]] && hyprctl clients -j | jq -e --arg a "$address" 'any(.[]; .address == $a)' >/dev/null; then
+    hyprctl dispatch "hl.dsp.focus({ window = \"address:$address\" })" >/dev/null
+  fi
+
+  if [[ $clean == true ]]; then
+    rm -rf "$SANDBOX"
+  fi
+  jq -n --argjson changed "$changed" --argjson restored "$restored" --argjson clean "$clean" \
+    '{ended: true, changed: $changed, restored: $restored, clean: $clean}'
+  [[ $clean == true ]]
+}
+
+# Hands
+
+target_rect() {
+  local target="$1" now
+  now=$(state)
+  case "$target" in
+    *,*)
+      jq -nc --arg t "$target" '($t | split(",") | map(tonumber)) as [$x, $y] | {x: $x, y: $y, width: 0, height: 0}'
+      ;;
+    dock.app:*) jq -c --arg id "${target#dock.app:}" '.omahub.dock.apps[]? | select(.id == $id)' <<<"$now" | head -1 ;;
+    dock.overview) jq -c '.omahub.dock.overview // empty' <<<"$now" ;;
+    dock.picker) jq -c '.omahub.dock.picker.card // empty' <<<"$now" ;;
+    overview.card:*)
+      jq -c --arg n "${target#overview.card:}" --arg p "$TEST_PREFIX" \
+        '[.windows[] | select(.test and (.class == ($p + $n) or .address == $n)) | .address] as $test
+         | .omahub.overview.cards[]? | select(.address as $a | $test | index($a))' <<<"$now" | head -1
+      ;;
+    overview.desktop:*) jq -c --argjson id "${target#overview.desktop:}" '.omahub.overview.desktops[]? | select(.id == $id)' <<<"$now" | head -1 ;;
+    overview.new) jq -c '.omahub.overview.newDesktop // empty' <<<"$now" ;;
+    *) die "unknown target '$target'. Use dock.app:<id>, dock.overview, dock.picker, overview.card:<test window>, overview.desktop:<number>, overview.new, or x,y" ;;
+  esac
+}
+
+center_of() {
+  local rect
+  rect=$(target_rect "$1")
+  [[ -n $rect ]] || die "'$1' is not on screen now. overview.card only names test windows a, b, and c"
+  jq -r '"\((.x + .width / 2) | floor) \((.y + .height / 2) | floor)"' <<<"$rect"
+}
+
+# Keysym names the virtual keyboard presses.
+key_name() {
+  case "${1^^}" in
+    SUPER) echo Super_L ;;
+    SHIFT) echo Shift_L ;;
+    CTRL) echo Control_L ;;
+    ALT) echo Alt_L ;;
+    TAB) echo Tab ;;
+    ENTER | RETURN) echo Return ;;
+    ESC | ESCAPE) echo Escape ;;
+    SPACE) echo space ;;
+    LEFT) echo Left ;;
+    RIGHT) echo Right ;;
+    UP) echo Up ;;
+    DOWN) echo Down ;;
+    BACKSPACE) echo BackSpace ;;
+    PRINT) echo Print ;;
+    MENU) echo Menu ;;
+    # A letter names its key, which types lowercase. SHIFT+n types N.
+    [A-Z]) echo "${1,,}" ;;
+    *) echo "$1" ;;
+  esac
+}
+
+# Real keys only reach what the test owns. $1 is the key, $2 whether SUPER is down, $3 whether
+# Shift is, $4 whether Ctrl or Alt is.
+guard_keys() {
+  local key="$1" super="$2" with_shift="$3" other="$4" upper="${1^^}" now keyset
+  now=$(state)
+  keyset=$(jq -r .keyset <<<"$now")
+
+  if [[ $keyset == "default" ]]; then
+    if [[ $super == true ]]; then
+      case "$upper" in
+        TAB | D | A) ;;
+        *) die "refusing SUPER + $key: outside Omahub's key sets it runs one of Hyprland's own actions. Omahub's keys are SUPER + TAB, SUPER + D, and SUPER + A" ;;
+      esac
+    elif [[ $upper == "PRINT" && ! ( $with_shift == true && $other == false ) ]]; then
+      die "refusing $key: it takes a real screenshot. SHIFT + PRINT opens the thumbnail's menu"
+    elif ! jq -e '.omahub.overview.opened or .omahub.dock.keyboard or .omahub.dock.picker != null
+        or .omahub.hub.opened or .omahub.capture.menu or (.focus.test // false)' <<<"$now" >/dev/null; then
+      die "refusing $key: the focused window is not a test window and no Omahub surface has the keyboard"
+    fi
+  fi
+
+  if jq -e '.omahub.overview.opened and (.omahub.overview.searching | not)' <<<"$now" >/dev/null 2>&1; then
+    local destructive=false
+    if [[ $with_shift == false && $key == "x" ]]; then destructive=true; fi
+    if [[ $with_shift == true && ( $key =~ ^[0-9]$ || $upper == "N" || $upper == "X" ) ]]; then destructive=true; fi
+    if [[ $destructive == true ]] && ! jq -e '(.omahub.overview.selected.address // null) as $a | $a == null or any(.windows[]; .address == $a and .test)' <<<"$now" >/dev/null; then
+      die "refusing $key: it would close or move the overview's selected window, which is not a test window"
+    fi
+  fi
+
+  if [[ $upper == "RETURN" || $upper == "ENTER" || $upper == "SPACE" ]]; then
+    if jq -e '.omahub.dock.menu and ((.omahub.dock.menuEntry // "") | startswith("Quit"))
+        and ((.omahub.dock.menuItem // "") | startswith("omahub-demo-") | not)' <<<"$now" >/dev/null 2>&1; then
+      die "refusing to quit $(jq -r .omahub.dock.menuItem <<<"$now"): it is not a test window"
+    fi
+    if jq -e '.omahub.hub.opened and ((.omahub.hub.row // "") | startswith("zz-check/") | not)' <<<"$now" >/dev/null 2>&1; then
+      die "refusing $key in the hub: it would change a real setting. Check with a setting in ~/.config/omahub/settings/zz-check/"
+    fi
+  fi
+}
+
+chord() {
+  require_sandbox
+  local combo="$1" part key="" super=false with_shift=false ctrl=false alt=false other=false
+  local press=() let_go=() name
+  IFS='+' read -ra parts <<<"$combo"
+  for part in "${parts[@]}"; do
+    part="${part// /}"
+    case "${part^^}" in
+      SUPER) super=true ;;
+      SHIFT) with_shift=true ;;
+      CTRL) ctrl=true ;;
+      ALT) alt=true ;;
+      *) key="$part" ;;
+    esac
+  done
+  [[ -n $key ]] || die "no key in '$combo'"
+  if [[ $ctrl == true || $alt == true ]]; then other=true; fi
+
+  local super_down=$super
+  [[ -f $HELD ]] && super_down=true
+  guard_keys "$key" "$super_down" "$with_shift" "$other"
+
+  if [[ $super == true && ! -f $HELD ]]; then press+=(down Super_L); let_go=(up Super_L "${let_go[@]}"); fi
+  for name in SHIFT CTRL ALT; do
+    local wanted=false
+    [[ $name == SHIFT ]] && wanted=$with_shift
+    [[ $name == CTRL ]] && wanted=$ctrl
+    [[ $name == ALT ]] && wanted=$alt
+    if [[ $wanted == true ]]; then
+      press+=(down "$(key_name "$name")")
+      let_go=(up "$(key_name "$name")" "${let_go[@]}")
+    fi
+  done
+  keyboard "${press[@]}" tap "$(key_name "$key")" "${let_go[@]}"
+}
+
+# keys <commands...>: key presses with exact timing, for checking how Hyprland handles a fast tap, such
+# as down Super_L tap Tab wait 40 up Super_L. Only modifiers, Tab, and Escape, from a test window.
+raw_keys() {
+  require_sandbox
+  local word expect_key=false
+  for word in "$@"; do
+    if [[ $expect_key == true ]]; then
+      case "$word" in
+        Super_L | Shift_L | Tab | Escape) ;;
+        *) die "keys presses only Super_L, Shift_L, Tab, and Escape. Use chord for other keys" ;;
+      esac
+      expect_key=false
+      continue
+    fi
+    case "$word" in
+      down | up | tap) expect_key=true ;;
+      wait) ;;
+      [0-9]*) ;;
+      *) die "keys takes down, up, and tap with a key, and wait with milliseconds" ;;
+    esac
+  done
+  [[ -f $HELD ]] && die "let go of SUPER before using keys"
+  state | jq -e '(.focus.test // false) and .keyset == "default"' >/dev/null || die "keys starts from a focused test window with no Omahub surface open"
+  keyboard "$@"
+}
+
+hold() {
+  require_sandbox
+  [[ ${1^^} == "SUPER" ]] || die "only SUPER can be held"
+  [[ -f $HELD ]] && return 0
+  keyboard down Super_L
+  touch "$HELD"
+}
+
+let_go() {
+  require_sandbox
+  [[ ${1^^} == "SUPER" ]] || die "only SUPER can be held"
+  rm -f "$HELD"
+  keyboard up Super_L
+}
+
+focus_test() {
+  require_sandbox
+  local address
+  address=$(test_address "$1")
+  [[ -n $address ]] || die "no test window named '$1'"
+  hyprctl dispatch "hl.dsp.focus({ window = \"address:$address\" })" >/dev/null
+}
+
+point() {
+  require_sandbox
+  local x y
+  read -r x y <<<"$(center_of "$1")"
+  demo_build_pointer
+  pointer move "$x" "$y" 250
+}
+
+click_target() {
+  require_sandbox
+  local target="$1" button="${2:-left}" x y
+  if [[ $target == dock.app:* && ${target#dock.app:} != "$TEST_PREFIX"* && $button != "right" ]]; then
+    die "refusing to $button-click ${target#dock.app:}: it would open or focus a real app. Right-click opens its menu"
+  fi
+  read -r x y <<<"$(center_of "$target")"
+  demo_build_pointer
+  pointer move "$x" "$y" 250 wait 60 click "$button"
+}
+
+drag_target() {
+  require_sandbox
+  local fx fy tx ty
+  read -r fx fy <<<"$(center_of "$1")"
+  read -r tx ty <<<"$(center_of "$2")"
+  demo_build_pointer
+  pointer move "$fx" "$fy" 250 down left wait 140 move "$tx" "$ty" 450 wait 150 up left
+}
+
+command="${1:-}"
+shift || true
+case "$command" in
+  state)
+    if (( $# )); then state | jq -r "$1"; else state; fi
+    ;;
+  wait-for) wait_for "${1:?usage: dev/agent wait-for <jq> [seconds]}" "${2:-3}" ;;
+  expect) expect_state "${1:?usage: dev/agent expect <name> <jq> [seconds]}" "${2:?usage: dev/agent expect <name> <jq> [seconds]}" "${3:-0}" ;;
+  errors) errors ;;
+  shot) shot "${1:-screen}" ;;
+  motion) motion "${1:?usage: dev/agent motion <name> -- <command>}" "${@:2}" ;;
+  deploy) deploy ;;
+  sandbox)
+    case "${1:-}" in
+      start) sandbox_start ;;
+      end) sandbox_end ;;
+      status) sandbox_json ;;
+      *) die "usage: dev/agent sandbox start|end|status" ;;
+    esac
+    ;;
+  reset) reset ;;
+  focus) focus_test "${1:?usage: dev/agent focus <test window>}" ;;
+  chord) chord "${1:?usage: dev/agent chord <keys>}" ;;
+  keys) raw_keys "$@" ;;
+  hold) hold "${1:-SUPER}" ;;
+  let-go) let_go "${1:-SUPER}" ;;
+  point) point "${1:?usage: dev/agent point <target>}" ;;
+  click) click_target "${1:?usage: dev/agent click <target> [button]}" "${2:-left}" ;;
+  drag) drag_target "${1:?usage: dev/agent drag <from> <to>}" "${2:?usage: dev/agent drag <from> <to>}" ;;
+  call)
+    require_sandbox
+    omahub_call "${1:?usage: dev/agent call <function> [argument]}" "${2:-}"
+    ;;
+  -h | --help | help | "") usage ;;
+  *) die "unknown command '$command'. Run dev/agent help" ;;
+esac

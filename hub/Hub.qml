@@ -136,6 +136,17 @@ Item {
     else root.open("{}")
   }
 
+  // What the hub shows, for dev/agent: its view, section, search, and the row under the cursor.
+  function stateJson() {
+    var row = root.cursor >= 0 ? root.rows[root.cursor] : null
+    return JSON.stringify({
+      opened: root.opened, view: root.view, section: root.sectionId, loading: root.loading,
+      searching: root.searching, query: root.query, cursor: root.cursor,
+      row: row ? row.id : null, rows: root.rows.map(function(item) { return item.id }),
+      busy: root.busyId || null, prompt: root.promptId || null, error: root.loadError || null
+    })
+  }
+
   function refresh() {
     root.loadError = ""
     if (root.catalog.length === 0) root.loading = true

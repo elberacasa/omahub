@@ -69,6 +69,29 @@ Item {
     return dock.layoutJson()
   }
 
+  // Everything Omahub shows right now, in one answer, for dev/agent and the live checks: the hub, the
+  // overview, the dock, and the screenshot thumbnail.
+  function inspect() {
+    function parsed(text) {
+      try { return JSON.parse(text) } catch (e) { return null }
+    }
+    return JSON.stringify({
+      hub: parsed(hub.stateJson()),
+      overview: parsed(overview.layoutJson()),
+      dock: parsed(dock.layoutJson()),
+      capture: parsed(capture.stateJson())
+    })
+  }
+
+  // Close everything Omahub has open, menus and panels included, so a check starts from rest. The
+  // screenshot thumbnail stays, since its file is the user's.
+  function dismiss() {
+    hub.close()
+    overview.close()
+    dock.dismiss()
+    capture.closeMenu()
+  }
+
   Hub {
     id: hub
   }

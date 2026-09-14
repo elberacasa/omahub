@@ -133,6 +133,15 @@ Item {
     root.dismiss()
   }
 
+  // What the thumbnail shows, for dev/agent. The file's name only, never its folder.
+  function stateJson() {
+    return JSON.stringify({
+      shown: root.mounted && !root.dismissing, file: root.path ? root.path.split("/").pop() : null,
+      menu: root.menuOpen, menuIndex: root.menuIndex, flash: root.flash || null,
+      dragging: root.dragging, saving: root.saving, waiting: root.pendingPayload !== ""
+    })
+  }
+
   function updateTimer() {
     if (!root.mounted || root.dismissing || root.launching || root.waitingForImage) return
     if (root.held) {

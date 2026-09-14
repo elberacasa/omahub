@@ -1,0 +1,79 @@
+#!/bin/bash
+
+# Run the live checks in test/live.d on this desktop, inside one sandbox that always ends, even when a
+# check fails or the run is interrupted. They need a running Omarchy session, unlike test/all.
+#
+#   dev/live [--deploy] [name]      for example: dev/live --deploy overview
+
+set -uo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+agent="$root/dev/agent"
+filter="*"
+deploy=0
+
+for arg in "$@"; do
+  case "$arg" in
+    --deploy) deploy=1 ;;
+    -h | --help)
+      sed -n '3,6p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    *) filter="$arg" ;;
+  esac
+done
+
+shopt -s nullglob
+# shellcheck disable=SC2206
+checks=("$root"/test/live.d/$filter-live.sh)
+if (( ${#checks[@]} == 0 )); then
+  echo "No live checks match '$filter'" >&2
+  exit 1
+fi
+
+# The whole run also lands in tmp/agent/live.log, so a long failure is never cut off.
+mkdir -p "$root/tmp/agent"
+exec > >(tee "$root/tmp/agent/live.log") 2>&1
+
+if (( deploy )); then
+  "$agent" deploy || exit 1
+fi
+errors_before=$("$agent" errors | jq length 2>/dev/null || true)
+errors_before=${errors_before:-0}
+
+"$agent" sandbox start >/dev/null || exit 1
+ended=0
+end_sandbox() {
+  if (( ended == 0 )); then
+    ended=1
+    if ! "$agent" sandbox end >/dev/null; then
+      echo "The sandbox did not restore cleanly. Run dev/agent sandbox end to see what changed." >&2
+      return 1
+    fi
+  fi
+}
+trap end_sandbox EXIT
+
+status=0
+for check in "${checks[@]}"; do
+  echo "${check#"$root"/}"
+  if ! bash "$check"; then
+    status=1
+  fi
+done
+
+end_sandbox || status=1
+
+new_errors=$("$agent" errors | jq -c --argjson from "$errors_before" '.[$from:]' 2>/dev/null || echo '["dev/agent errors could not read the shell log"]')
+if [[ $new_errors != "[]" ]]; then
+  echo "Omahub logged warnings or errors during the run:"
+  jq -r '.[]' <<<"$new_errors"
+  status=1
+fi
+
+if (( status == 0 )); then
+  echo "All live checks passed."
+else
+  echo "Some live checks failed." >&2
+fi
+exit "$status"
