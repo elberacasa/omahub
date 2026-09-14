@@ -25,6 +25,9 @@ Item {
   // Focused window addresses, newest first, kept from Hyprland's events even while closed, so the
   // switcher knows the window used before the instant SUPER + TAB is pressed.
   property var focusOrder: []
+  // False from opening until the first rebuild on fresh data from Hyprland, so a desktop never reads
+  // "Empty desktop" while its windows are still being reported.
+  property bool settled: false
   // While switching, the choice is how many windows back, not a particular window, so it survives
   // Hyprland's fresher window list arriving a moment after the key press.
   property int cycleSteps: 0
@@ -139,6 +142,7 @@ Item {
 
     Hyprland.refreshWorkspaces()
     Hyprland.refreshToplevels()
+    root.settled = false
     root.query = ""
     root.searching = false
     root.cycling = false
@@ -363,6 +367,7 @@ Item {
         return
       }
       root.rebuild()
+      root.settled = true
       // While switching, rebuild already keeps the step count, and the current window must not win.
       if (!root.userMoved && !root.cycling) root.selectCurrent()
     }
@@ -899,7 +904,7 @@ Item {
         }
 
         Column {
-          visible: root.shownWindows.length === 0
+          visible: root.shownWindows.length === 0 && (root.settled || root.searchActive)
           anchors.centerIn: parent
           spacing: Style.spacing.md
 

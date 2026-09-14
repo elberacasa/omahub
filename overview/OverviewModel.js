@@ -18,16 +18,20 @@ function windowInfo(toplevel) {
   const at = pair(data.at)
   const size = pair(data.size)
   const workspace = toplevel && toplevel.workspace ? toplevel.workspace.id : (data.workspace ? data.workspace.id : 0)
+  // A window opened since Hyprland last reported sizes has none yet. It is still a real window, so it
+  // gets a screen's shape until its own size arrives, instead of vanishing from its desktop.
+  const measured = data.size !== undefined && data.size !== null
   return {
     toplevel: toplevel,
     address: String(data.address || (toplevel && toplevel.address) || ""),
     title: String((toplevel && toplevel.title) || data.title || ""),
     appId: String(data.class || ""),
     workspace: workspace,
+    measured: measured,
     x: Number(at[0]) || 0,
     y: Number(at[1]) || 0,
-    width: Number(size[0]) || 0,
-    height: Number(size[1]) || 0,
+    width: measured ? Number(size[0]) || 0 : 1920,
+    height: measured ? Number(size[1]) || 0 : 1080,
     // Hyprland counts focus history from 0 for the window focused last.
     focus: data.focusHistoryID !== undefined ? Number(data.focusHistoryID) : 1000
   }
