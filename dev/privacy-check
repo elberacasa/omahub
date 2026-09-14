@@ -1,0 +1,98 @@
+#!/bin/bash
+
+# Check media for personal data before it leaves the machine. Frames are read with OCR and searched
+# for this machine's user name, host name, home folder, and git name and email, and for any words
+# given with --word.
+#
+#   dev/privacy-check <video or image>... [--fps <n>] [--word <text>]...
+#
+# Each hit prints the file, the time in the video, and what kind of data it looks like, never the
+# data itself, so the output is safe to paste. Exits 1 when anything is found. OCR misses small or
+# stylized text, so a pass narrows the risk and a look at the frames still ends it.
+
+set -euo pipefail
+
+usage="usage: dev/privacy-check <video or image>... [--fps <n>] [--word <text>]..."
+fps=2
+files=()
+labels=()
+words=()
+
+add_word() {
+  local label="$1" word="$2"
+  # Words this short match ordinary text, so they are left out rather than raise false alarms.
+  if (( ${#word} >= 4 )); then
+    labels+=("$label")
+    words+=("$word")
+  fi
+}
+
+while (( $# )); do
+  case "$1" in
+    --fps) fps="$2"; shift 2 ;;
+    --word) add_word "a word you gave" "$2"; shift 2 ;;
+    -h | --help) echo "$usage"; exit 0 ;;
+    *) files+=("$1"); shift ;;
+  esac
+done
+
+(( ${#files[@]} )) || { echo "$usage" >&2; exit 1; }
+command -v tesseract >/dev/null || { echo "dev/privacy-check: needs tesseract" >&2; exit 2; }
+command -v ffmpeg >/dev/null || { echo "dev/privacy-check: needs ffmpeg" >&2; exit 2; }
+
+add_word "your user name" "$(id -un)"
+add_word "your host name" "$(hostnamectl hostname 2>/dev/null || cat /etc/hostname 2>/dev/null || true)"
+add_word "your home folder" "$HOME"
+email=$(git config --global user.email 2>/dev/null || true)
+add_word "your git email" "$email"
+add_word "your git email's name" "${email%%@*}"
+add_word "your git name" "$(git config --global user.name 2>/dev/null || true)"
+
+# Lowercase, and without spaces or punctuation, so "el beracasa" and "Elberacasa:" still match.
+squash() {
+  tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]\n'
+}
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+found=0
+
+scan_frame() {
+  local file="$1" frame="$2" moment="$3" text index word
+  # Doubling the size lets OCR read small UI text, such as window titles and prompts.
+  ffmpeg -loglevel error -y -i "$frame" -vf "scale=iw*2:ih*2" "$work/large.png"
+  text=$(tesseract "$work/large.png" stdout --psm 11 2>/dev/null | squash)
+  for index in "${!words[@]}"; do
+    word=$(printf '%s' "${words[$index]}" | squash)
+    [[ -n $word ]] || continue
+    if [[ $text == *"$word"* ]]; then
+      echo "$file $moment: ${labels[$index]}"
+      found=1
+    fi
+  done
+}
+
+for file in "${files[@]}"; do
+  [[ -f $file ]] || { echo "dev/privacy-check: no such file: $file" >&2; exit 1; }
+  case "${file,,}" in
+    *.png | *.jpg | *.jpeg | *.webp)
+      scan_frame "$file" "$file" "image"
+      ;;
+    *)
+      rm -f "$work"/frame-*.png
+      ffmpeg -loglevel error -i "$file" -vf "fps=$fps" "$work/frame-%05d.png"
+      for frame in "$work"/frame-*.png; do
+        [[ -f $frame ]] || continue
+        number=$(basename "$frame" .png)
+        number=$((10#${number#frame-}))
+        scan_frame "$file" "$frame" "$(awk -v n="$number" -v f="$fps" 'BEGIN { printf "%.1fs", (n - 1) / f }')"
+      done
+      ;;
+  esac
+done
+
+if (( found )); then
+  echo "Personal data may be on screen. Cover or cut those moments, then check again." >&2
+  exit 1
+fi
+echo "No personal data found in ${#files[@]} file(s)."

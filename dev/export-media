@@ -68,3 +68,9 @@ if (( gif )); then
 fi
 
 ls -lh "$dir/$name".*
+
+# Nothing leaves the machine before OCR has looked for personal data in every half second of it.
+if ! "$root/dev/privacy-check" "$dir/$name.mp4"; then
+  echo "dev/export-media: $name may show personal data. Do not publish it until it is fixed and checked again." >&2
+  exit 1
+fi
