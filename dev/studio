@@ -6,10 +6,12 @@
 #   dev/studio up      desktop 1: orbit-api in Cursor with btop beside it
 #                      desktop 2: lumen-docs in Cursor
 #                      desktop 3: X, signed out, in a throwaway browser profile
+#                      tidewater waits in ~/Code, not open yet, for the project launcher
 #   dev/studio down    close the staged windows, delete the projects it made, put everything back
 #
-# The projects are made in ~/Projects with generic code and history, only when their names are free, and
-# marked, so down only ever deletes folders it made. Staging runs inside a dev/agent sandbox: the dock's
+# The projects are made in ~/Code, the projects folder while the studio is up, so the project launcher lists
+# only them. They have generic code and history, are made only when ~/Code is free, and are marked, so down
+# only ever deletes folders it made. Staging runs inside a dev/agent sandbox: the dock's
 # apps and desktop names changed for a take come back, and dev/agent can drive the staged windows. Record
 # with dev/take, export with dev/export-media, which checks for personal data, and look at every frame.
 
@@ -18,8 +20,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 AGENT="$ROOT/dev/agent"
 STATE="$ROOT/tmp/studio"
-PROJECTS="$HOME/Projects"
+PROJECTS="$HOME/Code"
 MARK=".omahub-studio"
+STUDIO_BTOP="$HOME/.local/share/applications/omahub-studio-btop.desktop"
 
 source "$ROOT/dev/demo-lib.sh"
 
@@ -185,6 +188,26 @@ EOF
   git -C "$dir" checkout -q -b docs/tags
 }
 
+make_tidewater() {
+  local dir="$PROJECTS/tidewater"
+  new_project tidewater
+  mkdir -p "$dir/src"
+  cat >"$dir/README.md" <<'EOF'
+# tidewater
+
+Tide tables for the coast, from the Orbit API.
+EOF
+  cat >"$dir/src/tides.ts" <<'EOF'
+export type Tide = { at: string; height: number; kind: "high" | "low" }
+
+export function nextTide(tides: Tide[], now: Date): Tide | undefined {
+  return tides.find(tide => new Date(tide.at) > now)
+}
+EOF
+  commit "$dir" 5 "Start tidewater"
+  git -C "$dir" checkout -q -b field/tides
+}
+
 # open_window <desktop> <what to wait for, a jq test on a window> <command>: runs the command, waits for
 # its new window, moves it to the desktop, adopts it for the sandbox, and prints its address.
 open_window() {
@@ -220,12 +243,30 @@ up() {
     omahub desktop name "$desktop" "" >/dev/null
   done
 
+  [[ ! -e $PROJECTS ]] || die "$PROJECTS already exists, so the studio leaves it alone. Move it to record"
+  mkdir -p "$PROJECTS"
+  touch "$STATE/projects-root"
+  omahub set projects/folder "$PROJECTS" >/dev/null
   make_orbit_api
   make_lumen_docs
+  make_tidewater
 
   # btop shows only its processor and memory boxes: its process list shows user names and commands, and
   # its network box shows the local address.
   btop --default-config 2>/dev/null | sed -e 's/^shown_boxes = .*/shown_boxes = "cpu mem"/' -e 's/^show_disks = .*/show_disks = False/' >"$STATE/btop.conf"
+
+  # The dock keeps a btop that opens with those boxes, so dropping it on a desktop never shows a process
+  # list. Desktops show at the end of the dock.
+  cat >"$STUDIO_BTOP" <<EOF
+[Desktop Entry]
+Type=Application
+Name=btop
+Icon=btop
+Exec=foot --title=btop btop -c $STATE/btop.conf
+EOF
+  sleep 1
+  omahub dock pin omahub-studio-btop >/dev/null
+  omahub set dock/desktops on >/dev/null
 
 
   local windows="$STATE/windows.json" orbit btop lumen x
@@ -275,6 +316,33 @@ up() {
     sleep 4
   fi
 
+  # The project launcher opens tidewater with Claude, whose folder trust question shows the full path and
+  # defaults to No. It is answered here, in a terminal that closes before anything is filmed.
+  if command -v claude >/dev/null; then
+    local trust
+    trust=$(open_window 4 '.class == "omahub-studio-trust"' "foot --app-id=omahub-studio-trust --title=trust sh -c \"cd $PROJECTS/tidewater && exec claude\"") || exit 2
+    hyprctl dispatch "hl.dsp.focus({ window = \"address:$trust\" })" >/dev/null
+    sleep 5
+    "$AGENT" chord Down
+    sleep 0.3
+    "$AGENT" chord Return
+    sleep 3
+    hyprctl clients -j | jq -r --arg address "$trust" '.[] | select(.address == $address) | .pid' | xargs -r kill 2>/dev/null || true
+    sleep 0.5
+  fi
+
+  # Cursor's do not disturb keeps its notices, such as an update, off camera in windows opened during a
+  # take. down turns it back off.
+  hyprctl dispatch "hl.dsp.focus({ window = \"address:$orbit\" })" >/dev/null
+  sleep 0.6
+  "$AGENT" chord CTRL+SHIFT+p
+  sleep 0.6
+  "$AGENT" type "toggle do not disturb"
+  sleep 0.6
+  "$AGENT" chord Return
+  touch "$STATE/cursor-quiet"
+  sleep 0.5
+
   # A web page asks for attention as it loads. Focusing it once answers that before filming.
   hyprctl dispatch "hl.dsp.focus({ window = \"address:$x\" })" >/dev/null
   sleep 1
@@ -285,10 +353,27 @@ up() {
 }
 
 down() {
+  # Cursor's do not disturb goes back off while a staged Cursor window is still open to turn it off in.
+  if [[ -f $STATE/cursor-quiet && -f $STATE/windows.json ]]; then
+    local orbit
+    orbit=$(jq -r '.orbit' "$STATE/windows.json")
+    if hyprctl clients -j | jq -e --arg address "$orbit" 'any(.[]; .address == $address)' >/dev/null; then
+      hyprctl dispatch "hl.dsp.focus({ window = \"address:$orbit\" })" >/dev/null
+      sleep 0.6
+      "$AGENT" chord CTRL+SHIFT+p
+      sleep 0.6
+      "$AGENT" type "toggle do not disturb"
+      sleep 0.6
+      "$AGENT" chord Return
+      sleep 0.5
+      rm -f "$STATE/cursor-quiet"
+    fi
+  fi
   if [[ -f $STATE/guard.pid ]]; then
     kill "$(<"$STATE/guard.pid")" 2>/dev/null || true
   fi
   demo_restore_windows || true
+  rm -f "$STUDIO_BTOP"
   "$AGENT" sandbox end >/dev/null || echo "dev/studio: the sandbox did not restore cleanly. Run dev/agent sandbox end" >&2
   # Closing their windows leaves the throwaway profiles' background processes running, so they stop here.
   local pid
@@ -307,6 +392,13 @@ down() {
       fi
     done <"$STATE/created"
   fi
+  # ~/Code goes too when the studio made it and nothing else was put in it.
+  if [[ -f $STATE/projects-root ]]; then
+    rmdir "$PROJECTS" 2>/dev/null || echo "dev/studio: $PROJECTS has files the studio did not make, so it stays" >&2
+  fi
+  if [[ -f $STATE/cursor-quiet ]]; then
+    echo "dev/studio: turn Cursor's do not disturb back off: Ctrl + Shift + P, Toggle Do Not Disturb Mode" >&2
+  fi
   if [[ -s $STATE/stash-shown ]]; then
     echo "dev/studio: the hidden desktop came into view while the studio was up, so do not publish takes from this session." >&2
   fi
@@ -323,6 +415,8 @@ record() {
   bash "$scene" setup
   "$ROOT/dev/take" "$name" "$seconds" --quiet --run "bash $scene take" | grep -E '^run at'
   "$ROOT/dev/frames" "$ROOT/tmp/takes/$name.mp4" 0 "$seconds" --fps 2 --width 400 --cols 6 --out "$ROOT/tmp/demos/$name.png" >/dev/null
+  # A scene closes what its take opened, so the next scene starts from the same desktops.
+  bash "$scene" cleanup
   echo "take: tmp/takes/$name.mp4, review: tmp/demos/$name.png"
   if [[ -s $STATE/stash-shown ]]; then
     die "the hidden desktop came into view during the take, so it must not be published"
