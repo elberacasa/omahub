@@ -30,22 +30,6 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - SUPER + TAB is a window switcher from the first press: a quick tap flips to the window you used before, and holding SUPER while tapping TAB walks every window on every desktop, most recently used first, with the desktop strip following. Letting go of SUPER jumps, even on the quickest tap. A slow press keeps the overview open on the window used before, so you can look around and click any window, and a click while SUPER is still held goes there at once.
 - Drag a window preview in the overview onto a desktop thumbnail, or the new desktop tile, to move it there. Terminals running coding agents retitle constantly, and a drag over them no longer gets interrupted.
 - An Overview button leads the dock.
-- The dock looks at home next to the Mac's: a soft rounded shelf with a hairline edge, larger icons that stay sharp when magnified, an Overview tile, and names in small pills. With `dock/autohide` off it stays on screen and windows are sized to sit above it.
-- Clicking a desktop in the overview goes there at once.
-- Dock settings that a Mac user knows, in the hub's Dock section: Size, Magnification with Off, Subtle, and Large, open app dots, showing open apps that are not kept, and the bounce when an app opens. A magnification switch saved before keeps working.
-- The dock can sit on the left, bottom, or right, from `dock/position` or its right-click menu, like the Mac's Position on screen. On a side it stands upright, grows its icons away from the edge, shows names beside them, and when it stays on screen, windows make room on that side.
-- `dock/tiles` puts every dock icon on the same rounded tile, so icons from different apps look like one set.
-- The welcome offers the dock, and every keyboard now recommends SUPER + TAB, as the keyboard table always said.
-- The guide for coding agents and the Omahub skill cover the dock, SUPER + TAB, projects, limits on the bar, and uninstalling.
-
-### Fixed
-
-- A long list in the hub or the welcome fades out at the bottom instead of cutting its last row in half.
-- `omahub uninstall` resets every setting and removes Omahub's data, then shows the command that removes the plugin. It asks first, or takes `--yes`.
-
-### Performance
-
-- An auto-hiding dock decides when to step aside from what the shell already knows about windows, instead of starting several processes every second and a half.
 - The overview and the dock report where their pieces are on screen through `omarchy-shell shell call io.github.elberacasa.omahub overviewLayout ""` and `dockLayout`, for agents and scripted demos.
 - The dock. Turn on `dock/show` for your pinned and open apps at the bottom of the screen, starting from Omarchy's default terminal, browser, file manager, and editor. Click opens or cycles windows, icons magnify, it hides when a window reaches it, and its right-click menu keeps apps and changes `dock/autohide` and `dock/magnify`. `omahub dock pin <app>` does the same from a terminal.
 - New project: name it in the hub, or run `omahub project new <name>`, and Omahub creates the folder in your projects folder, starts git, and opens your agent or editor there. `omahub open projects/new` jumps straight to the name.
@@ -54,15 +38,25 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - Folder settings in the hub: the current folder and quick places as chips, plus Choose… for any folder. Omahub Capture's screenshot folder is the first.
 - The screenshot thumbnail, which began as Omahub Capture, now ships inside Omahub. Turn on `capture/thumbnail` and PRINT, the Mac screenshot keys, and the mouse shortcut show a floating thumbnail: click to edit, drag into any app, drag right to dismiss, or right-click to copy, show in Files, trash, or save to another folder.
 - The welcome. The first time Omahub loads, it opens once with the detected keyboard and the settings recommended for it. `omahub open welcome` brings it back. After the keyboard, it offers the screenshot thumbnail and your default agent and editor.
+- The dock looks at home next to the Mac's: a soft rounded shelf with a hairline edge, larger icons that stay sharp when magnified, an Overview tile, and names in small pills. With `dock/autohide` off it stays on screen and windows are sized to sit above it.
+- Clicking a desktop in the overview goes there at once.
+- Dock settings that a Mac user knows, in the hub's Dock section: Size, Magnification with Off, Subtle, and Large, open app dots, showing open apps that are not kept, and the bounce when an app opens. A magnification switch saved before keeps working.
+- The dock can sit on the left, bottom, or right, from `dock/position` or its right-click menu, like the Mac's Position on screen. On a side it stands upright, grows its icons away from the edge, shows names beside them, and when it stays on screen, windows make room on that side.
+- `dock/tiles` puts every dock icon on the same rounded tile, so icons from different apps look like one set.
+- The welcome offers the dock, and every keyboard now recommends SUPER + TAB, as the keyboard table always said.
+- The guide for coding agents and the Omahub skill cover the dock, SUPER + TAB, projects, limits on the bar, and uninstalling.
+- `omahub uninstall` resets every setting and removes Omahub's data, then shows the command that removes the plugin. It asks first, or takes `--yes`.
 
 ### Changed
 
 - Development tools moved from `bin/` to `dev/`, leaving `bin/` for the upcoming `omahub` command.
 - Keyboard layouts are now two independent settings, `keyboard/omahub-key` and `keyboard/mac-screenshot-keys`, replacing `scripts/keymap.sh`. Existing setups keep working unchanged.
 - The Mac screenshot keys move windows to a workspace with SUPER + ALT + number, and group windows move to SUPER + CTRL + ALT + 1 to 5. Silent moves keep Omarchy's own SUPER + SHIFT + ALT + number.
+- An auto-hiding dock decides when to step aside from what the shell already knows about windows, instead of starting several processes every second and a half.
 
 ### Fixed
 
 - The Mac layout no longer drops Omarchy's "move window silently to workspace". It now lives on SUPER + CTRL + ALT + number.
 - A slow SUPER + TAB always browses the window used before. It could snap back to the current window a moment after the overview opened.
 - A window opened moments before the overview shows on its desktop from the first frame, instead of the desktop reading "Empty desktop" until Hyprland reported its size.
+- A long list in the hub or the welcome fades out at the bottom instead of cutting its last row in half.
