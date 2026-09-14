@@ -16,6 +16,7 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - Add apps in the dock's menu lists every installed app with the ones in the dock checked. Type to search, and click or press Enter to keep or remove an app.
 - Drag an icon along the dock to move it, drag an open app among the kept ones to keep it there, or drag an icon off the dock to remove it. Shift + h and l move the app under the cursor after SUPER + D.
 - `omahub dock order <app>...` keeps exactly those apps, in that order.
+- Desktops in the dock, a switch in the dock's menu and settings: your desktops sit at the end of the dock, named like in the overview and showing the app used last. Click one to go there, drop an app on one to open it there, or reach them with SUPER + D.
 - For contributors and their agents: `dev/live` runs live checks of the overview and the dock on a real desktop, and `dev/agent` reads what Omahub shows and types on a virtual keyboard with the real keymap. Both work inside a sandbox of test windows that puts every setting back when it ends. The live checks cover the overview, the dock, the hub, the screenshot thumbnail, and turning Omahub off, on, and restarting it.
 - `dev/privacy-check` reads every half second of a video with OCR and fails when a user name, host name, home folder, or git identity is on screen, and `dev/export-media` runs it on everything it exports.
 
@@ -24,6 +25,7 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - Walking windows with SUPER + TAB and back with SHIFT + TAB, then letting go, jumps to the window chosen instead of leaving the overview open.
 - A desktop's thumbnail in the overview shows a window that just moved or resized as it looks once it settles, not a frame from halfway through.
 - A dock with no apps saved shows the default apps, so keeping one more adds just that one.
+- A dock with more apps than fit along its edge makes its icons smaller, like the Mac, instead of running past the screen and under the bar.
 
 - Switches and choices in the hub change the moment you pick them. If a change fails or takes too long, the row goes back to how it was and says why.
 - A setting that could not be read says so, instead of looking switched off.

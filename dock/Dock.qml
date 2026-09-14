@@ -34,6 +34,13 @@ Item {
   readonly property bool indicators: root.config.indicators !== false
   readonly property bool showOpen: root.config.recents !== false
   readonly property bool bounce: root.config.bounce !== false
+  readonly property bool showDesktops: root.config.desktops === true
+
+  onShowDesktopsChanged: {
+    if (!root.showDesktops) return
+    Hyprland.refreshWorkspaces()
+    Hyprland.refreshToplevels()
+  }
   // With no apps saved yet, the dock keeps the defaults `omahub dock pins` reports, the same list the
   // first keep or remove starts from.
   property var defaultPins: []
@@ -65,6 +72,7 @@ Item {
   readonly property int dragSlot: {
     var item = root.dragItem
     if (!item || root.dragRemoving || !item.launchable) return -1
+    if (root.dragDesktop >= 0) return -1
     var count = root.keptIds.length
     var keptEnd = count > 0 ? root.layout.centers[count - 1] + root.cellWidth / 2 : 0
     if (!item.pinned && root.dragAlong > keptEnd + root.dividerWidth) return -1
@@ -76,8 +84,50 @@ Item {
     DesktopEntries.applications.values || [], ToplevelManager.toplevels.values || [], root.showOpen)
   readonly property var layout: Model.layout(root.items, root.cellWidth, root.dividerWidth)
 
-  readonly property int iconSize: Style.space(root.size === "small" ? 40 : (root.size === "large" ? 62 : 50))
-  readonly property int cellPadding: Style.space(5)
+  // Desktops at the end of the dock, when that setting is on: each one with a window, and the one in front.
+  readonly property var desktopTiles: root.showDesktops && root.focusedScreen
+    ? Model.desktops(Hyprland.workspaces.values || [], Hyprland.toplevels.values || [], root.focusedScreen.name,
+      Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 0)
+    : []
+  readonly property int desktopsGap: root.items.length > 0 ? root.dividerWidth : 0
+  readonly property int desktopsLength: root.desktopTiles.length > 0 ? root.desktopsGap + root.desktopTiles.length * root.cellWidth : 0
+  // The desktop tile an icon is dragged over, where letting go opens its app, or -1.
+  readonly property int dragDesktop: root.dragItem !== null && root.dragItem.launchable && !root.dragRemoving
+    ? Model.desktopAt(root.dragAlong, root.layout.width, root.desktopsGap, root.cellWidth, root.desktopTiles.length) : -1
+  // The tile under the pointer, measured from where the tiles are drawn, since magnified apps move them.
+  readonly property int hoveredDesktop: root.dragIndex < 0 && root.pointerAlong >= 0
+    ? Model.desktopAt(root.pointerAlong - (root.vertical ? desktopRow.y : desktopRow.x), 0, root.desktopsGap, root.cellWidth,
+      root.desktopTiles.length) : -1
+  // Past the apps, icons stop magnifying, so the tiles hold still under the pointer.
+  readonly property bool pointerPastApps: root.desktopTiles.length > 0 && root.pointerX > root.layout.width + root.desktopsGap / 2
+
+  // Names people gave desktops, shared with the overview.
+  readonly property string desktopsFile: Quickshell.env("HOME") + "/.local/state/omahub/desktops.json"
+  property var desktopNames: ({})
+  readonly property var appIndex: Desktops.appIndex(DesktopEntries.applications.values || [])
+
+  // The size chosen in settings, made smaller when the apps and desktops would not fit along the edge.
+  readonly property int chosenIconSize: Style.space(root.size === "small" ? 40 : (root.size === "large" ? 62 : 50))
+  readonly property int iconSize: Model.fittedIconSize(root.chosenIconSize, Style.space(12), root.alongRoom,
+    root.items.length + root.desktopTiles.length + 1,
+    root.items.filter(function(item) { return item.divider }).length * root.dividerWidth + root.dividerWidth
+      + root.desktopsGap + root.dockPadding * 2,
+    Style.space(5) / root.chosenIconSize, root.maxScale)
+  // The bar's and other panels' room at each side of the screen, from Hyprland: left, top, right, bottom.
+  readonly property var reserved: {
+    var data = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.lastIpcObject : null
+    var list = data ? Model.listValue(data.reserved) : []
+    return [0, 1, 2, 3].map(function(side) { return Number(list[side]) || 0 })
+  }
+  // Room along the dock's edge. The dock sits centered, so the larger reserved end counts at both ends.
+  readonly property real alongRoom: {
+    var screen = root.focusedScreen
+    if (!screen) return 1e9
+    var end = root.vertical ? Math.max(root.reserved[1], root.reserved[3]) : Math.max(root.reserved[0], root.reserved[2])
+    return (root.vertical ? screen.height : screen.width) - 2 * end - 2 * root.edgeGap
+  }
+  // The same share of the icon at every size, so a dock shrunk to fit keeps its proportions.
+  readonly property int cellPadding: Math.floor(Style.space(5) * root.iconSize / root.chosenIconSize)
   readonly property int cellWidth: root.iconSize + root.cellPadding * 2
   readonly property int dividerWidth: Style.space(17)
   readonly property int dockPadding: Style.space(9)
@@ -94,7 +144,7 @@ Item {
   // The overview button leads the dock, set off from the apps by a divider.
   readonly property int overviewButtonWidth: root.cellWidth + root.dividerWidth
   // How long the shelf runs along its edge, before magnification.
-  readonly property int baseWidth: root.layout.width + root.dockPadding * 2 + root.overviewButtonWidth
+  readonly property int baseWidth: root.layout.width + root.dockPadding * 2 + root.overviewButtonWidth + root.desktopsLength
   // Room in from the edge for magnified icons and the app name.
   readonly property int bandHeight: Math.ceil(root.iconSize * root.maxScale) + root.dockPadding * 2
     + root.dotSpace + root.edgeGap + Style.space(40)
@@ -113,6 +163,8 @@ Item {
 
   // The pointer's position along the dock in the unscaled layout, or -1 when it is away.
   property real pointerX: -1
+  // The pointer along the dock window, where the icons really are, magnified or not. -1 when outside.
+  property real pointerAlong: -1
   property bool pointerInside: false
   property bool lingering: false
   property bool covered: false
@@ -152,6 +204,7 @@ Item {
     list.push({ separator: true })
     list.push({ label: "Add apps…", action: "apps" })
     list.push({ label: "Automatically hide", action: "autohide", checked: root.autohide })
+    list.push({ label: "Show desktops", action: "desktops", checked: root.showDesktops })
     list.push({ heading: "Magnification" })
     list.push({ label: "Off", action: "magnify", value: "off", checked: root.magnification === "off" })
     list.push({ label: "Subtle", action: "magnify", value: "subtle", checked: root.magnification === "subtle" })
@@ -206,8 +259,11 @@ Item {
     var screenY = screen ? screen.y : 0
     var screenWidth = screen ? screen.width : dockWindow.width
     var screenHeight = screen ? screen.height : dockWindow.height
-    var originX = root.edge === "right" ? screenX + screenWidth - dockWindow.width : screenX
-    var originY = root.edge === "bottom" ? screenY + screenHeight - dockWindow.height : screenY
+    // A dock that keeps its own room is laid out beside the bar, so its window starts past the bar's band.
+    var originX = root.edge === "right" ? screenX + screenWidth - dockWindow.width
+      : screenX + (root.edge === "bottom" && dockWindow.width < screenWidth ? root.reserved[0] : 0)
+    var originY = root.edge === "bottom" ? screenY + screenHeight - dockWindow.height
+      : screenY + (dockWindow.height < screenHeight ? root.reserved[1] : 0)
     function place(item) {
       var point = item.mapToItem(null, 0, 0)
       return {
@@ -220,13 +276,23 @@ Item {
       var cell = iconRepeater.itemAt(i)
       if (cell) apps.push(Object.assign({ id: cell.modelData.id, name: cell.modelData.name, windows: cell.modelData.windows.length }, place(cell)))
     }
+    var desktops = []
+    for (var d = 0; d < desktopRepeater.count; d++) {
+      var tile = desktopRepeater.itemAt(d)
+      if (tile) desktops.push(Object.assign({ id: tile.modelData.id, title: tile.title, active: tile.modelData.active,
+        windows: tile.modelData.windows.length }, place(tile)))
+    }
     var edgePoint = root.edge === "left" ? { x: screenX, y: screenY + screenHeight / 2 }
       : (root.edge === "right" ? { x: screenX + screenWidth - 1, y: screenY + screenHeight / 2 }
         : { x: screenX + screenWidth / 2, y: screenY + screenHeight - 1 })
     return JSON.stringify({
       shown: root.shown, position: root.edge, keyboard: root.keyboardActive, cursor: root.keyCursor,
-      menu: root.menuOpen, apps: apps, overview: place(overviewButton), pressed: root.iconPressed,
+      menu: root.menuOpen, apps: apps, desktops: desktops, overview: place(overviewButton), pressed: root.iconPressed,
       screen: { x: screenX, y: screenY, width: screenWidth, height: screenHeight },
+      usable: { x: screenX + root.reserved[0], y: screenY + root.reserved[1],
+        width: screenWidth - root.reserved[0] - root.reserved[2], height: screenHeight - root.reserved[1] - root.reserved[3] },
+      iconSize: root.iconSize, chosenIconSize: root.chosenIconSize,
+      hoveredDesktop: root.hoveredDesktop >= 0 ? root.desktopTiles[root.hoveredDesktop].id : null,
       window: { x: originX, y: originY, width: Math.round(dockWindow.width), height: Math.round(dockWindow.height) },
       shelf: place(dockBackground),
       menuCard: root.menuOpen ? place(menuCard) : null,
@@ -234,7 +300,8 @@ Item {
       menuItem: root.menuOpen && root.menuItem ? root.menuItem.id : null,
       menuEntry: root.menuOpen && root.menuIndex >= 0 && root.menuEntries[root.menuIndex] ? root.menuEntries[root.menuIndex].label || null : null,
       drag: root.dragIndex >= 0 ? { index: root.dragIndex, along: Math.round(root.dragAlong), away: Math.round(root.dragAway),
-        removing: root.dragRemoving, slot: root.dragSlot } : null,
+        removing: root.dragRemoving, slot: root.dragSlot,
+        desktop: root.dragDesktop >= 0 ? root.desktopTiles[root.dragDesktop].id : null } : null,
       picker: root.pickerOpen ? { query: root.pickerQuery, index: root.pickerIndex, rows: root.pickerRows.length,
         selected: root.pickerRows[root.pickerIndex] || null, card: place(pickerCard) } : null,
       edge: { x: Math.round(edgePoint.x), y: Math.round(edgePoint.y), width: 1, height: 1 }
@@ -251,6 +318,41 @@ Item {
   function launch(item) {
     if (!item || !item.launchable) return
     Quickshell.execDetached(["uwsm-app", "--", "gtk-launch", item.id + ".desktop"])
+  }
+
+  // From a click, the pointer stays on the dock.
+  function goToDesktop(id) {
+    Quickshell.execDetached(["hyprctl", "eval", Desktops.quietFocusLua({ workspace: String(id) })])
+  }
+
+  // Goes to a desktop and opens an app there. Hyprland places the app's window on that desktop even if it
+  // takes a while to start.
+  function openOnDesktop(item, id) {
+    if (!item || !item.launchable) return
+    if (!/^[A-Za-z0-9._-]+$/.test(String(item.id))) {
+      root.goToDesktop(id)
+      root.launch(item)
+      return
+    }
+    var open = "hl.exec_cmd('uwsm-app -- gtk-launch " + item.id + ".desktop', { workspace = '" + Number(id) + "' })"
+    Quickshell.execDetached(["hyprctl", "eval", Desktops.quietFocusLua({ workspace: String(id) }) + "\n" + open])
+  }
+
+  function entryFor(appId) {
+    if (!appId) return null
+    return Desktops.entryFor(appId, root.appIndex) || DesktopEntries.heuristicLookup(String(appId))
+  }
+
+  // A desktop's name as the overview gives it: the name someone chose, the project its editor has open,
+  // or its most recent app. Empty for an empty desktop.
+  function desktopTitle(tile) {
+    var contexts = {}
+    var windows = tile.windows.map(function(window) {
+      contexts[window.address] = Desktops.windowContext(window, null)
+      var entry = root.entryFor(window.appId)
+      return { address: window.address, appId: window.appId, appName: entry && entry.name ? String(entry.name) : window.appId, focus: window.focus }
+    })
+    return Desktops.summary({ id: tile.id, windows: windows }, contexts, root.desktopNames[String(tile.id)] || "").title
   }
 
   // Click opens an app, or brings its windows forward one at a time. From a click, the pointer stays on
@@ -306,6 +408,8 @@ Item {
       item.windows.forEach(function(window) { window.close() })
     } else if (entry.action === "autohide") {
       root.runOmahub(["set", "dock/autohide", root.autohide ? "off" : "on"], "Couldn't change automatic hiding")
+    } else if (entry.action === "desktops") {
+      root.runOmahub(["set", "dock/desktops", root.showDesktops ? "off" : "on"], "Couldn't change desktops in the dock")
     } else if (entry.action === "magnify") {
       root.runOmahub(["set", "dock/magnify", entry.value], "Couldn't change magnification")
     } else if (entry.action === "position") {
@@ -483,8 +587,15 @@ Item {
     var item = root.dragItem
     var removing = root.dragRemoving
     var slot = root.dragSlot
+    var desktop = root.dragDesktop >= 0 ? root.desktopTiles[root.dragDesktop] : null
+    var cell = iconRepeater.itemAt(root.dragIndex)
     root.dragIndex = -1
     if (!item) return
+    if (desktop) {
+      if (cell) cell.startLaunch()
+      root.openOnDesktop(item, desktop.id)
+      return
+    }
     var kept = root.keptIds
     if (removing) {
       root.applyPins(kept.filter(function(id) { return id !== item.id }), "Couldn't remove " + item.name)
@@ -571,6 +682,20 @@ Item {
     }
   }
 
+  FileView {
+    path: root.desktopsFile
+    watchChanges: true
+    printErrors: false
+    onLoaded: {
+      try {
+        var parsed = JSON.parse(text())
+        root.desktopNames = parsed && parsed.names ? parsed.names : ({})
+      } catch (e) {}
+    }
+    onFileChanged: reload()
+    onLoadFailed: root.desktopNames = ({})
+  }
+
   Timer {
     id: coverRead
     property int passes: 0
@@ -592,6 +717,8 @@ Item {
            "workspace", "workspacev2", "focusedmon", "activespecial"].indexOf(name) !== -1) {
         coverDelay.restart()
       }
+      // Desktop tiles show the app used last, so a focus change matters to them too.
+      if (root.showDesktops && name === "activewindowv2") coverDelay.restart()
       // A click on a window or a move to another desktop ends the dock's keyboard mode, like clicking away
       // from the Dock on a Mac. The focus change the mode causes as it starts does not count.
       if (root.keyboardActive && Date.now() - root.keyboardSince > 400
@@ -604,7 +731,10 @@ Item {
   Timer {
     id: coverDelay
     interval: 80
-    onTriggered: root.checkCover()
+    onTriggered: {
+      root.checkCover()
+      if (root.showDesktops) Hyprland.refreshToplevels()
+    }
   }
 
   Timer {
@@ -748,10 +878,13 @@ Item {
           } else if (previous) {
             root.keyCursor = Math.max(-1, root.keyCursor - 1)
           } else if (next) {
-            root.keyCursor = Math.min(root.items.length - 1, root.keyCursor + 1)
+            root.keyCursor = Math.min(root.items.length + root.desktopTiles.length - 1, root.keyCursor + 1)
           } else if (enter) {
             if (root.keyCursor < 0) {
               Quickshell.execDetached([root.omahub, "open", "overview"])
+            } else if (root.keyCursor >= root.items.length) {
+              var tile = root.desktopTiles[root.keyCursor - root.items.length]
+              if (tile) root.dispatch('hl.dsp.focus({ workspace = "' + tile.id + '" })')
             } else {
               var cell = iconRepeater.itemAt(root.keyCursor)
               if (cell) cell.open()
@@ -828,6 +961,7 @@ Item {
       onExited: {
         root.pointerInside = false
         root.pointerX = -1
+        root.pointerAlong = -1
         root.lingering = true
         lingerTimer.restart()
       }
@@ -836,6 +970,7 @@ Item {
         var along = root.vertical ? dockHit.y + mouse.y : dockHit.x + mouse.x
         var origin = (dockWindow.alongLength - root.baseWidth) / 2 + root.dockPadding + root.overviewButtonWidth
         root.pointerX = along - origin
+        root.pointerAlong = along
       }
     }
 
@@ -866,8 +1001,9 @@ Item {
       BorderSurface {
         id: dockBackground
         // With no apps kept or open, the shelf still holds the Overview tile.
-        readonly property real length: (root.items.length > 0 ? (root.vertical ? iconRow.height : iconRow.width) : -root.dividerWidth)
-          + root.dockPadding * 2 + root.overviewButtonWidth
+        readonly property real length: (root.items.length > 0 ? (root.vertical ? iconRow.height : iconRow.width)
+            : (root.desktopTiles.length > 0 ? 0 : -root.dividerWidth))
+          + root.desktopsLength + root.dockPadding * 2 + root.overviewButtonWidth
         x: root.edge === "left" ? root.edgeGap
           : (root.edge === "right" ? parent.width - width - root.edgeGap : (parent.width - width) / 2)
         y: root.vertical ? (parent.height - height) / 2 : parent.height - height - root.edgeGap
@@ -930,7 +1066,7 @@ Item {
         }
 
         Rectangle {
-          visible: root.items.length > 0
+          visible: root.items.length > 0 || root.desktopTiles.length > 0
           x: root.vertical ? overviewTile.x + (overviewTile.width - width) / 2 : root.cellWidth + root.dividerWidth / 2
           y: root.vertical ? root.cellWidth + root.dividerWidth / 2 : overviewTile.y + (overviewTile.height - height) / 2
           width: root.vertical ? Math.round(root.iconSize * 0.7) : Math.max(1, Style.space(1))
@@ -960,8 +1096,8 @@ Item {
         id: iconRow
         columns: root.vertical ? 1 : Math.max(1, iconRepeater.count)
         x: root.vertical ? dockBackground.x + root.dockPadding + (root.edge === "left" ? root.dotSpace : 0)
-          : dockBackground.x + dockBackground.width - root.dockPadding - width
-        y: root.vertical ? dockBackground.y + dockBackground.height - root.dockPadding - height : dockBackground.y + root.dockPadding
+          : dockBackground.x + dockBackground.width - root.dockPadding - root.desktopsLength - width
+        y: root.vertical ? dockBackground.y + dockBackground.height - root.dockPadding - root.desktopsLength - height : dockBackground.y + root.dockPadding
 
         Repeater {
           id: iconRepeater
@@ -973,14 +1109,14 @@ Item {
             required property int index
 
             readonly property real distance: root.pointerX < 0 ? 1e9 : root.pointerX - root.layout.centers[cell.index]
-            readonly property real scaleFactor: root.magnify && root.pointerX >= 0 && root.dragIndex < 0
+            readonly property real scaleFactor: root.magnify && root.pointerX >= 0 && root.dragIndex < 0 && !root.pointerPastApps
               ? Model.magnification(cell.distance, root.magnifyRange, root.maxScale) : 1
             readonly property bool dragged: root.dragIndex === cell.index
             // While another icon is dragged, this one steps aside to open its landing place, or to close
             // the gap it left.
             readonly property real shift: {
               var from = root.dragIndex
-              if (from < 0 || cell.dragged) return 0
+              if (from < 0 || cell.dragged || root.dragDesktop >= 0) return 0
               var item = root.dragItem
               var slot = root.dragSlot
               if (item.pinned) {
@@ -1211,6 +1347,124 @@ Item {
                   cell.open(true)
                 }
               }
+            }
+          }
+        }
+      }
+
+      // Desktops at the end of the dock: click one to go there, or drop an app on one to open it there.
+      Item {
+        id: desktopRow
+        visible: root.desktopTiles.length > 0
+        x: root.vertical ? iconRow.x : dockBackground.x + dockBackground.width - root.dockPadding - root.desktopsLength
+        y: root.vertical ? dockBackground.y + dockBackground.height - root.dockPadding - root.desktopsLength : dockBackground.y + root.dockPadding
+        width: root.vertical ? root.iconSize : root.desktopsLength
+        height: root.vertical ? root.desktopsLength : root.iconSize
+
+        Rectangle {
+          visible: root.desktopsGap > 0
+          x: root.vertical ? Math.round(root.iconSize * 0.15) : root.desktopsGap / 2
+          y: root.vertical ? root.desktopsGap / 2 : Math.round(root.iconSize * 0.15)
+          width: root.vertical ? Math.round(root.iconSize * 0.7) : Math.max(1, Style.space(1))
+          height: root.vertical ? Math.max(1, Style.space(1)) : Math.round(root.iconSize * 0.7)
+          color: root.hairline
+        }
+
+        Repeater {
+          id: desktopRepeater
+          model: root.desktopTiles
+
+          delegate: Item {
+            id: desk
+            required property var modelData
+            required property int index
+
+            readonly property bool hovered: root.hoveredDesktop === desk.index
+            readonly property bool dropping: root.dragDesktop === desk.index
+            readonly property bool keyed: root.keyboardActive && !root.menuOpen && root.keyCursor === root.items.length + desk.index
+            readonly property bool lit: desk.hovered || desk.dropping || desk.keyed
+            readonly property string title: root.desktopTitle(desk.modelData)
+            readonly property var entry: desk.modelData.windows.length > 0 ? root.entryFor(desk.modelData.windows[0].appId) : null
+            readonly property real offset: root.desktopsGap + desk.index * root.cellWidth
+
+            x: root.vertical ? 0 : desk.offset
+            y: root.vertical ? desk.offset : 0
+            width: root.vertical ? root.iconSize : root.cellWidth
+            height: root.vertical ? root.cellWidth : root.iconSize
+
+            // The desktop's number, and the app used last on it. The desktop in front wears the accent.
+            Rectangle {
+              id: deskTile
+              width: root.iconSize
+              height: width
+              x: root.vertical ? 0 : root.cellPadding
+              y: root.vertical ? root.cellPadding : 0
+              radius: Math.round(width * 0.23)
+              scale: desk.dropping ? 1.14 : 1
+              color: desk.lit ? Util.alpha(Color.accent, 0.22) : Util.alpha(Color.menu.text, desk.modelData.active ? 0.14 : 0.07)
+              border.width: Math.max(1, Style.space(1))
+              border.color: desk.modelData.active || desk.dropping ? Color.accent : root.hairline
+
+              Behavior on color {
+                ColorAnimation { duration: 120 }
+              }
+              Behavior on scale {
+                NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+              }
+
+              Image {
+                id: deskIcon
+                visible: desk.entry !== null && status === Image.Ready
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: Math.round(parent.height * 0.12)
+                width: Math.round(parent.width * 0.5)
+                height: width
+                sourceSize.width: width * 2
+                sourceSize.height: height * 2
+                source: desk.entry ? root.iconSource(desk.entry.icon) : ""
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+                mipmap: true
+              }
+
+              Text {
+                readonly property bool small: deskIcon.visible
+                x: small ? Math.round(parent.width * 0.12) : (parent.width - width) / 2
+                y: small ? Math.round(parent.height * 0.06) : (parent.height - height) / 2
+                textFormat: Text.PlainText
+                text: String(desk.modelData.id)
+                color: desk.modelData.active || desk.lit ? Color.accent : Color.menu.text
+                font.family: Style.font.menuFamily
+                font.pixelSize: small ? Math.max(6, Math.min(Style.font.caption, Math.round(parent.height * 0.26)))
+                  : Math.round(parent.height * 0.42)
+                font.bold: true
+              }
+            }
+
+            FocusRing {
+              visible: desk.keyed
+              x: deskTile.x - Style.space(4)
+              y: deskTile.y - Style.space(4)
+              width: deskTile.width + Style.space(8)
+              height: deskTile.height + Style.space(8)
+            }
+
+            DockLabel {
+              visible: (desk.dropping || ((desk.hovered || desk.keyed) && root.dragIndex < 0)) && !root.menuOpen && !root.pickerOpen
+              text: desk.dropping ? "Open on desktop " + desk.modelData.id : (desk.title || "Desktop " + desk.modelData.id)
+              x: root.edge === "left" ? deskTile.x + deskTile.width + root.labelGap
+                : (root.edge === "right" ? deskTile.x - width - root.labelGap : deskTile.x + (deskTile.width - width) / 2)
+              y: root.vertical ? deskTile.y + (deskTile.height - height) / 2 : deskTile.y - height - root.labelGap
+            }
+
+            MouseArea {
+              x: root.edge === "left" ? -root.reachEdge : (root.edge === "right" ? -root.reachAway : 0)
+              y: root.edge === "bottom" ? -root.reachAway : 0
+              width: root.vertical ? root.iconSize + root.reachAway + root.reachEdge : parent.width
+              height: root.vertical ? parent.height : root.iconSize + root.reachAway + root.reachEdge
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.goToDesktop(desk.modelData.id)
             }
           }
         }

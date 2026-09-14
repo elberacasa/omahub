@@ -27,7 +27,7 @@
 #   dev/agent drag <from> <to>
 #   dev/agent call <function> [argument]   one of Omahub's shell functions, such as open or dismiss
 #
-# Targets are names from the state, never guessed pixels: dock.app:<id>, dock.overview, dock.picker,
+# Targets are names from the state, never guessed pixels: dock.app:<id>, dock.desktop:<number>, dock.overview, dock.picker,
 # overview.card:<test window>, overview.desktop:<number>, overview.new, or x,y.
 #
 # Real keys run real actions, so the keyboard refuses what could reach the desktop outside the test:
@@ -480,6 +480,7 @@ target_rect() {
       jq -nc --arg t "$target" '($t | split(",") | map(tonumber)) as [$x, $y] | {x: $x, y: $y, width: 0, height: 0}'
       ;;
     dock.app:*) jq -c --arg id "${target#dock.app:}" '.omahub.dock.apps[]? | select(.id == $id)' <<<"$now" | head -1 ;;
+    dock.desktop:*) jq -c --argjson id "${target#dock.desktop:}" '.omahub.dock.desktops[]? | select(.id == $id)' <<<"$now" | head -1 ;;
     dock.overview) jq -c '.omahub.dock.overview // empty' <<<"$now" ;;
     dock.picker) jq -c '.omahub.dock.picker.card // empty' <<<"$now" ;;
     overview.card:*)
@@ -489,7 +490,7 @@ target_rect() {
       ;;
     overview.desktop:*) jq -c --argjson id "${target#overview.desktop:}" '.omahub.overview.desktops[]? | select(.id == $id)' <<<"$now" | head -1 ;;
     overview.new) jq -c '.omahub.overview.newDesktop // empty' <<<"$now" ;;
-    *) die "unknown target '$target'. Use dock.app:<id>, dock.overview, dock.picker, overview.card:<test window>, overview.desktop:<number>, overview.new, or x,y" ;;
+    *) die "unknown target '$target'. Use dock.app:<id>, dock.desktop:<number>, dock.overview, dock.picker, overview.card:<test window>, overview.desktop:<number>, overview.new, or x,y" ;;
   esac
 }
 

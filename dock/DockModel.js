@@ -93,6 +93,50 @@ function items(pins, entries, toplevels, showOpen) {
   return result
 }
 
+// The desktops the dock shows for a screen: each one with a window, and the one in front even when it is
+// empty, in number order. Their windows come most recently used first. `workspaces` and `toplevels` are
+// Hyprland's.
+function desktops(workspaces, toplevels, monitorName, activeId) {
+  const windows = listValue(toplevels).map(toplevel => {
+    const data = (toplevel && toplevel.lastIpcObject) || {}
+    return {
+      address: String(data.address || (toplevel && toplevel.address) || ""),
+      appId: String(data.class || ""),
+      title: String((toplevel && toplevel.title) || data.title || ""),
+      workspace: toplevel && toplevel.workspace ? toplevel.workspace.id : (data.workspace ? data.workspace.id : 0),
+      focus: data.focusHistoryID !== undefined ? Number(data.focusHistoryID) : 1000
+    }
+  }).filter(window => window.appId !== "")
+  const result = []
+  for (const workspace of listValue(workspaces)) {
+    if (!workspace || workspace.id <= 0) continue
+    if (monitorName && workspace.monitor && workspace.monitor.name !== monitorName) continue
+    const own = windows.filter(window => window.workspace === workspace.id).sort((a, b) => a.focus - b.focus)
+    if (own.length > 0 || workspace.id === activeId) result.push({ id: workspace.id, active: workspace.id === activeId, windows: own })
+  }
+  return result.sort((a, b) => a.id - b.id)
+}
+
+// The icon size that lets the dock fit in `available` along its edge: the chosen size, or a smaller one,
+// down to `minimum`, when the `cells` would run past it. Each cell pads its icon by `paddingRatio` of the
+// icon on both sides, so padding shrinks with it. `fixed` is the length that does not scale: dividers and
+// the shelf's padding. At the largest scale, magnified icons around the pointer add about 3.24 icons of
+// length (1 + 2 cos 0.2π + 2 cos 0.4π), so that growth fits too.
+function fittedIconSize(chosen, minimum, available, cells, fixed, paddingRatio, maxScale) {
+  const perIcon = cells * (1 + 2 * paddingRatio) + 3.24 * Math.max(0, maxScale - 1)
+  const fit = Math.floor((available - fixed) / perIcon)
+  return Math.max(minimum, Math.min(chosen, fit))
+}
+
+// The desktop tile a point along the dock is over, or -1. `along` counts from the first app, and the
+// tiles start `gap` past the apps.
+function desktopAt(along, appsLength, gap, cellWidth, count) {
+  const offset = along - appsLength - gap
+  if (count <= 0 || offset < 0) return -1
+  const index = Math.floor(offset / cellWidth)
+  return index < count ? index : -1
+}
+
 // Every app that can be kept, by name, for the Add apps panel: one row per desktop entry, leaving out
 // entries hidden from launchers. `pending` holds keep or remove choices not yet saved, by app id. Every
 // search word must appear in the name, generic name, id, or keywords.

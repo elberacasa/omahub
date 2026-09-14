@@ -12,7 +12,7 @@ fi
 results=$(node - "$OMAHUB_PATH/dock/DockModel.js" <<'EOF'
 const fs = require("fs")
 const source = fs.readFileSync(process.argv[2], "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { covered, items, parseConfig, catalog, dropSlot, reorder }")()
+const Model = new Function(source + "\nreturn { covered, items, parseConfig, catalog, dropSlot, reorder, desktops, desktopAt, fittedIconSize }")()
 const checks = []
 const check = (name, ok) => checks.push({ name, ok: !!ok })
 
@@ -73,6 +73,23 @@ check("a slot past the end keeps the app last", Model.reorder(["a", "b"], "a", 9
 check("settings read from the dock file", Model.parseConfig('{"show":true}').show === true)
 check("an empty dock file means no settings", JSON.stringify(Model.parseConfig("")) === "{}")
 check("a broken dock file is not taken as settings", Model.parseConfig('{"show":') === null && Model.parseConfig("[1]") === null)
+
+const ws = (id, monitor) => ({ id, monitor: { name: monitor || "DP-1" } })
+const top = (address, cls, workspace, focus) => ({ lastIpcObject: { address, class: cls, workspace: { id: workspace }, focusHistoryID: focus } })
+const tiles = Model.desktops([ws(3), ws(1), ws(2), ws(-98), ws(4, "HDMI-1")], [top("0xa", "foot", 1, 2), top("0xb", "cursor", 1, 0), top("0xc", "btop", 3, 1), top("0xd", "x", 4, 3)], "DP-1", 2)
+check("the dock shows desktops with windows and the one in front, in order", tiles.map(t => t.id).join(",") === "1,2,3")
+check("the desktop in front is marked even when empty", tiles[1].active && tiles[1].windows.length === 0 && !tiles[0].active)
+check("a desktop lists its windows most recent first", tiles[0].windows.map(w => w.appId).join(",") === "cursor,foot")
+check("special desktops and other screens stay out", !tiles.some(t => t.id === -98 || t.id === 4))
+check("a point past the apps and the gap is over the first desktop", Model.desktopAt(215, 200, 10, 60, 3) === 0)
+check("a point over the gap is over no desktop", Model.desktopAt(205, 200, 10, 60, 3) === -1)
+check("a point past the last desktop is over none", Model.desktopAt(400, 200, 10, 60, 3) === -1)
+check("a point among the apps is over no desktop", Model.desktopAt(100, 200, 10, 60, 3) === -1)
+
+check("a dock with room keeps the chosen icon size", Model.fittedIconSize(40, 24, 1900, 10, 100, 0.125, 1.5) === 40)
+check("too many icons for the edge shrink to fit, padding and all", Model.fittedIconSize(40, 24, 700, 16, 100, 0.125, 1) === 30)
+check("magnification leaves room for the icons it grows", Model.fittedIconSize(40, 20, 700, 16, 100, 0.125, 1.5) === 27)
+check("icons never shrink below the smallest size", Model.fittedIconSize(40, 24, 300, 16, 100, 0.125, 1.5) === 24)
 
 console.log(JSON.stringify(checks))
 EOF

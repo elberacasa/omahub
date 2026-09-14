@@ -122,4 +122,40 @@ fi
 agent chord Escape || true
 agent chord Escape || true
 
+section "Desktops in the dock go there with a click, and open an app dropped on them"
+omahub_cmd="$(dirname "$0")/../../bin/omahub"
+home=$(agent state .sandbox.home)
+"$omahub_cmd" set dock/desktops on >/dev/null
+check "the dock shows both sandbox desktops" "any(.omahub.dock.desktops[]; .id == $home) and any(.omahub.dock.desktops[]; .id == $away)" 2
+agent focus a
+agent click "dock.desktop:$away"
+check "clicking a desktop goes there" ".desktop == $away" 2
+agent focus a
+agent chord SUPER+D
+check "SUPER + D takes the keyboard" '.omahub.dock.keyboard' 1
+for _ in $(seq 40); do
+  agent state ".omahub.dock.cursor == (.omahub.dock.apps | length) + (.omahub.dock.desktops | map(.id) | index($away))" | grep -q true && break
+  agent chord Right || break
+done
+check "the cursor walks past the apps onto desktop $away" ".omahub.dock.cursor == (.omahub.dock.apps | length) + (.omahub.dock.desktops | map(.id) | index($away))" 1
+agent chord Return
+check "Enter goes to that desktop and gives the keyboard back" ".desktop == $away and (.omahub.dock.keyboard | not)" 2
+check "the pointer stays on the dock" '.omahub.dock.shelf as $s | .pointer.x >= $s.x - 40 and .pointer.x <= $s.x + $s.width + 40
+  and .pointer.y >= $s.y - 80 and .pointer.y <= $s.y + $s.height + 40' 0
+agent focus a
+# A test app that can be opened from the dock, so dropping it opens a test window rather than a real app.
+entry="$HOME/.local/share/applications/omahub-demo-d.desktop"
+trap 'rm -f "$entry"' EXIT
+mkdir -p "$(dirname "$entry")"
+printf '%s\n' "[Desktop Entry]" "Type=Application" "Name=Test D" "Exec=foot --app-id=omahub-demo-d --title=Test-D sh -c \"sleep infinity\"" \
+  "StartupWMClass=omahub-demo-d" > "$entry"
+sleep 1
+"$omahub_cmd" dock pin omahub-demo-d >/dev/null
+check "test app d is in the dock" 'any(.omahub.dock.apps[]; .id == "omahub-demo-d")' 5
+agent drag dock.app:omahub-demo-d "dock.desktop:$away"
+check "dropping d on a desktop opens it there" "any(.windows[]; .class == \"omahub-demo-d\" and .desktop == $away)" 8
+check "and goes there" ".desktop == $away" 1
+pkill -f -- "--app-id=[o]mahub-demo-d" || true
+rm -f "$entry"
+
 finish_live

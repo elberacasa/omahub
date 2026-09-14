@@ -18,7 +18,12 @@ inside='def inside($inner; $outer): $inner != null and $outer != null
   and $inner.x + $inner.width <= $outer.x + $outer.width + 1
   and $inner.y + $inner.height <= $outer.y + $outer.height + 1;
 def apart($a; $b): $a.x + $a.width <= $b.x + 1 or $b.x + $b.width <= $a.x + 1
-  or $a.y + $a.height <= $b.y + 1 or $b.y + $b.height <= $a.y + 1;'
+  or $a.y + $a.height <= $b.y + 1 or $b.y + $b.height <= $a.y + 1;
+def along($inner; $usable; $position): if $position == "bottom"
+  then $inner.x >= $usable.x - 1 and $inner.x + $inner.width <= $usable.x + $usable.width + 1
+  else $inner.y >= $usable.y - 1 and $inner.y + $inner.height <= $usable.y + $usable.height + 1 end;'
+# The usable area leaves out every reserved band, the dock's own included, so the shelf is only measured
+# along the edge it sits on.
 
 omahub_set() {
   OMAHUB_PATH="$LIVE_ROOT" "$LIVE_ROOT/bin/omahub" set "$1" "$2" >/dev/null
@@ -33,6 +38,7 @@ for position in bottom left right; do
     check "the dock moves there" ".omahub.dock.position == \"$position\" and .omahub.dock.shown" 3
     sleep 0.5
     check "the shelf is on the screen" "$inside inside(.omahub.dock.shelf; .omahub.dock.screen)" 1
+    check "and clear of the bar along its edge" "$inside along(.omahub.dock.shelf; .omahub.dock.usable; .omahub.dock.position)" 1
     check "and inside the dock's window" "$inside inside(.omahub.dock.shelf; .omahub.dock.window)" 1
 
     agent chord SUPER+D
@@ -58,5 +64,31 @@ for position in bottom left right; do
     agent reset
   done
 done
+
+section "A crowded dock with desktops still fits clear of the bar"
+omahub_set dock/desktops on
+omahub_set dock/autohide off
+mapfile -t many < <(grep -L -E '^(NoDisplay|Hidden)=true' /usr/share/applications/*.desktop 2>/dev/null | head -40 | xargs -r -n1 basename | sed 's/\.desktop$//')
+OMAHUB_PATH="$LIVE_ROOT" "$LIVE_ROOT/bin/omahub" dock order "${many[@]}" >/dev/null
+for position in left bottom; do
+  omahub_set dock/position "$position"
+  omahub_set dock/magnify large
+  check "the crowded dock is on the $position" ".omahub.dock.position == \"$position\" and (.omahub.dock.apps | length) >= 12" 3
+  sleep 1
+  check "the shelf fits clear of the bar" "$inside along(.omahub.dock.shelf; .omahub.dock.usable; .omahub.dock.position)" 1
+  middle=$(agent state '.omahub.dock.apps[(.omahub.dock.apps | length) / 2 | floor].id')
+  agent point "dock.app:$middle"
+  sleep 0.5
+  check "and still does with the icons under the pointer magnified" "$inside along(.omahub.dock.shelf; .omahub.dock.usable; .omahub.dock.position)" 1
+  away=$(agent state .sandbox.away)
+  # Leaving the magnified apps shrinks them and the tiles slide in, so point again once they settle.
+  agent point "dock.desktop:$away"
+  sleep 0.4
+  agent point "dock.desktop:$away"
+  sleep 0.4
+  check "pointing at a desktop tile lights that tile" ".omahub.dock.hoveredDesktop == $away" 1
+  agent shot screen >/dev/null
+done
+agent reset
 
 finish_live
