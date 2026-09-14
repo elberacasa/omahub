@@ -1,0 +1,64 @@
+#!/bin/bash
+
+# Record a scripted demo. The script drives keys and a virtual pointer while dev/take records,
+# then every frame is tiled for review. Afterwards demo windows close and the pointer and
+# workspace go back to where they were.
+#
+#   dev/demo <script> [seconds] [--workspace <n>] [--fps <n>]
+#
+# Scripts live in dev/demos/ and source dev/demo-lib.sh. The take lands in tmp/takes/<name>.mp4
+# and the review tile in tmp/demos/<name>.png.
+
+set -euo pipefail
+
+usage="usage: dev/demo <script> [seconds] [--workspace <n>] [--fps <n>]"
+root="$(cd "$(dirname "$0")/.." && pwd)"
+script=""
+seconds=12
+workspace=""
+fps=60
+
+while (( $# )); do
+  case "$1" in
+    --workspace) workspace="$2"; shift 2 ;;
+    --fps) fps="$2"; shift 2 ;;
+    -h | --help) echo "$usage"; exit 0 ;;
+    *)
+      if [[ -z $script ]]; then
+        script="$1"
+      else
+        seconds="$1"
+      fi
+      shift
+      ;;
+  esac
+done
+
+if [[ -z $script || ! -f $script ]]; then
+  echo "$usage" >&2
+  exit 1
+fi
+
+source "$root/dev/demo-lib.sh"
+demo_build_pointer
+
+name=$(basename "$script" .sh)
+pointer_before=$(hyprctl cursorpos -j | jq -r '"\(.x) \(.y)"')
+workspace_before=$(hyprctl activeworkspace -j | jq -r .id)
+
+restore() {
+  close_demo_windows || true
+  pointer move $pointer_before 1 >/dev/null 2>&1 || true
+  hyprctl dispatch "hl.dsp.focus({ workspace = \"$workspace_before\" })" >/dev/null 2>&1 || true
+}
+trap restore EXIT
+
+take=("$name" "$seconds" --quiet --fps "$fps" --run "bash $(realpath "$script")")
+if [[ -n $workspace ]]; then
+  take+=(--workspace "$workspace")
+fi
+"$root/dev/take" "${take[@]}"
+
+mkdir -p "$root/tmp/demos"
+"$root/dev/frames" "$root/tmp/takes/$name.mp4" 0 "$seconds" --fps 2 --width 400 --cols 6 --out "$root/tmp/demos/$name.png" >/dev/null
+echo "review: tmp/demos/$name.png"

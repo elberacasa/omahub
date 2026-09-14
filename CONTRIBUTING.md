@@ -28,7 +28,7 @@ omarchy plugin enable io.github.elberacasa.omahub
 2. Keep the change to one thing.
 3. Run `omarchy plugin validate .`.
 4. Check it in a dark and a light theme.
-5. If anything moves, review the motion frame by frame with `dev/take` and `dev/frames`.
+5. If anything moves, review the motion frame by frame with `dev/take` and `dev/frames`. If it is clicked or dragged, add a script to `dev/demos/` and record it with `dev/demo`, so anyone can replay it.
 6. Add a line to `CHANGELOG.md` under `Unreleased` if a user would notice the change.
 
 ## Add your keyboard

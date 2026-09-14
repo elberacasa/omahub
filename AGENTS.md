@@ -76,6 +76,14 @@ dev/frames tmp/takes/<name>.mp4 <start> <end> --fps 60
 
 Look for pops, flicker, jumps, and states that skip.
 
+- Anything you click, drag, or hover gets a scripted demo. `dev/demo` runs a script from `dev/demos/` that moves a virtual pointer, clicks, drags, and types while it records, then tiles the frames and puts the pointer and workspace back:
+
+```bash
+dev/demo dev/demos/overview-drag.sh 12   # review tmp/demos/overview-drag.png and its .log
+```
+
+Demo scripts source `dev/demo-lib.sh` for `move`, `click`, `drag`, `key`, `summon`, `layout`, and throwaway windows. Omahub reports where its pieces are on screen with `omarchy-shell shell call io.github.elberacasa.omahub overviewLayout ""` and `dockLayout`, so scripts never guess pixels. Never send SUPER combinations with wtype: its keys reach Hyprland as other keys. Drive what a keybind does through `summon` instead.
+
 ## Commits and releases
 
 - One coherent change per commit. Imperative subject under 60 characters, no trailing period. The body explains why.
