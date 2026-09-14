@@ -5,8 +5,12 @@
   "version": "0.1.0",
   "author": "elberacasa",
   "license": "MIT",
-  "description": "Browse, install, and manage everything Omarchy offers from one place.",
-  "kinds": ["overlay"],
+  "description": "The Mac layer for Omarchy: a hub for every setting, a dock, a window overview, screenshot thumbnails, and projects that start your agent.",
+  "kinds": [
+    "overlay"
+  ],
   "keepLoaded": true,
-  "entryPoints": { "overlay": "Omahub.qml" }
+  "entryPoints": {
+    "overlay": "Omahub.qml"
+  }
 }
