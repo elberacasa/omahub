@@ -104,6 +104,8 @@ dev/agent errors                                        # warnings Omahub logged
 dev/agent sandbox end
 ```
 
+Takes for the README or a post are staged with `dev/studio up`: generic projects in `~/Projects` open in Cursor, with btop and a signed out X, while every real window waits on a hidden desktop. `dev/studio down` puts everything back and deletes only the projects it made. Every export runs `dev/privacy-check`, which reads the frames for user and host names, the home folder, git identity, and local network addresses, and still look at every frame before posting.
+
 Keys go through a virtual keyboard with the real keymap, so Hyprland's bindings, release bindings, and key sets behave exactly as they do for a person. Because the keys are real, `dev/agent` refuses SUPER combinations other than Omahub's own outside Omahub's key sets, keys for a window that is not a test window, and keys that would close or move a real window or change a real setting. Shots from `dev/agent shot` can show real windows, so they stay in `tmp/`.
 
 ## Commits and releases

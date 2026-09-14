@@ -1,0 +1,321 @@
+#!/bin/bash
+
+# A staged desktop for recording Omahub: real apps on generic projects, while every real window waits
+# on a hidden desktop.
+#
+#   dev/studio up      desktop 1: orbit-api in Cursor with btop beside it
+#                      desktop 2: lumen-docs in Cursor
+#                      desktop 3: X, signed out, in a throwaway browser profile
+#   dev/studio down    close the staged windows, delete the projects it made, put everything back
+#
+# The projects are made in ~/Projects with generic code and history, only when their names are free, and
+# marked, so down only ever deletes folders it made. Staging runs inside a dev/agent sandbox: the dock's
+# apps and desktop names changed for a take come back, and dev/agent can drive the staged windows. Record
+# with dev/take, export with dev/export-media, which checks for personal data, and look at every frame.
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+AGENT="$ROOT/dev/agent"
+STATE="$ROOT/tmp/studio"
+PROJECTS="$HOME/Projects"
+MARK=".omahub-studio"
+
+source "$ROOT/dev/demo-lib.sh"
+
+die() {
+  echo "dev/studio: $*" >&2
+  exit 2
+}
+
+omahub() {
+  OMAHUB_PATH="$ROOT" "$ROOT/bin/omahub" "$@"
+}
+
+# commit <folder> <days ago> <message>: a commit by a generic team, at a fixed time of day.
+commit() {
+  local when
+  when=$(date -d "$2 days ago 10:24" '+%Y-%m-%dT%H:%M:%S')
+  git -C "$1" add -A
+  GIT_AUTHOR_NAME="Orbit Team" GIT_AUTHOR_EMAIL="team@orbit.example" GIT_AUTHOR_DATE="$when" \
+    GIT_COMMITTER_NAME="Orbit Team" GIT_COMMITTER_EMAIL="team@orbit.example" GIT_COMMITTER_DATE="$when" \
+    git -C "$1" commit -q -m "$3"
+}
+
+new_project() {
+  local dir="$PROJECTS/$1"
+  [[ ! -e $dir ]] || die "$dir already exists, so the studio leaves it alone. Move it, or record without it"
+  mkdir -p "$dir"
+  printf '%s\n' "$dir" >>"$STATE/created"
+  git -C "$dir" init -q -b main
+  # The mark sits inside .git, which editors hide, so it never shows on camera.
+  touch "$dir/.git/$MARK"
+  # The generic code imports packages that are not installed, so the project's own editor settings
+  # turn off the problems that would show, and hide themselves. Nothing of the person's changes.
+  mkdir -p "$dir/.vscode"
+  cat >"$dir/.vscode/settings.json" <<'EOF'
+{
+  "typescript.validate.enable": false,
+  "javascript.validate.enable": false,
+  "problems.decorations.enabled": false,
+  "files.exclude": { ".vscode": true }
+}
+EOF
+  printf '.vscode/\n' >>"$dir/.git/info/exclude"
+}
+
+make_orbit_api() {
+  local dir="$PROJECTS/orbit-api"
+  new_project orbit-api
+  mkdir -p "$dir/src/routes" "$dir/test"
+  cat >"$dir/package.json" <<'EOF'
+{
+  "name": "orbit-api",
+  "version": "0.9.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "test": "vitest"
+  }
+}
+EOF
+  cat >"$dir/README.md" <<'EOF'
+# orbit-api
+
+The API behind Orbit: search, tags, and a library that syncs.
+EOF
+  cat >"$dir/src/server.ts" <<'EOF'
+import { Hono } from "hono"
+import { health } from "./routes/health"
+import { search } from "./routes/search"
+
+const app = new Hono()
+
+app.route("/health", health)
+app.route("/search", search)
+
+export default app
+EOF
+  cat >"$dir/src/routes/health.ts" <<'EOF'
+import { Hono } from "hono"
+
+export const health = new Hono().get("/", (c) => c.json({ ok: true }))
+EOF
+  commit "$dir" 9 "Start orbit-api"
+  cat >"$dir/src/routes/search.ts" <<'EOF'
+import { Hono } from "hono"
+import { library } from "../library"
+
+export const search = new Hono().get("/", async (c) => {
+  const query = c.req.query("q") ?? ""
+  const tags = c.req.queries("tag") ?? []
+  const page = Number(c.req.query("page") ?? 1)
+
+  const results = await library.search({ query, tags })
+  return c.json({
+    results: results.slice((page - 1) * 20, page * 20),
+    total: results.length,
+  })
+})
+EOF
+  cat >"$dir/test/search.test.ts" <<'EOF'
+import { describe, expect, it } from "vitest"
+import app from "../src/server"
+
+describe("search", () => {
+  it("matches titles", async () => {
+    const response = await app.request("/search?q=tide")
+    expect((await response.json()).total).toBeGreaterThan(0)
+  })
+
+  it("matches tags", async () => {
+    const response = await app.request("/search?tag=coast")
+    expect((await response.json()).total).toBeGreaterThan(0)
+  })
+})
+EOF
+  commit "$dir" 4 "Search titles"
+  git -C "$dir" checkout -q -b feature/search
+  cat >>"$dir/test/search.test.ts" <<'EOF'
+
+describe("pages", () => {
+  it("returns twenty results a page", async () => {
+    const response = await app.request("/search?q=&page=2")
+    expect((await response.json()).results.length).toBeLessThanOrEqual(20)
+  })
+})
+EOF
+  commit "$dir" 1 "Page search results"
+}
+
+make_lumen_docs() {
+  local dir="$PROJECTS/lumen-docs"
+  new_project lumen-docs
+  mkdir -p "$dir/docs/guides"
+  cat >"$dir/README.md" <<'EOF'
+# lumen-docs
+
+The docs for Lumen, the Orbit client.
+EOF
+  cat >"$dir/docs/index.md" <<'EOF'
+# Lumen
+
+Lumen searches your library as you type, on your own machine.
+EOF
+  commit "$dir" 12 "Start the docs"
+  cat >"$dir/docs/guides/search.md" <<'EOF'
+# Search your library
+
+Lumen searches titles and tags as you type. Results come back ranked, in pages of twenty.
+
+## Query the API
+
+```ts
+const results = await orbit.search({ query: "tide tables", tags: ["coast"] })
+```
+
+Pass tags to narrow the results. A query with no words returns everything under those tags.
+EOF
+  cat >"$dir/docs/guides/tags.md" <<'EOF'
+# Tags
+
+Tag anything in your library, then search by tag.
+EOF
+  commit "$dir" 2 "Guide to search and tags"
+  git -C "$dir" checkout -q -b docs/tags
+}
+
+# open_window <desktop> <what to wait for, a jq test on a window> <command>: runs the command, waits for
+# its new window, moves it to the desktop, adopts it for the sandbox, and prints its address.
+open_window() {
+  local desktop="$1" test="$2" command="$3" before address=""
+  before=$(hyprctl clients -j | jq -c '[.[].address]')
+  hyprctl eval "hl.exec_cmd('$command', { workspace = '$desktop silent' })" >/dev/null
+  for _ in $(seq 150); do
+    address=$(hyprctl clients -j | jq -r --argjson before "$before" \
+      "[.[] | select((.address as \$a | \$before | index(\$a) | not) and ($test))][0].address // empty")
+    [[ -n $address ]] && break
+    sleep 0.1
+  done
+  [[ -n $address ]] || die "no window appeared for: $command"
+  # An app that is already running opens its window where the pointer is, not where it was started.
+  hyprctl dispatch "hl.dsp.window.move({ workspace = \"$desktop\", window = \"address:$address\", follow = false })" >/dev/null
+  "$AGENT" own "$address"
+  printf '%s\n' "$address"
+}
+
+up() {
+  [[ ! -d $STATE ]] || die "a studio is already up. Take it down with dev/studio down"
+  command -v cursor >/dev/null || die "the studio needs Cursor"
+  mkdir -p "$STATE"
+  : >"$STATE/created"
+
+  "$AGENT" sandbox start --bare >/dev/null
+  demo_stash_windows
+  setsid bash -c "source '$ROOT/dev/demo-lib.sh'; demo_guard_stash '$STATE/stash-shown'" >/dev/null 2>&1 </dev/null &
+  echo $! >"$STATE/guard.pid"
+
+  omahub reset dock/pins >/dev/null
+  for desktop in 1 2 3 4 5 6 7 8 9 10; do
+    omahub desktop name "$desktop" "" >/dev/null
+  done
+
+  make_orbit_api
+  make_lumen_docs
+
+  # btop shows only its processor and memory boxes: its process list shows user names and commands, and
+  # its network box shows the local address.
+  btop --default-config 2>/dev/null | sed -e 's/^shown_boxes = .*/shown_boxes = "cpu mem"/' -e 's/^show_disks = .*/show_disks = False/' >"$STATE/btop.conf"
+
+
+  local windows="$STATE/windows.json" orbit btop lumen x
+  orbit=$(open_window 1 '.class == "cursor"' "cursor -n $PROJECTS/orbit-api $PROJECTS/orbit-api/src/routes/search.ts") || exit 2
+  btop=$(open_window 1 '.class == "foot"' "foot --title=btop btop -c $STATE/btop.conf") || exit 2
+  lumen=$(open_window 2 '.class == "cursor"' "cursor -n $PROJECTS/lumen-docs $PROJECTS/lumen-docs/docs/guides/search.md") || exit 2
+  x=$(open_window 3 '(.class | test("x\\.com|chromium"))' "chromium --user-data-dir=$STATE/chromium --no-first-run --no-default-browser-check --app=https://x.com") || exit 2
+  jq -n --arg orbit "$orbit" --arg btop "$btop" --arg lumen "$lumen" --arg x "$x" \
+    '{orbit: $orbit, btop: $btop, lumen: $lumen, x: $x}' >"$windows"
+
+  # Cursor opens with its own notices, such as an update, which are cleared before anything is filmed.
+  sleep 4
+  for address in "$orbit" "$lumen"; do
+    hyprctl dispatch "hl.dsp.focus({ window = \"address:$address\" })" >/dev/null
+    sleep 0.8
+    "$AGENT" chord CTRL+SHIFT+p
+    sleep 0.6
+    "$AGENT" type "clear all notifications"
+    sleep 0.5
+    "$AGENT" chord Return
+    sleep 0.5
+  done
+
+  # orbit-api keeps its terminal open on its history, as work in progress looks.
+  hyprctl dispatch "hl.dsp.focus({ window = \"address:$orbit\" })" >/dev/null
+  sleep 0.6
+  "$AGENT" chord CTRL+grave
+  sleep 2
+  "$AGENT" type "git log --oneline"
+  "$AGENT" chord Return
+  sleep 1
+
+  # A real agent at work in an editor's terminal: Claude in Cursor's terminal on lumen-docs. Its folder
+  # trust question, which shows the folder's full path and defaults to No, is answered Yes here, so it
+  # never shows on camera. No prompt is sent.
+  if command -v claude >/dev/null; then
+    hyprctl dispatch "hl.dsp.focus({ window = \"address:$lumen\" })" >/dev/null
+    sleep 0.6
+    "$AGENT" chord CTRL+grave
+    sleep 2
+    "$AGENT" type "claude"
+    "$AGENT" chord Return
+    sleep 5
+    "$AGENT" chord Down
+    sleep 0.3
+    "$AGENT" chord Return
+    sleep 4
+  fi
+
+  # A web page asks for attention as it loads. Focusing it once answers that before filming.
+  hyprctl dispatch "hl.dsp.focus({ window = \"address:$x\" })" >/dev/null
+  sleep 1
+
+  hyprctl dispatch 'hl.dsp.focus({ workspace = "1" })' >/dev/null
+  hyprctl dispatch "hl.dsp.focus({ window = \"address:$orbit\" })" >/dev/null
+  echo "The studio is up. Windows: $windows. Take it down with dev/studio down."
+}
+
+down() {
+  if [[ -f $STATE/guard.pid ]]; then
+    kill "$(<"$STATE/guard.pid")" 2>/dev/null || true
+  fi
+  demo_restore_windows || true
+  "$AGENT" sandbox end >/dev/null || echo "dev/studio: the sandbox did not restore cleanly. Run dev/agent sandbox end" >&2
+  # Closing their windows leaves the throwaway profiles' background processes running, so they stop here.
+  local pid
+  for _ in 1 2 3; do
+    for pid in $(pgrep -f "$STATE/(cursor|chromium)" 2>/dev/null); do
+      kill "$pid" 2>/dev/null || true
+    done
+    pgrep -f "$STATE/(cursor|chromium)" >/dev/null 2>&1 || break
+    sleep 0.5
+  done
+  if [[ -f $STATE/created ]]; then
+    while IFS= read -r dir; do
+      # Only a folder the studio made, and marked, is ever deleted.
+      if [[ -n $dir && $dir == "$PROJECTS"/* && -f $dir/.git/$MARK ]]; then
+        rm -rf "$dir"
+      fi
+    done <"$STATE/created"
+  fi
+  if [[ -s $STATE/stash-shown ]]; then
+    echo "dev/studio: the hidden desktop came into view while the studio was up, so do not publish takes from this session." >&2
+  fi
+  rm -rf "$STATE"
+  echo "The studio is down."
+}
+
+case "${1:-}" in
+  up) up ;;
+  down) down ;;
+  *) sed -n '3,13p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

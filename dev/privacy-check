@@ -41,6 +41,11 @@ command -v tesseract >/dev/null || { echo "dev/privacy-check: needs tesseract" >
 command -v ffmpeg >/dev/null || { echo "dev/privacy-check: needs ffmpeg" >&2; exit 2; }
 
 add_word "your user name" "$(id -un)"
+# Tools cut long names short, such as btop's "elbe+", so the start of the name counts too.
+user=$(id -un)
+if (( ${#user} > 5 )); then
+  add_word "the start of your user name" "${user:0:5}"
+fi
 add_word "your host name" "$(hostnamectl hostname 2>/dev/null || cat /etc/hostname 2>/dev/null || true)"
 add_word "your home folder" "$HOME"
 email=$(git config --global user.email 2>/dev/null || true)
@@ -61,7 +66,13 @@ scan_frame() {
   local file="$1" frame="$2" moment="$3" text index word
   # Doubling the size lets OCR read small UI text, such as window titles and prompts.
   ffmpeg -loglevel error -y -i "$frame" -vf "scale=iw*2:ih*2" "$work/large.png"
-  text=$(tesseract "$work/large.png" stdout --psm 11 2>/dev/null | squash)
+  raw=$(tesseract "$work/large.png" stdout --psm 11 2>/dev/null)
+  # A local network address, which tools such as btop show, is personal too.
+  if grep -qE '(^|[^0-9])(192\.168|10\.[0-9]{1,3}|172\.(1[6-9]|2[0-9]|3[01]))\.[0-9]{1,3}\.[0-9]{1,3}([^0-9]|$)' <<<"$raw"; then
+    echo "$file $moment: a local network address"
+    found=1
+  fi
+  text=$(squash <<<"$raw")
   for index in "${!words[@]}"; do
     word=$(printf '%s' "${words[$index]}" | squash)
     [[ -n $word ]] || continue

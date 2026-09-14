@@ -17,10 +17,12 @@
 #
 #   dev/agent sandbox start|end|status     free desktops with test windows a and b, and c on the next
 #   dev/agent reset                        let go of keys, close Omahub's surfaces, put windows back
-#   dev/agent focus <test window>          focus test window a, b, or c
+#   dev/agent focus <test window>          focus test window a, b, or c, or a window by address
+#   dev/agent own <address>                adopt a window the caller opened, so keys may reach it
 #   dev/agent chord <keys>                 press keys together, such as SUPER+TAB, SHIFT+6, Escape, u
 #   dev/agent hold SUPER | let-go SUPER    keep SUPER down across chords, then let it go
 #   dev/agent keys <commands...>           exact timing: down Super_L tap Tab wait 40 up Super_L
+#   dev/agent type <text>                  type text into a focused test window or text field
 #   dev/agent point|click <target> [left|right|middle]
 #   dev/agent drag <from> <to>
 #   dev/agent call <function> [argument]   one of Omahub's shell functions, such as open or dismiss
@@ -71,19 +73,27 @@ sandbox_json() {
   fi
 }
 
+# Windows the sandbox owns: staged real apps, which count as test windows though their names are real.
+owned_json() {
+  jq -c '.owned // []' "$SANDBOX/sandbox.json" 2>/dev/null || echo '[]'
+}
+
 state() {
-  local omahub focus
+  local omahub focus owned
   omahub=$(omahub_call inspect 2>/dev/null || true)
   jq -e . >/dev/null 2>&1 <<<"$omahub" || omahub=null
+  owned=$(owned_json)
   focus=$(hyprctl activewindow -j 2>/dev/null \
-    | jq -c --arg p "$TEST_PREFIX" 'if .address then {address, class, desktop: .workspace.id, test: (.class | startswith($p))} else null end' 2>/dev/null \
+    | jq -c --arg p "$TEST_PREFIX" --argjson owned "$owned" \
+      'if .address then {address, class, desktop: .workspace.id, test: ((.class | startswith($p)) or (.address as $a | $owned | index($a) != null))} else null end' 2>/dev/null \
     || echo null)
   jq -n \
     --argjson omahub "$omahub" \
     --argjson focus "${focus:-null}" \
     --argjson desktop "$(hyprctl activeworkspace -j | jq .id)" \
     --argjson desktops "$(hyprctl workspaces -j | jq -c '[.[] | select(.id > 0) | {id, windows, monitor}] | sort_by(.id)')" \
-    --argjson windows "$(hyprctl clients -j | jq -c --arg p "$TEST_PREFIX" '[.[] | {address, class, desktop: .workspace.id, test: (.class | startswith($p))}]')" \
+    --argjson windows "$(hyprctl clients -j | jq -c --arg p "$TEST_PREFIX" --argjson owned "$owned" \
+      '[.[] | {address, class, desktop: .workspace.id, test: ((.class | startswith($p)) or (.address as $a | $owned | index($a) != null))}]')" \
     --arg keyset "$(hyprctl submap | head -1)" \
     --argjson held "$([[ -f $HELD ]] && echo true || echo false)" \
     --argjson pointer "$(hyprctl cursorpos -j 2>/dev/null | jq -c '{x, y}' 2>/dev/null || echo null)" \
@@ -309,8 +319,10 @@ test_address() {
   hyprctl clients -j | jq -r --arg c "$TEST_PREFIX$1" '.[] | select(.class == $c) | .address' | head -1
 }
 
+# sandbox_start [--bare]: --bare opens no test windows, for staged takes that bring their own windows,
+# named with the test prefix so the keyboard still reaches them.
 sandbox_start() {
-  local home away return_window return_desktop existing=() path
+  local bare="${1:-}" home away return_window return_desktop existing=() path
   [[ ! -f $SANDBOX/sandbox.json ]] || die "a sandbox is already running. End it with dev/agent sandbox end"
   read -r home away <<<"$(free_desktops)"
   [[ -n ${home:-} && -n ${away:-} ]] || die "the sandbox needs two free desktops from 6 to 10"
@@ -327,14 +339,17 @@ sandbox_start() {
   tar -C / -czf "$SANDBOX/backup.tgz" "${existing[@]}"
   manifest >"$SANDBOX/manifest"
   jq -n --argjson home "$home" --argjson away "$away" --argjson desktop "$return_desktop" --arg window "$return_window" \
-    '{home: $home, away: $away, returnDesktop: $desktop, returnWindow: $window,
-      windows: [{name: "a", desktop: $home}, {name: "b", desktop: $home}, {name: "c", desktop: $away}]}' \
+    --argjson bare "$([[ $bare == "--bare" ]] && echo true || echo false)" \
+    '{home: $home, away: $away, returnDesktop: $desktop, returnWindow: $window, bare: $bare,
+      windows: (if $bare then [] else [{name: "a", desktop: $home}, {name: "b", desktop: $home}, {name: "c", desktop: $away}] end)}' \
     >"$SANDBOX/sandbox.json"
 
   omahub_call dismiss >/dev/null 2>&1 || true
   ensure_windows
-  hyprctl dispatch "hl.dsp.focus({ workspace = \"$home\" })" >/dev/null
-  park_pointer
+  if [[ $bare != "--bare" ]]; then
+    hyprctl dispatch "hl.dsp.focus({ workspace = \"$home\" })" >/dev/null
+    park_pointer
+  fi
   sandbox_json
 }
 
@@ -411,6 +426,9 @@ sandbox_end() {
   info=$(cat "$SANDBOX/sandbox.json")
   close_surfaces
   keyboard_stop
+  for address in $(jq -r '.owned // [] | .[]' <<<"$info"); do
+    hyprctl dispatch "hl.dsp.window.close({ window = \"address:$address\" })" >/dev/null
+  done
   close_demo_windows
   for _ in $(seq 50); do
     [[ $(hyprctl clients -j | jq --arg p "$TEST_PREFIX" '[.[] | select(.class | startswith($p))] | length') == 0 ]] && break
@@ -610,6 +628,32 @@ raw_keys() {
   keyboard "$@"
 }
 
+# type <text>: types into the focused test window or an Omahub text field, in one go. Letters in the
+# overview are commands, not text, so it refuses there; use chord.
+type_text() {
+  require_sandbox
+  local text="$1" char keys=() index
+  if state | jq -e '.omahub.overview.opened and (.omahub.overview.searching | not)' >/dev/null 2>&1; then
+    die "type is for text; the overview reads letters as commands. Use chord"
+  fi
+  guard_keys "a" false false false
+  for (( index = 0; index < ${#text}; index++ )); do
+    char=${text:index:1}
+    case "$char" in
+      " ") keys+=(tap space) ;;
+      [a-z0-9]) keys+=(tap "$char") ;;
+      [A-Z]) keys+=(down Shift_L tap "${char,,}" up Shift_L) ;;
+      -) keys+=(tap minus) ;;
+      .) keys+=(tap period) ;;
+      /) keys+=(tap slash) ;;
+      _) keys+=(down Shift_L tap minus up Shift_L) ;;
+      :) keys+=(down Shift_L tap semicolon up Shift_L) ;;
+      *) die "type types letters, digits, spaces, and - . / _ : only" ;;
+    esac
+  done
+  keyboard "${keys[@]}"
+}
+
 hold() {
   require_sandbox
   [[ ${1^^} == "SUPER" ]] || die "only SUPER can be held"
@@ -628,9 +672,26 @@ let_go() {
 focus_test() {
   require_sandbox
   local address
-  address=$(test_address "$1")
+  if [[ $1 == 0x* ]]; then
+    address=$1
+    state | jq -e --arg a "$address" 'any(.windows[]; .address == $a and .test)' >/dev/null \
+      || die "window $1 is neither a test window nor one the sandbox owns"
+  else
+    address=$(test_address "$1")
+  fi
   [[ -n $address ]] || die "no test window named '$1'"
   hyprctl dispatch "hl.dsp.focus({ window = \"address:$address\" })" >/dev/null
+}
+
+# own <address>: the sandbox takes a window it opened, such as a staged Cursor, so the keyboard and the
+# pointer may reach it, and it closes when the sandbox ends.
+own_window() {
+  require_sandbox
+  local address="${1:-}" next
+  [[ $address =~ ^0x[0-9a-f]+$ ]] || die "own takes a window address, such as 0x55f58c705f70"
+  hyprctl clients -j | jq -e --arg a "$address" 'any(.[]; .address == $a)' >/dev/null || die "no window $address"
+  next=$(jq -c --arg a "$address" '.owned = ((.owned // []) + [$a] | unique)' "$SANDBOX/sandbox.json")
+  printf '%s\n' "$next" >"$SANDBOX/sandbox.json"
 }
 
 point() {
@@ -675,16 +736,18 @@ case "$command" in
   deploy) deploy ;;
   sandbox)
     case "${1:-}" in
-      start) sandbox_start ;;
+      start) sandbox_start "${2:-}" ;;
       end) sandbox_end ;;
       status) sandbox_json ;;
       *) die "usage: dev/agent sandbox start|end|status" ;;
     esac
     ;;
   reset) reset ;;
-  focus) focus_test "${1:?usage: dev/agent focus <test window>}" ;;
+  focus) focus_test "${1:?usage: dev/agent focus <test window or address>}" ;;
+  own) own_window "${1:-}" ;;
   chord) chord "${1:?usage: dev/agent chord <keys>}" ;;
   keys) raw_keys "$@" ;;
+  type) type_text "${1:?usage: dev/agent type <text>}" ;;
   hold) hold "${1:-SUPER}" ;;
   let-go) let_go "${1:-SUPER}" ;;
   point) point "${1:?usage: dev/agent point <target>}" ;;
