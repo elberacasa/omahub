@@ -54,6 +54,7 @@ const history = Model.desktops([workspace(1), workspace(2)], [
   focused(toplevel("0xc", 2, 10, 40, 1900, 1030, "chromium", "Pricing"), 0)
 ], monitor.name)
 check("walking windows spans every desktop, most recent first", Model.recent(history).map(w => w.address).join(",") === "0xc,0xa,0xb")
+check("the overview's own focus order wins over Hyprland's history", Model.recent(history, ["b", "0xc"]).map(w => w.address).join(",") === "0xb,0xc,0xa")
 
 check("selectors always carry 0x", Model.selector("55ab") === "address:0x55ab" && Model.selector("0x55ab") === "address:0x55ab")
 

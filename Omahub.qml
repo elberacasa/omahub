@@ -38,6 +38,9 @@ Item {
     dock.reload()
   }
 
+  function overviewRelease() {
+    overview.release()
+  }
   // Where the overview's and the dock's pieces are on screen, for demo scripts and agents.
   function overviewLayout() {
     return overview.layoutJson()

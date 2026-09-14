@@ -22,6 +22,12 @@ Item {
   property bool searching: false
   property bool cycling: false
   property bool userMoved: false
+  // Focused window addresses, newest first, kept from Hyprland's events even while closed, so the
+  // switcher knows the window used before the instant SUPER + TAB is pressed.
+  property var focusOrder: []
+  // While switching, the choice is how many windows back, not a particular window, so it survives
+  // Hyprland's fresher window list arriving a moment after the key press.
+  property int cycleSteps: 0
   property var dragWindow: null
   property point dragPoint: Qt.point(0, 0)
   property var dropTarget: null
@@ -44,7 +50,7 @@ Item {
     ? root.desktops[Math.max(0, Math.min(root.desktopIndex, root.desktops.length - 1))] : null
   readonly property bool searchActive: root.searching && root.query !== ""
   readonly property var shownWindows: root.cycling
-    ? Model.recent(root.desktops)
+    ? Model.recent(root.desktops, root.focusOrder)
     : root.searchActive
       ? Model.search(root.desktops, root.query)
       : (root.selectedDesktop ? root.selectedDesktop.windows : [])
@@ -99,8 +105,13 @@ Item {
 
     var desktop = root.desktops.findIndex(function(item) { return item.id === keepDesktop })
     root.desktopIndex = desktop >= 0 ? desktop : Math.max(0, Math.min(root.desktopIndex, root.desktops.length - 1))
+    var count = root.shownWindows.length
+    if (root.cycling && count > 0) {
+      root.windowIndex = ((root.cycleSteps % count) + count) % count
+      return
+    }
     var window = root.shownWindows.findIndex(function(item) { return item.address === keepAddress })
-    root.windowIndex = window >= 0 ? window : Math.max(0, Math.min(root.windowIndex, root.shownWindows.length - 1))
+    root.windowIndex = window >= 0 ? window : Math.max(0, Math.min(root.windowIndex, count - 1))
   }
 
   function selectCurrent() {
@@ -116,6 +127,7 @@ Item {
       if (mode === "next") root.cycle(1)
       return
     }
+    var switching = mode === "next"
 
     Hyprland.refreshWorkspaces()
     Hyprland.refreshToplevels()
@@ -125,6 +137,9 @@ Item {
     root.userMoved = false
     root.rebuild()
     root.selectCurrent()
+    // SUPER + TAB is a switcher from the first press: it already points at the window used before,
+    // so a quick tap flips between the last two windows.
+    if (switching) root.cycle(1)
 
     exitAnimation.stop()
     root.mounted = true
@@ -142,9 +157,15 @@ Item {
       root.searching = false
       root.query = ""
       root.cycling = true
-      root.windowIndex = 0
+      root.cycleSteps = 0
     }
-    root.selectWindow(root.windowIndex + step)
+    root.cycleSteps += step
+    root.selectWindow(root.cycleSteps)
+  }
+
+  // SUPER came up. Hyprland reports it even when a quick tap ends before the overview has the keyboard.
+  function release() {
+    if (root.opened && root.cycling) root.goToSelected()
   }
 
   function close() {
@@ -307,8 +328,15 @@ Item {
   Connections {
     target: Hyprland
     function onRawEvent(event) {
-      if (!root.opened) return
       var name = event && event.name ? String(event.name) : ""
+      if (name === "activewindowv2") {
+        var address = String(event.data || "").replace(/^0x/, "")
+        if (address !== "" && address !== "," && !root.cycling) {
+          root.focusOrder = [address].concat(root.focusOrder.filter(function(item) { return item !== address })).slice(0, 64)
+        }
+        return
+      }
+      if (!root.opened) return
       // Titles are left out on purpose: agents in terminals retitle many times a second, and
       // cards read titles live, so a title never needs a rebuild.
       if (["openwindow", "closewindow", "movewindow", "movewindowv2", "createworkspace", "createworkspacev2",
@@ -442,7 +470,7 @@ Item {
         Keys.onReleased: function(event) {
           if (!root.cycling) return
           if (event.key === Qt.Key_Super_L || event.key === Qt.Key_Super_R || event.key === Qt.Key_Meta) {
-            root.goToSelected()
+            root.release()
           }
         }
       }
@@ -802,6 +830,9 @@ Item {
               }
               onPositionChanged: function(mouse) {
                 if (!cardMouse.pressed) {
+                  // Cards zoom in under a resting pointer as the overview opens, and switching with
+                  // SUPER + TAB belongs to the keyboard, so neither may move the selection.
+                  if (root.cycling || enterAnimation.running) return
                   if (pointerGate.moved(card, mouse)) root.selectWindow(card.index, true)
                   return
                 }

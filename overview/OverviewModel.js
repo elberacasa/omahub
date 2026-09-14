@@ -33,13 +33,29 @@ function windowInfo(toplevel) {
   }
 }
 
+function bareAddress(address) {
+  return String(address || "").replace(/^0x/, "")
+}
+
 // Every window on every desktop, most recently focused first, the order a window switcher walks.
-function recent(desktopList) {
+// `order` is the overview's own list of focused addresses, newest first, which stays current
+// between Hyprland refreshes; Hyprland's focus history decides for windows it does not cover.
+function recent(desktopList, order) {
+  const rank = {}
+  const list = order || []
+  for (let index = 0; index < list.length; index++) {
+    const address = bareAddress(list[index])
+    if (rank[address] === undefined) rank[address] = index
+  }
   const all = []
   for (const desktop of desktopList) {
     for (const window of desktop.windows) all.push(window)
   }
-  return all.sort((a, b) => a.focus - b.focus)
+  const position = window => {
+    const known = rank[bareAddress(window.address)]
+    return known !== undefined ? known : list.length + window.focus
+  }
+  return all.sort((a, b) => position(a) - position(b))
 }
 
 function readingOrder(a, b) {
