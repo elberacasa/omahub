@@ -28,6 +28,7 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - A dock with no apps saved shows the default apps, so keeping one more adds just that one.
 - A desktop where only an editor has a project open shows the project's branch too, when the project is in your projects folder.
 - A desktop's branch in the overview no longer runs past its thumbnail when it has more apps than icons shown.
+- A dock notice about an app with a long name shortens the name instead of running off the screen beside a side dock.
 - A dock with more apps than fit along its edge makes its icons smaller, like the Mac, instead of running past the screen and under the bar.
 
 - Switches and choices in the hub change the moment you pick them. If a change fails or takes too long, the row goes back to how it was and says why.

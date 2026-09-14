@@ -91,6 +91,26 @@ for position in left bottom; do
 done
 agent reset
 
+section "A dock notice about an app with a long name stays on the screen beside a side dock"
+# A test app with a very long name that opens no window, so the dock says so after a few seconds.
+entry="$HOME/.local/share/applications/omahub-demo-long.desktop"
+trap 'rm -f "$entry"' EXIT
+mkdir -p "$(dirname "$entry")"
+printf '%s\n' "[Desktop Entry]" "Type=Application" "Exec=true" \
+  "Name=A test app with a name so long that it would never fit beside a dock on the side of the screen" > "$entry"
+sleep 1
+OMAHUB_PATH="$LIVE_ROOT" "$LIVE_ROOT/bin/omahub" dock order omahub-demo-long foot >/dev/null
+omahub_set dock/position left
+omahub_set dock/autohide off
+check "the long named test app is in the dock" 'any(.omahub.dock.apps[]; .id == "omahub-demo-long")' 5
+agent click dock.app:omahub-demo-long
+check "the dock says the app opened no window" '.omahub.dock.notice != null' 9
+check "and the notice stays on the screen" "$inside inside(.omahub.dock.notice; .omahub.dock.screen)" 1
+check "and inside the dock's window, so none of it is cut off" "$inside inside(.omahub.dock.notice; .omahub.dock.window)" 1
+agent shot screen >/dev/null
+agent reset
+rm -f "$entry"
+
 section "Overview labels stay under their desktop, with a long name and a long branch"
 long="$LIVE_ROOT/tmp/live-long-branch"
 rm -rf "$long"

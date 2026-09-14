@@ -156,6 +156,11 @@ Item {
     return Math.max(Style.space(300), Math.ceil(needed))
   }
   readonly property int labelGap: Style.space(10)
+  // How wide a label beside a side dock can be: the dock's window past the shelf and a magnified icon.
+  // Above a dock at the bottom the window spans the screen, so labels there are not held back.
+  readonly property real labelRoom: root.vertical
+    ? Math.max(Style.space(80), dockWindow.width - root.edgeGap - root.baseHeight - root.reachAway - root.labelGap - Style.space(8))
+    : 1e9
   // How far a click still counts from an icon: past its magnified size away from the edge, and all the
   // way to the screen edge, so the dock is easy to hit.
   readonly property real reachAway: root.iconSize * (root.maxScale - 1)
@@ -221,7 +226,9 @@ Item {
   // The name next to a hovered icon: a small pill, like the one on the Mac.
   component DockLabel: Rectangle {
     property string text: ""
-    width: labelText.implicitWidth + Style.spacing.lg * 2
+    // A long name shortens in the middle instead of running past the dock's window.
+    property real maxWidth: root.labelRoom
+    width: Math.min(labelText.implicitWidth + Style.spacing.lg * 2, maxWidth)
     height: labelText.implicitHeight + Style.spacing.xs * 2
     radius: height / 2
     color: Util.alpha(Color.menu.background, 0.92)
@@ -231,6 +238,8 @@ Item {
     Text {
       id: labelText
       anchors.centerIn: parent
+      width: Math.min(implicitWidth, parent.width - Style.spacing.lg * 2)
+      elide: Text.ElideMiddle
       textFormat: Text.PlainText
       text: parent.text
       color: Color.menu.text
@@ -293,6 +302,7 @@ Item {
         width: screenWidth - root.reserved[0] - root.reserved[2], height: screenHeight - root.reserved[1] - root.reserved[3] },
       iconSize: root.iconSize, chosenIconSize: root.chosenIconSize,
       hoveredDesktop: root.hoveredDesktop >= 0 ? root.desktopTiles[root.hoveredDesktop].id : null,
+      notice: root.notice !== "" ? Object.assign({ text: root.notice }, place(noticeLabel)) : null,
       window: { x: originX, y: originY, width: Math.round(dockWindow.width), height: Math.round(dockWindow.height) },
       shelf: place(dockBackground),
       menuCard: root.menuOpen ? place(menuCard) : null,
@@ -1471,8 +1481,10 @@ Item {
       }
 
       DockLabel {
+        id: noticeLabel
         visible: root.notice !== ""
         text: root.notice
+        maxWidth: root.vertical ? root.labelRoom : (root.focusedScreen ? root.focusedScreen.width : 1920) * 0.6
         x: root.edge === "left" ? dockBackground.x + dockBackground.width + root.labelGap
           : (root.edge === "right" ? dockBackground.x - width - root.labelGap : dockBackground.x + (dockBackground.width - width) / 2)
         y: root.vertical ? dockBackground.y - height - root.labelGap : dockBackground.y - height - root.labelGap * 5
