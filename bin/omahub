@@ -23,6 +23,7 @@ Usage: omahub <command>
   edit [--pick]               Open your projects folder, or a folder you pick, in your editor
   project new <name>          Create a project and start your agent there (--editor, --no-open)
   dock pins|pin|unpin <app>   List, add, or remove the apps kept in the dock
+  uninstall [--yes]           Reset every setting and remove Omahub's data, before removing the plugin
   version                     Print the Omahub version
 
 Settings are named <section>/<name>, for example keyboard/mac-screenshot-keys.
@@ -151,6 +152,49 @@ open_editor() {
   exec omarchy-launch-editor "$folder"
 }
 
+# Put back everything Omahub changed, then remove its own data, so removing the plugin afterwards
+# leaves nothing behind. Omarchy runs no hook when a plugin is removed, so this comes first. A
+# failed reset keeps the data, since resets restore from it, and the command can simply run again.
+uninstall() {
+  local yes="" id path failed=()
+  case "${1:-}" in
+    --yes | -y) yes=1 ;;
+    "") ;;
+    *) omahub_fail "usage: omahub uninstall [--yes]" ;;
+  esac
+
+  if [[ -z $yes ]]; then
+    if [[ -t 0 && -t 1 ]]; then
+      gum confirm "Reset every Omahub setting and remove Omahub's data?" || exit 1
+    else
+      omahub_fail "uninstall resets every Omahub setting. Run it in a terminal to confirm, or pass --yes"
+    fi
+  fi
+
+  # Actions have nothing to undo. The command on your PATH goes last, so it works to the end.
+  while IFS= read -r id; do
+    path=$(omahub_setting_path "$id")
+    if [[ -z $path ]]; then
+      continue
+    fi
+    if "$path" reset >/dev/null 2>&1; then
+      echo "Reset $id"
+    else
+      failed+=("$id")
+    fi
+  done < <(omahub_catalog | jq -r --arg root "$OMAHUB_PATH/settings/" \
+    '[.[] | select(.kind != "action" and (.path | startswith($root)))] | sort_by(.id == "agents/command") | .[].id')
+
+  if (( ${#failed[@]} > 0 )); then
+    omahub_fail "could not reset ${failed[*]}. Omahub's data is kept, so you can run uninstall again"
+  fi
+
+  rm -rf "$OMAHUB_STATE_DIR"
+  echo
+  echo "Omahub is reset and its data is gone. Remove the plugin with:"
+  echo "  omarchy plugin remove $OMAHUB_PLUGIN_ID"
+}
+
 case "${1:-help}" in
   settings)
     shift
@@ -186,6 +230,10 @@ case "${1:-help}" in
   dock)
     shift
     dock_command "$@"
+    ;;
+  uninstall)
+    shift
+    uninstall "$@"
     ;;
   version)
     jq -r .version "$OMAHUB_PATH/manifest.json"

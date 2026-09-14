@@ -59,14 +59,16 @@ omahub_keymap_restore() {
 omahub_keymap_set() {
   local layer="$1" wanted="$2" name layers="" current backup before after allowed missing
 
-  [[ -f $OMAHUB_BINDINGS ]] || omahub_fail "missing $OMAHUB_BINDINGS"
-
+  # A layer that is already as wanted needs nothing, even on a system without the bindings file, so
+  # resetting or uninstalling never fails for a layer that was never on.
   current=$(omahub_keymap_layers)
   if [[ $wanted == "on" ]] && grep -qx -- "$layer" <<<"$current"; then
     return 0
   elif [[ $wanted == "off" ]] && ! grep -qx -- "$layer" <<<"$current"; then
     return 0
   fi
+
+  [[ -f $OMAHUB_BINDINGS ]] || omahub_fail "missing $OMAHUB_BINDINGS"
 
   for name in "${OMAHUB_KEYMAP_ORDER[@]}"; do
     if [[ $name == "$layer" ]]; then
