@@ -38,6 +38,11 @@ Item {
     dock.reload()
   }
 
+  // From the keyboard: the screenshot thumbnail's menu, while a thumbnail is showing.
+  function captureMenu() {
+    return capture.openMenuFromKeyboard()
+  }
+
   function overviewRelease() {
     overview.release()
   }

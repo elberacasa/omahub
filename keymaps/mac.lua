@@ -21,5 +21,7 @@ end
 o.bind("SUPER + SHIFT + code:12", "Screenshot full screen", lib.screenshot("fullscreen"))
 o.bind("SUPER + SHIFT + code:13", "Screenshot region", lib.screenshot("region"))
 o.bind("SUPER + SHIFT + code:14", "Capture menu", "omarchy-menu toggle capture")
+-- Next to the screenshot keys, SUPER + SHIFT + 6 opens the screenshot thumbnail's menu from the keyboard.
+o.bind("SUPER + SHIFT + code:15", "Screenshot thumbnail menu", "omarchy-shell shell call io.github.elberacasa.omahub captureMenu ''")
 o.bind("SUPER + SHIFT + CTRL + code:12", "Screenshot full screen to clipboard", "omarchy-capture-screenshot fullscreen copy")
 o.bind("SUPER + SHIFT + CTRL + code:13", "Screenshot region to clipboard", "omarchy-capture-screenshot region copy")

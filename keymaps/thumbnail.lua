@@ -5,3 +5,6 @@ local capture = (os.getenv("HOME") or "") .. "/.config/omarchy/plugins/io.github
 
 hl.unbind("PRINT")
 o.bind("PRINT", "Screenshot", capture .. " smart")
+
+-- SHIFT + PRINT opens the thumbnail's menu from the keyboard while a thumbnail is showing.
+o.bind("SHIFT + PRINT", "Screenshot thumbnail menu", "omarchy-shell shell call io.github.elberacasa.omahub captureMenu ''")

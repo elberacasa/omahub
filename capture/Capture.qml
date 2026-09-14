@@ -30,6 +30,12 @@ Item {
   property bool flashDismisses: true
   property var places: []
   property var dragGrab: null
+  // A screenshot that arrives while the card is saving or being dragged shows as soon as it is free.
+  property string pendingPayload: ""
+  // The card waits for its image, so it slides in at its real size instead of resizing after.
+  property bool waitingForImage: false
+  readonly property string editScript: "command -v \"$1\" >/dev/null 2>&1 || exit 127\nsetsid -f \"$@\" >/dev/null 2>&1 </dev/null"
+  readonly property string revealScript: "command -v nautilus >/dev/null 2>&1 || exit 127\nsetsid -f uwsm-app -- nautilus --select \"$1\" >/dev/null 2>&1 </dev/null"
 
   readonly property string home: Quickshell.env("HOME")
   readonly property string fileUrl: root.path ? Util.fileUrl(root.path) : ""
@@ -73,7 +79,11 @@ Item {
   function open(payloadJson) {
     var payload = {}
     try { payload = JSON.parse(payloadJson || "{}") } catch (e) { return }
-    if (!payload.path || root.dragging || root.probing || root.saving) return
+    if (!payload.path) return
+    if (root.dragging || root.probing || root.saving) {
+      root.pendingPayload = payloadJson
+      return
+    }
 
     root.stopMotion()
     root.closeMenu()
@@ -87,9 +97,36 @@ Item {
     root.mounted = true
     placesProbe.running = false
     placesProbe.running = true
+    dismissTimer.stop()
+    card.opacity = 0
+    root.waitingForImage = true
+    imageWait.restart()
+    if (image.status === Image.Ready || image.status === Image.Error) root.showCard()
+  }
+
+  // Slides the card in once its image has loaded, or after a short wait, so a slow disk never keeps
+  // it hidden.
+  function showCard() {
+    if (!root.waitingForImage) return
+    root.waitingForImage = false
+    imageWait.stop()
     enter.restart()
     dismissTimer.interval = root.displayMs
     if (!root.held) dismissTimer.restart()
+  }
+
+  function openPending() {
+    if (root.pendingPayload === "" || root.dragging || root.probing || root.saving) return
+    var payload = root.pendingPayload
+    root.pendingPayload = ""
+    root.open(payload)
+  }
+
+  // From the keyboard: opens the thumbnail's menu at the card, with its first item ready.
+  function openMenuFromKeyboard() {
+    if (!root.mounted || root.dismissing || root.launching) return "none"
+    root.openMenu(hitArea.x, hitArea.y)
+    return "ok"
   }
 
   function close() {
@@ -97,7 +134,7 @@ Item {
   }
 
   function updateTimer() {
-    if (!root.mounted || root.dismissing || root.launching) return
+    if (!root.mounted || root.dismissing || root.launching || root.waitingForImage) return
     if (root.held) {
       dismissTimer.stop()
     } else {
@@ -129,7 +166,9 @@ Item {
     root.swipe = 0
     root.flash = ""
     root.dragGrab = null
+    root.waitingForImage = false
     shift.x = 0
+    Qt.callLater(root.openPending)
   }
 
   function dismiss() {
@@ -139,11 +178,6 @@ Item {
     root.stopMotion()
     root.dismissing = true
     exit.restart()
-  }
-
-  function run(command) {
-    Quickshell.execDetached(command)
-    root.dismiss()
   }
 
   function showFlash(text, dismissAfter, ms) {
@@ -157,23 +191,45 @@ Item {
     if (!root.mounted || root.dismissing || root.launching) return
     root.closeMenu()
     dismissTimer.stop()
-    Quickshell.execDetached([root.editor, root.path])
-    root.stopMotion()
-    root.launching = true
-    launch.restart()
+    root.act("edit", ["bash", "-c", root.editScript, "edit", root.editor, root.path])
   }
 
   function copy() {
-    Quickshell.execDetached(["bash", "-c", "wl-copy --type image/png < \"$1\"", "copy", root.path])
-    root.showFlash("Copied", true, 700)
+    root.act("copy", ["bash", "-c", "wl-copy --type image/png < \"$1\"", "copy", root.path])
   }
 
   function reveal() {
-    root.run(["uwsm-app", "--", "nautilus", "--select", root.path])
+    root.act("reveal", ["bash", "-c", root.revealScript, "reveal", root.path])
   }
 
   function trash() {
-    root.run(["gio", "trash", root.path])
+    root.act("trash", ["gio", "trash", root.path])
+  }
+
+  // Runs an action and answers once it is known to have worked, so the card never says Copied, or
+  // disappears, when nothing happened.
+  function act(name, command) {
+    if (actor.running) return
+    actor.action = name
+    actor.command = command
+    actor.running = true
+  }
+
+  function finishAction(name, exitCode) {
+    if (exitCode !== 0) {
+      var failed = { edit: "Couldn't open the editor", copy: "Couldn't copy", reveal: "Couldn't open Files", trash: "Couldn't move to trash" }
+      root.showFlash(failed[name] || "That didn't work", false, 1600)
+      return
+    }
+    if (name === "copy") {
+      root.showFlash("Copied", true, 700)
+    } else if (name === "edit") {
+      root.stopMotion()
+      root.launching = true
+      launch.restart()
+    } else {
+      root.dismiss()
+    }
   }
 
   // Moves the screenshot into a folder and makes that folder the default, like Save to on
@@ -192,13 +248,15 @@ Item {
     root.saving = false
     var saved = String(output || "").trim()
     if (!saved) {
-      root.updateTimer()
+      root.showFlash("Couldn't save the screenshot", false, 1600)
+      Qt.callLater(root.openPending)
       return
     }
     root.path = saved
     var folder = saved.substring(0, saved.lastIndexOf("/"))
     var name = folder === root.home ? "Home" : folder.substring(folder.lastIndexOf("/") + 1)
     root.showFlash("Saved to " + name, true, 900)
+    Qt.callLater(root.openPending)
   }
 
   function beginDrag() {
@@ -239,6 +297,7 @@ Item {
     root.stopMotion()
     dragReturn.restart()
     root.updateTimer()
+    Qt.callLater(root.openPending)
   }
 
   function selectable(item) {
@@ -301,9 +360,24 @@ Item {
     onExited: Qt.callLater(function() { root.finishSave(moverOutput.text) })
   }
 
+  Process {
+    id: actor
+    property string action: ""
+    onExited: function(exitCode) {
+      var name = actor.action
+      Qt.callLater(function() { root.finishAction(name, exitCode) })
+    }
+  }
+
   Timer {
     id: dismissTimer
     onTriggered: root.dismiss()
+  }
+
+  Timer {
+    id: imageWait
+    interval: 600
+    onTriggered: root.showCard()
   }
 
   Timer {
@@ -426,6 +500,36 @@ Item {
         asynchronous: true
         cache: false
         smooth: true
+        onStatusChanged: if (status === Image.Ready || status === Image.Error) root.showCard()
+      }
+
+      // A screenshot that cannot be shown still reads as one, with its name, never as an empty frame.
+      Column {
+        visible: image.status === Image.Error
+        anchors.centerIn: image
+        spacing: Style.spacing.xs
+
+        Text {
+          anchors.horizontalCenter: parent.horizontalCenter
+          textFormat: Text.PlainText
+          text: String.fromCodePoint(0xF02E9)
+          color: Color.popups.text
+          opacity: 0.7
+          font.family: Style.font.family
+          font.pixelSize: Style.font.displayLarge
+        }
+
+        Text {
+          width: image.width - Style.spacing.md * 2
+          horizontalAlignment: Text.AlignHCenter
+          elide: Text.ElideMiddle
+          textFormat: Text.PlainText
+          text: root.path.substring(root.path.lastIndexOf("/") + 1)
+          color: Color.popups.text
+          opacity: 0.7
+          font.family: Style.font.menuFamily
+          font.pixelSize: Style.font.caption
+        }
       }
 
       Rectangle {

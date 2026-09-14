@@ -88,7 +88,7 @@ $omahub settings                   # everything you can change
 | Setting | What it does | Recommended for |
 |---|---|---|
 | `keyboard/omahub-key` | SUPER + A opens Omahub | Every keyboard |
-| `keyboard/mac-screenshot-keys` | SUPER + SHIFT + 3, 4, and 5 take screenshots, like a Mac | Every keyboard |
+| `keyboard/mac-screenshot-keys` | SUPER + SHIFT + 3, 4, and 5 take screenshots, like a Mac, and SUPER + SHIFT + 6 opens the thumbnail's menu | Every keyboard |
 | `keyboard/agent-keys` | Agent on SUPER + SHIFT + A, browser on SUPER + B, dictation on SUPER + R | Every keyboard |
 | `keyboard/vim-focus` | H, J, K, and L focus, swap, and group windows wherever Omarchy uses arrows | 60% and 65% keyboards |
 | `keyboard/mouse-buttons` | Hold SUPER and press a mouse side button to take a screenshot or start dictation | Mice with side buttons |

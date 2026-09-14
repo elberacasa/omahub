@@ -20,6 +20,10 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - Error messages say what went wrong and how to fix it, and name a value that was not understood.
 - Setting summaries say one thing each, and the README, the agent guide, and the skill match what ships, including how to remove Omahub.
 - Menu items and hints use sentence case, such as "Open in editor" and "Press Enter to go there".
+- The screenshot thumbnail slides in at its real size, instead of resizing after it appears, and shows the file's name when the image can't be shown.
+- The thumbnail says Copied only after the copy worked, and says so when copying, opening the editor or Files, moving to trash, or saving fails, instead of disappearing.
+- A screenshot taken while the thumbnail is saving or being dragged shows as soon as it is free, instead of being lost.
+- The thumbnail's menu opens from the keyboard: SHIFT + PRINT with the thumbnail on, and SUPER + SHIFT + 6 with the Mac screenshot keys.
 
 ## 0.1.0 - 2026-09-13
 
