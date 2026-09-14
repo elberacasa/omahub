@@ -97,4 +97,20 @@ check "Esc clears the search first" '.omahub.hub.opened and .omahub.hub.query ==
 agent chord Escape
 check "Esc again closes the hub" '.omahub.hub.opened | not' 2
 
+section "The hub and its welcome fit on the screen"
+for view in hub welcome; do
+  if [[ $view == "welcome" ]]; then
+    agent call open '{"view":"welcome"}' >/dev/null
+  else
+    agent call open '{"setting":"zz-check/switch"}' >/dev/null
+  fi
+  check "the $view opens" ".omahub.hub.opened and .omahub.hub.view == \"$view\"" 3
+  sleep 0.5
+  check "its card is fully on the screen" '.omahub.hub.card as $c | .omahub.hub.panel as $p
+    | $c.x >= 0 and $c.y >= 0 and $c.x + $c.width <= $p.width + 1 and $c.y + $c.height <= $p.height + 1' 1
+  agent shot screen >/dev/null
+  agent call dismiss >/dev/null
+  sleep 0.4
+done
+
 finish_live

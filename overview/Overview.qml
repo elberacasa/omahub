@@ -52,6 +52,12 @@ Item {
   property int pickIndex: 0
   property var projects: []
   property bool projectsLoading: false
+  // Branches of the projects in the projects folder, for a desktop where only an editor names its project.
+  readonly property var projectBranches: {
+    var map = {}
+    root.projects.forEach(function(project) { if (project.branch) map[project.name] = project.branch })
+    return map
+  }
   readonly property var pickRows: root.picking ? Model.projectRows(root.projects, root.pickQuery, root.openProjects) : []
   // Each project on a desktop, found the same way the desktops are named.
   readonly property var openProjects: {
@@ -150,7 +156,8 @@ Item {
           focus: window.focus, media: window.media, attention: attention[window.address] === true
         }
       })
-      map[desktop.id] = Desktops.summary({ id: desktop.id, windows: windows }, contexts, names[String(desktop.id)] || "")
+      map[desktop.id] = Desktops.summary({ id: desktop.id, windows: windows }, contexts, names[String(desktop.id)] || "",
+        root.projectBranches)
     })
     return map
   }
@@ -364,7 +371,8 @@ Item {
         title: thumb.summary ? thumb.summary.title : "", named: thumb.summary ? thumb.summary.named : false,
         branch: thumb.summary ? thumb.summary.branch : "", activity: thumb.activity,
         apps: thumb.summary ? thumb.summary.apps.map(function(app) { return app.appId }) : []
-      }, place(thumb.frame), { label: place(thumb.label) }))
+      }, place(thumb.frame), { label: place(thumb.label), name: place(thumb.nameText),
+        details: thumb.details.visible ? place(thumb.details) : null }))
     }
     var selected = root.selectedWindow
     return JSON.stringify({
@@ -452,6 +460,8 @@ Item {
     root.lastMove = null
     root.rebuild()
     root.selectCurrent()
+    // The projects folder, read as the overview opens, gives branches to desktops only an editor names.
+    if (!projectReader.running) projectReader.running = true
     // SUPER + TAB is a switcher from the first press: it already points at the window used before,
     // so a quick tap flips between the last two windows.
     if (switching) root.cycle(1)
@@ -1258,6 +1268,8 @@ Item {
               readonly property real ratio: root.thumbWidth / root.monitorWidth
               readonly property Item frame: thumbFrame
               readonly property Item label: labelColumn
+              readonly property Item nameText: titleText
+              readonly property Item details: labelDetails
               readonly property var summary: root.summaries[thumb.modelData.id] || null
               readonly property bool renaming: root.renamingDesktop === thumb.modelData.id
               // What most needs a look on this desktop, from facts only: a window asking for attention,
@@ -1486,6 +1498,7 @@ Item {
                 }
 
                 Row {
+                  id: labelDetails
                   visible: !thumb.renaming && !thumb.dropping && thumb.summary !== null && thumb.modelData.windows.length > 0
                   anchors.horizontalCenter: parent.horizontalCenter
                   height: Style.space(16)
@@ -1509,6 +1522,7 @@ Item {
                   }
 
                   Text {
+                    id: moreAppsText
                     visible: thumb.summary !== null && thumb.summary.moreApps > 0
                     anchors.verticalCenter: parent.verticalCenter
                     textFormat: Text.PlainText
@@ -1522,8 +1536,10 @@ Item {
                   Text {
                     visible: thumb.summary !== null && thumb.summary.branch !== ""
                     anchors.verticalCenter: parent.verticalCenter
-                    width: Math.min(implicitWidth, Math.max(0, root.thumbWidth - Style.space(28)
-                      - (thumb.summary ? thumb.summary.apps.length : 0) * (Style.space(14) + Style.spacing.xs)))
+                    // What is left of the thumbnail's width after the app icons and the count of more apps.
+                    width: Math.min(implicitWidth, Math.max(0, root.thumbWidth - Style.space(8)
+                      - (thumb.summary ? thumb.summary.apps.length : 0) * (Style.space(14) + Style.spacing.xs)
+                      - (moreAppsText.visible ? moreAppsText.implicitWidth + Style.spacing.xs : 0)))
                     elide: Text.ElideRight
                     textFormat: Text.PlainText
                     text: thumb.summary ? String.fromCodePoint(0xE725) + " " + thumb.summary.branch : ""

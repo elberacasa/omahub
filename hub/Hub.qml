@@ -147,7 +147,9 @@ Item {
       rowLabel: row && root.states[row.id] ? root.states[row.id].label || null : null,
       rowError: row && root.errors[row.id] ? String(root.errors[row.id]) : null,
       queued: root.queuedIds,
-      busy: root.busyId || null, prompt: root.promptId || null, error: root.loadError || null
+      busy: root.busyId || null, prompt: root.promptId || null, error: root.loadError || null,
+      card: { x: Math.round(card.x), y: Math.round(card.y), width: Math.round(card.width), height: Math.round(card.height) },
+      panel: { width: Math.round(panel.width), height: Math.round(panel.height) }
     })
   }
 

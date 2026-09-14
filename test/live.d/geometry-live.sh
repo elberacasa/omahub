@@ -91,4 +91,26 @@ for position in left bottom; do
 done
 agent reset
 
+section "Overview labels stay under their desktop, with a long name and a long branch"
+long="$LIVE_ROOT/tmp/live-long-branch"
+rm -rf "$long"
+mkdir -p "$long/.git"
+echo "ref: refs/heads/feature/a-very-long-branch-name-that-keeps-going-and-going" >"$long/.git/HEAD"
+home=$(agent state .sandbox.home)
+away=$(agent state .sandbox.away)
+OMAHUB_PATH="$LIVE_ROOT" "$LIVE_ROOT/bin/omahub" desktop name "$home" "A desktop name long enough to elide it" >/dev/null
+hyprctl eval "hl.exec_cmd('foot --app-id=omahub-demo-p --title=Test-P --working-directory=$long sh -c \"sleep infinity\"', { workspace = '$away silent' })" >/dev/null
+check "test window p opens on the other desktop" "any(.windows[]; .class == \"omahub-demo-p\" and .desktop == $away)" 5
+agent focus a
+agent call open '{"overview":"open"}' >/dev/null
+check "the overview is open" '.omahub.overview.opened' 2
+check "the long branch shows" ".omahub.overview.desktops[] | select(.id == $away) | .branch | startswith(\"feature/a-very-long\")" 4
+check "every desktop's name fits under it" 'all(.omahub.overview.desktops[]; .name.x >= .x - 1 and .name.x + .name.width <= .x + .width + 1)' 1
+check "and so does every row of apps and branch" 'all(.omahub.overview.desktops[]; .details == null or (.details.x >= .x - 1 and .details.x + .details.width <= .x + .width + 1))' 1
+agent shot screen >/dev/null
+agent reset
+hyprctl clients -j | jq -r '.[] | select(.class == "omahub-demo-p") | .pid' | xargs -r kill 2>/dev/null || true
+OMAHUB_PATH="$LIVE_ROOT" "$LIVE_ROOT/bin/omahub" desktop name "$home" >/dev/null
+rm -rf "$long"
+
 finish_live

@@ -166,6 +166,13 @@ check("a terminal running a tool outside a project names the desktop after the t
 check("a project still wins over a tool", Model.summary({ id: 8, windows: [{ address: "t", appId: "foot", focus: 0 }] },
   { t: { project: "orbit-api", command: "nvim", kind: "editor" } }, "").title === "orbit-api")
 
+const editorOnly = Model.summary({ id: 3, windows: [{ address: "e", appId: "cursor", appName: "Cursor", focus: 0 }] },
+  { e: { project: "lumen-docs", branch: "", kind: "editor" } }, "", { "lumen-docs": "docs/tags" })
+check("a project only an editor has open takes its branch from the projects folder", editorOnly.branch === "docs/tags")
+check("the branch git reports wins over the projects folder",
+  Model.summary({ id: 2, windows: windows }, contexts, "", { "orbit-api": "main" }).branch === "feature/search")
+check("a desktop without a project takes no branch", Model.summary({ id: 4, windows: [] }, {}, "", { "": "main" }).branch === "")
+
 const index = Model.appIndex([
   { id: "WhatsApp", name: "WhatsApp", execString: "omarchy-launch-webapp https://web.whatsapp.com/" },
   { id: "org.gnome.Nautilus", name: "Files", startupClass: "org.gnome.Nautilus" },

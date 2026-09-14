@@ -120,8 +120,9 @@ function windowContext(window, info) {
 }
 
 // How a desktop reads. Windows carry {address, appId, appName, focus, media, attention}; contexts map
-// addresses to windowContext results; `name` is a name the person gave it.
-function summary(desktop, contexts, name) {
+// addresses to windowContext results; `name` is a name the person gave it. `knownBranches` maps the projects
+// in the projects folder to their branches, for a project that only an editor's title names.
+function summary(desktop, contexts, name, knownBranches) {
   const windows = (desktop.windows || []).slice().sort((a, b) => (a.focus || 0) - (b.focus || 0))
   const scores = {}
   const branches = {}
@@ -168,7 +169,7 @@ function summary(desktop, contexts, name) {
     title: title,
     named: given !== "",
     project: project,
-    branch: project ? branches[project] || "" : "",
+    branch: project ? branches[project] || (knownBranches && knownBranches[project]) || "" : "",
     apps: apps.slice(0, 4),
     moreApps: Math.max(0, apps.length - 4),
     windows: windows.length,
