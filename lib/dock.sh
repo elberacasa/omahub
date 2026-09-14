@@ -128,6 +128,17 @@ omahub_dock_unpin() {
   omahub_dock_update --arg id "$1" '.pins -= [$id]'
 }
 
+# Keep exactly these apps, in this order, as dragging icons in the dock does.
+omahub_dock_order() {
+  local id
+  for id in "$@"; do
+    if ! omahub_dock_app_exists "$id"; then
+      omahub_fail "no app named '$id'. Use the name of its .desktop file, such as org.gnome.Nautilus"
+    fi
+  done
+  omahub_dock_update --argjson pins "$(printf '%s\n' "$@" | awk 'NF && !seen[$0]++' | jq -Rsc 'split("\n") | map(select(length > 0))')" '.pins = $pins'
+}
+
 # The current value of a dock choice, one of its values. A switch saved before the setting became a
 # choice reads as the default when it was on, and as off when it was off.
 omahub_dock_choice() {

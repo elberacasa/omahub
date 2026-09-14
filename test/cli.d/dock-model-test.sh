@@ -12,7 +12,7 @@ fi
 results=$(node - "$OMAHUB_PATH/dock/DockModel.js" <<'EOF'
 const fs = require("fs")
 const source = fs.readFileSync(process.argv[2], "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { covered, items, parseConfig }")()
+const Model = new Function(source + "\nreturn { covered, items, parseConfig, catalog, dropSlot, reorder }")()
 const checks = []
 const check = (name, ok) => checks.push({ name, ok: !!ok })
 
@@ -49,6 +49,26 @@ check("open apps that are not kept follow the kept ones", all.map(i => i.id).joi
 const kept = Model.items(["foot"], entries, open, false)
 check("with open apps hidden, only kept apps show", kept.map(i => i.id).join(",") === "foot")
 check("kept apps still know their open windows", kept[0].windows.length === 1)
+
+const installed = [
+  { id: "obsidian", name: "Obsidian", genericName: "Notes" },
+  { id: "foot", name: "Foot", genericName: "Terminal", keywords: ["shell", "console"] },
+  { id: "foot", name: "Foot again" },
+  { id: "hidden", name: "Hidden helper", noDisplay: true }
+]
+const rows = Model.catalog(installed, ["foot"], "")
+check("the app catalog lists each app once, by name, leaving out hidden ones", rows.map(r => r.id).join(",") === "foot,obsidian")
+check("the catalog marks kept apps", rows[0].kept === true && rows[1].kept === false)
+check("catalog search matches keywords and generic names",
+  Model.catalog(installed, [], "console")[0].id === "foot" && Model.catalog(installed, [], "notes")[0].id === "obsidian")
+check("a choice not saved yet shows in the catalog", Model.catalog(installed, ["foot"], "", { foot: false })[0].kept === false)
+
+check("a point before the first icon drops first", Model.dropSlot([30, 90, 150], 10, 3) === 0)
+check("a point between icons drops between them", Model.dropSlot([30, 90, 150], 100, 3) === 2)
+check("drops stay among the kept apps", Model.dropSlot([30, 90, 150, 210], 400, 2) === 2)
+check("moving a kept app places it at the slot", Model.reorder(["a", "b", "c"], "a", 2).join(",") === "b,c,a")
+check("a newly kept app joins at the slot", Model.reorder(["a", "b"], "x", 1).join(",") === "a,x,b")
+check("a slot past the end keeps the app last", Model.reorder(["a", "b"], "a", 9).join(",") === "b,a")
 
 check("settings read from the dock file", Model.parseConfig('{"show":true}').show === true)
 check("an empty dock file means no settings", JSON.stringify(Model.parseConfig("")) === "{}")

@@ -93,6 +93,53 @@ function items(pins, entries, toplevels, showOpen) {
   return result
 }
 
+// Every app that can be kept, by name, for the Add apps panel: one row per desktop entry, leaving out
+// entries hidden from launchers. `pending` holds keep or remove choices not yet saved, by app id. Every
+// search word must appear in the name, generic name, id, or keywords.
+function catalog(entries, pins, query, pending) {
+  const kept = {}
+  for (const pin of pins) kept[key(pin)] = true
+  const words = String(query || "").toLowerCase().split(/\s+/).filter(word => word.length > 0)
+  const seen = {}
+  const rows = []
+  for (const entry of entries) {
+    if (!entry || !entry.id || entry.noDisplay) continue
+    const id = key(entry.id)
+    if (seen[id]) continue
+    seen[id] = true
+    const keywords = entry.keywords && entry.keywords.length ? listValue(entry.keywords).join(" ") : ""
+    const haystack = [entry.name, entry.genericName, entry.id, keywords].join(" ").toLowerCase()
+    if (!words.every(word => haystack.indexOf(word) >= 0)) continue
+    const choice = pending ? pending[id] : undefined
+    rows.push({
+      id: String(entry.id),
+      name: String(entry.name || entry.id),
+      detail: String(entry.genericName || ""),
+      icon: String(entry.icon || ""),
+      kept: choice !== undefined ? choice : !!kept[id]
+    })
+  }
+  return rows.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
+}
+
+// The slot among the first `limit` icons that a point along the dock falls in, from their centers.
+function dropSlot(centers, along, limit) {
+  let slot = 0
+  const count = Math.min(limit, centers.length)
+  for (let i = 0; i < count; i++) {
+    if (along > centers[i]) slot = i + 1
+  }
+  return slot
+}
+
+// The kept apps with one of them, or a newly kept app, placed at a slot. Slots count the list without
+// the app being moved.
+function reorder(pins, id, slot) {
+  const rest = pins.filter(pin => key(pin) !== key(id))
+  const at = Math.max(0, Math.min(rest.length, slot))
+  return rest.slice(0, at).concat([id], rest.slice(at))
+}
+
 // Where each icon's center sits in the unscaled dock, so magnification never chases its own layout.
 function layout(items, cellWidth, dividerWidth) {
   const centers = []

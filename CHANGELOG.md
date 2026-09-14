@@ -10,6 +10,9 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - A window moved with Shift + a number flies into its desktop's thumbnail, and u or Undo puts it back.
 - Holding Shift in the overview lights the desktop numbers and shows the keys that move windows. Dragging a window lights them too, and the desktop under it reads "Move here".
 - Each desktop's label says how many windows are on it.
+- Add apps in the dock's menu lists every installed app with the ones in the dock checked. Type to search, and click or press Enter to keep or remove an app.
+- Drag an icon along the dock to move it, drag an open app among the kept ones to keep it there, or drag an icon off the dock to remove it. Shift + h and l move the app under the cursor after SUPER + D.
+- `omahub dock order <app>...` keeps exactly those apps, in that order.
 
 ### Fixed
 

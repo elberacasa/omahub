@@ -37,6 +37,14 @@ omahub dock pin obsidian >/dev/null
 assert_eq "pinning adds an app once, at the end" "$(omahub dock pins)" '["foot","chromium","org.gnome.Nautilus","cursor","obsidian"]'
 omahub dock unpin foot >/dev/null
 assert_eq "unpinning removes it" "$(omahub dock pins | jq -r 'index("foot")')" "null"
+assert_eq "order keeps exactly the apps given, in that order, once each" \
+  "$(omahub dock order cursor obsidian cursor chromium)" '["cursor","obsidian","chromium"]'
+if omahub dock order cursor not-an-app 2>/dev/null; then
+  fail "order with an app that does not exist changes nothing"
+else
+  assert_eq "order with an app that does not exist changes nothing" "$(omahub dock pins)" '["cursor","obsidian","chromium"]'
+fi
+omahub dock order chromium org.gnome.Nautilus cursor obsidian >/dev/null
 if omahub dock pin not-an-app 2>"$TEST_ROOT/stderr"; then
   fail "an app that does not exist cannot be pinned"
 else

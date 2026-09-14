@@ -59,6 +59,7 @@ omahub agent codex --pick   # Codex, in a folder the person picks or creates
 omahub edit                 # the projects folder, in the default editor
 omahub project new my-app   # create ~/Projects/my-app with git, then start the default agent
 omahub dock pin obsidian    # keep an app in the dock, by its .desktop file name
+omahub dock order foot chromium obsidian    # keep exactly these apps, in this order
 ```
 
 The default agent, editor, and projects folder are the settings `projects/default-agent`, `projects/editor`, and `projects/folder`.

@@ -33,7 +33,40 @@ Item {
   readonly property bool indicators: root.config.indicators !== false
   readonly property bool showOpen: root.config.recents !== false
   readonly property bool bounce: root.config.bounce !== false
-  readonly property var pins: Array.isArray(root.config.pins) ? root.config.pins : []
+  readonly property var savedPins: Array.isArray(root.config.pins) ? root.config.pins : []
+  // A new order from a drag shows at once, while it is being saved.
+  property var pinsOverride: null
+  readonly property var pins: root.pinsOverride !== null ? root.pinsOverride : root.savedPins
+  readonly property var keptIds: root.items.filter(function(item) { return item.pinned }).map(function(item) { return item.id })
+
+  // The Add apps panel: every installed app, with the kept ones checked. Choices show before they are saved.
+  property bool pickerOpen: false
+  property string pickerQuery: ""
+  property int pickerIndex: 0
+  property var pickerPending: ({})
+  readonly property var pickerRows: root.pickerOpen
+    ? Model.catalog(DesktopEntries.applications.values || [], root.savedPins, root.pickerQuery, root.pickerPending) : []
+
+  // An icon being dragged: its index, where the pointer is along the dock in the icons' own layout, and
+  // how far it has been pulled off the dock.
+  property int dragIndex: -1
+  // True while the left button is down on an icon, from the press, before any drag begins.
+  property bool iconPressed: false
+  property real dragAlong: 0
+  property real dragStartAlong: 0
+  property real dragAway: 0
+  readonly property var dragItem: root.dragIndex >= 0 ? root.items[root.dragIndex] || null : null
+  readonly property bool dragRemoving: root.dragItem !== null && root.dragItem.pinned && root.dragAway > root.iconSize * 1.2
+  // The slot among the kept apps the icon would land in, counted without it, or -1 for none.
+  readonly property int dragSlot: {
+    var item = root.dragItem
+    if (!item || root.dragRemoving || !item.launchable) return -1
+    var count = root.keptIds.length
+    var keptEnd = count > 0 ? root.layout.centers[count - 1] + root.cellWidth / 2 : 0
+    if (!item.pinned && root.dragAlong > keptEnd + root.dividerWidth) return -1
+    var slot = Model.dropSlot(root.layout.centers, root.dragAlong, count)
+    return item.pinned && slot > root.dragIndex ? slot - 1 : slot
+  }
 
   readonly property var items: Model.items(root.pins,
     DesktopEntries.applications.values || [], ToplevelManager.toplevels.values || [], root.showOpen)
@@ -61,7 +94,7 @@ Item {
   // Room in from the edge for magnified icons and the app name.
   readonly property int bandHeight: Math.ceil(root.iconSize * root.maxScale) + root.dockPadding * 2
     + root.dotSpace + root.edgeGap + Style.space(40)
-  readonly property int menuSpace: Style.space(300)
+  readonly property int menuSpace: Style.space(root.pickerOpen ? 580 : 300)
   readonly property int labelGap: Style.space(10)
   // How far a click still counts from an icon: past its magnified size away from the edge, and all the
   // way to the screen edge, so the dock is easy to hit.
@@ -86,7 +119,7 @@ Item {
 
   readonly property bool shown: root.enabled
     && (!root.autohide || !root.covered || root.pointerInside || root.lingering || root.menuOpen
-      || root.keyboardActive || root.notice !== "")
+      || root.keyboardActive || root.pickerOpen || root.dragIndex >= 0 || root.notice !== "")
 
   readonly property var focusedScreen: {
     var name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : ""
@@ -107,6 +140,7 @@ Item {
     }
     if (item.windows.length > 0) list.push({ label: item.windows.length > 1 ? "Quit all windows" : "Quit", action: "quit" })
     list.push({ separator: true })
+    list.push({ label: "Add apps…", action: "apps" })
     list.push({ label: "Automatically hide", action: "autohide", checked: root.autohide })
     list.push({ heading: "Magnification" })
     list.push({ label: "Off", action: "magnify", value: "off", checked: root.magnification === "off" })
@@ -182,6 +216,10 @@ Item {
     return JSON.stringify({
       shown: root.shown, position: root.edge, keyboard: root.keyboardActive, cursor: root.keyCursor,
       menu: root.menuOpen, apps: apps, overview: place(overviewButton),
+      drag: root.dragIndex >= 0 ? { index: root.dragIndex, along: Math.round(root.dragAlong), away: Math.round(root.dragAway),
+        removing: root.dragRemoving, slot: root.dragSlot } : null,
+      picker: root.pickerOpen ? { query: root.pickerQuery, index: root.pickerIndex, rows: root.pickerRows.length,
+        selected: root.pickerRows[root.pickerIndex] || null, card: place(pickerCard) } : null,
       edge: { x: Math.round(edgePoint.x), y: Math.round(edgePoint.y), width: 1, height: 1 }
     })
   }
@@ -238,6 +276,8 @@ Item {
       root.runOmahub(["set", "dock/magnify", entry.value], "Couldn't change magnification")
     } else if (entry.action === "position") {
       root.runOmahub(["set", "dock/position", entry.value], "Couldn't move the dock")
+    } else if (entry.action === "apps") {
+      root.openPicker()
     } else if (entry.action === "settings") {
       Quickshell.execDetached([root.omahub, "open", "dock"])
     }
@@ -282,6 +322,7 @@ Item {
     root.keyboardActive = false
     root.menuOpen = false
     root.menuIndex = -1
+    root.pickerOpen = false
   }
 
   function dispatch(command) {
@@ -296,15 +337,21 @@ Item {
     noticeTimer.restart()
   }
 
-  // Changes from the dock's menu are checked, so one that fails says so above the dock. A second
-  // change while one is being checked runs unchecked.
+  // Changes from the dock are checked, so one that fails says so above the dock. They run one at a time
+  // in the order they were made, since each one reads and writes the same dock file.
+  property var commandQueue: []
+
   function runOmahub(args, failure) {
-    if (dockCommand.running) {
-      Quickshell.execDetached([root.omahub].concat(args))
-      return
-    }
-    dockCommand.failure = failure
-    dockCommand.command = [root.omahub].concat(args)
+    root.commandQueue = root.commandQueue.concat([{ args: args, failure: failure }])
+    if (!dockCommand.running) root.runNextCommand()
+  }
+
+  function runNextCommand() {
+    if (root.commandQueue.length === 0) return
+    var next = root.commandQueue[0]
+    root.commandQueue = root.commandQueue.slice(1)
+    dockCommand.failure = next.failure
+    dockCommand.command = [root.omahub].concat(next.args)
     dockCommand.running = true
   }
 
@@ -312,8 +359,108 @@ Item {
     id: dockCommand
     property string failure: ""
     onExited: function(exitCode) {
-      if (exitCode !== 0) root.showNotice(dockCommand.failure)
+      if (exitCode !== 0) {
+        root.showNotice(dockCommand.failure)
+        root.pinsOverride = null
+        root.pickerPending = ({})
+      }
+      Qt.callLater(root.runNextCommand)
     }
+  }
+
+  // Keep exactly these apps, in this order, showing the order before it is saved.
+  function applyPins(next, failure) {
+    root.pinsOverride = next
+    pinsOverrideTimer.restart()
+    root.runOmahub(["dock", "order"].concat(next), failure)
+  }
+
+  Timer {
+    id: pinsOverrideTimer
+    interval: 4000
+    onTriggered: root.pinsOverride = null
+  }
+
+  // Saved changes replace the ones shown ahead of them.
+  onConfigChanged: {
+    if (root.pinsOverride !== null && JSON.stringify(root.savedPins) === JSON.stringify(root.pinsOverride)) root.pinsOverride = null
+    var pending = root.pickerPending
+    var left = {}
+    var settled = false
+    for (var id in pending) {
+      var kept = root.savedPins.some(function(pin) { return Model.key(pin) === id })
+      if (kept === pending[id]) settled = true
+      else left[id] = pending[id]
+    }
+    if (settled) root.pickerPending = left
+  }
+
+  function openPicker() {
+    root.menuOpen = false
+    root.menuIndex = -1
+    root.pickerQuery = ""
+    root.pickerIndex = 0
+    root.pickerPending = ({})
+    root.menuCenter = root.vertical ? dockBackground.y + dockBackground.height / 2 : dockBackground.x + dockBackground.width / 2
+    root.pickerOpen = true
+    Qt.callLater(function() { dockKeys.forceActiveFocus() })
+  }
+
+  function closePicker() {
+    root.pickerOpen = false
+    root.pickerQuery = ""
+  }
+
+  function setPickerQuery(text) {
+    root.pickerQuery = text
+    root.pickerIndex = 0
+  }
+
+  function togglePicked(row) {
+    if (!row) return
+    var keep = !row.kept
+    var pending = Object.assign({}, root.pickerPending)
+    pending[Model.key(row.id)] = keep
+    root.pickerPending = pending
+    root.runOmahub(["dock", keep ? "pin" : "unpin", row.id], (keep ? "Couldn't keep " : "Couldn't remove ") + row.name)
+  }
+
+  function startIconDrag(index, along) {
+    root.menuOpen = false
+    root.dragIndex = index
+    root.dragStartAlong = along
+    root.dragAlong = along
+    root.dragAway = 0
+  }
+
+  // Let go: off the dock removes a kept app, and along the kept apps puts it in its new place, keeping
+  // an open app that was not kept.
+  function endIconDrag() {
+    var item = root.dragItem
+    var removing = root.dragRemoving
+    var slot = root.dragSlot
+    root.dragIndex = -1
+    if (!item) return
+    var kept = root.keptIds
+    if (removing) {
+      root.applyPins(kept.filter(function(id) { return id !== item.id }), "Couldn't remove " + item.name)
+    } else if (slot >= 0) {
+      var next = Model.reorder(kept, item.id, slot)
+      if (JSON.stringify(next) !== JSON.stringify(kept)) {
+        root.applyPins(next, (item.pinned ? "Couldn't move " : "Couldn't keep ") + item.name)
+      }
+    }
+  }
+
+  // Shift + h or l from the keyboard moves the kept app under the cursor one place.
+  function moveKept(step) {
+    var item = root.items[root.keyCursor]
+    if (!item || !item.pinned) return
+    var kept = root.keptIds
+    var to = kept.indexOf(item.id) + step
+    if (to < 0 || to >= kept.length) return
+    root.applyPins(Model.reorder(kept, item.id, to), "Couldn't move " + item.name)
+    root.keyCursor = to
   }
 
   // Whether a window reaches the dock's band, read from Hyprland's own records. Refreshing them is a
@@ -423,10 +570,12 @@ Item {
   // that soon is taken again instead of closing the menu under the pointer.
   property real grabStartedAt: 0
   property bool grabArmed: true
-  readonly property bool grabWanted: root.menuOpen || root.keyboardActive
+  readonly property bool grabWanted: root.menuOpen || root.keyboardActive || root.pickerOpen
   onGrabWantedChanged: if (root.grabWanted) root.grabStartedAt = Date.now()
-  // Opening or closing the menu reshapes the window's input region, which can end the grab too.
+  // Opening or closing the menu or the Add apps panel reshapes the window and its input region, and the
+  // panel takes the keyboard, any of which can end the grab too.
   onMenuOpenChanged: root.grabStartedAt = Date.now()
+  onPickerOpenChanged: root.grabStartedAt = Date.now()
 
   HyprlandFocusGrab {
     active: root.grabWanted && root.grabArmed
@@ -459,7 +608,8 @@ Item {
     // The dock takes the keyboard only while it is used from the keyboard, after SUPER + D. A menu opened
     // with the mouse leaves focus alone, as Omarchy's popups do, since switching focus as the menu opens
     // can end the grab that keeps it open. Typing otherwise goes to the window in front.
-    WlrLayershell.keyboardFocus: root.keyboardActive ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+    // The Add apps panel takes it too, for its search.
+    WlrLayershell.keyboardFocus: root.keyboardActive || root.pickerOpen ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
     // A dock that stays on screen keeps its own room, so windows resize to make way for it, like the
     // bar. One that hides floats over them instead.
     exclusionMode: root.enabled && !root.autohide ? ExclusionMode.Normal : ExclusionMode.Ignore
@@ -472,19 +622,45 @@ Item {
     // hidden. While the menu is open the whole dock window takes clicks, so one outside the menu
     // closes it. Everywhere else reaches the windows below.
     mask: Region {
-      item: root.menuOpen ? menuHit : (root.shown ? dockHit : edgeHit)
+      // A pressed icon takes the whole window too, so a drag off the dock stays with the dock.
+      item: root.menuOpen || root.pickerOpen || root.iconPressed ? menuHit : (root.shown ? dockHit : edgeHit)
     }
 
     Item {
       id: dockKeys
       anchors.fill: parent
-      focus: root.keyboardActive || root.menuOpen
+      focus: root.keyboardActive || root.menuOpen || root.pickerOpen
 
       Keys.onPressed: function(event) {
         // Keys by name, not by the text they type, so they work with SUPER still held from SUPER + D.
         var previous = event.key === Qt.Key_Left || event.key === Qt.Key_Up || event.key === Qt.Key_H || event.key === Qt.Key_K
         var next = event.key === Qt.Key_Right || event.key === Qt.Key_Down || event.key === Qt.Key_L || event.key === Qt.Key_J
         var enter = event.key === Qt.Key_Return || event.key === Qt.Key_Enter
+        var shifted = (event.modifiers & Qt.ShiftModifier) !== 0
+
+        // The Add apps panel types into its search, so only arrows and Tab move through it.
+        if (root.pickerOpen) {
+          var count = root.pickerRows.length
+          if (event.key === Qt.Key_Escape) {
+            if (root.pickerQuery !== "") root.setPickerQuery("")
+            else root.closePicker()
+          } else if (event.key === Qt.Key_Down || (event.key === Qt.Key_Tab && !shifted)) {
+            if (count > 0) root.pickerIndex = (root.pickerIndex + 1) % count
+          } else if (event.key === Qt.Key_Up || event.key === Qt.Key_Backtab) {
+            if (count > 0) root.pickerIndex = (root.pickerIndex - 1 + count) % count
+          } else if (enter || (event.key === Qt.Key_Space && root.pickerQuery === "")) {
+            root.togglePicked(root.pickerRows[root.pickerIndex])
+          } else if (Util.editsFilter(event, root.pickerQuery)) {
+            root.setPickerQuery(Util.editedFilter(event, root.pickerQuery))
+          } else if (!(event.modifiers & (Qt.ControlModifier | Qt.AltModifier)) && event.text.length === 1
+                     && event.text.charCodeAt(0) >= 32 && event.text.charCodeAt(0) !== 127) {
+            root.setPickerQuery(root.pickerQuery + event.text)
+          } else {
+            return
+          }
+          event.accepted = true
+          return
+        }
 
         if (event.key === Qt.Key_Escape) {
           if (root.menuOpen && root.keyboardActive) {
@@ -501,12 +677,14 @@ Item {
           } else if ((enter || event.key === Qt.Key_Space) && root.menuIndex >= 0) {
             var entry = root.menuEntries[root.menuIndex]
             root.runMenu(entry)
-            root.leaveKeyboard()
+            if (!root.pickerOpen) root.leaveKeyboard()
           } else {
             return
           }
         } else if (root.keyboardActive) {
-          if (previous) {
+          if ((previous || next) && shifted) {
+            root.moveKept(next ? 1 : -1)
+          } else if (previous) {
             root.keyCursor = Math.max(-1, root.keyCursor - 1)
           } else if (next) {
             root.keyCursor = Math.min(root.items.length - 1, root.keyCursor + 1)
@@ -538,11 +716,12 @@ Item {
 
     MouseArea {
       anchors.fill: menuHit
-      enabled: root.menuOpen
+      enabled: root.menuOpen || root.pickerOpen
       acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
       onClicked: {
         root.menuOpen = false
         root.menuIndex = -1
+        root.closePicker()
       }
     }
 
@@ -699,7 +878,7 @@ Item {
         }
 
         DockLabel {
-          visible: (overviewButton.hovered || overviewButton.keyed) && !root.menuOpen
+          visible: (overviewButton.hovered || overviewButton.keyed) && !root.menuOpen && !root.pickerOpen && root.dragIndex < 0
           text: "Overview"
           x: root.edge === "left" ? overviewTile.x + overviewTile.width + root.labelGap
             : (root.edge === "right" ? overviewTile.x - width - root.labelGap : overviewTile.x + (overviewTile.width - width) / 2)
@@ -733,8 +912,47 @@ Item {
             required property int index
 
             readonly property real distance: root.pointerX < 0 ? 1e9 : root.pointerX - root.layout.centers[cell.index]
-            readonly property real scaleFactor: root.magnify && root.pointerX >= 0
+            readonly property real scaleFactor: root.magnify && root.pointerX >= 0 && root.dragIndex < 0
               ? Model.magnification(cell.distance, root.magnifyRange, root.maxScale) : 1
+            readonly property bool dragged: root.dragIndex === cell.index
+            // While another icon is dragged, this one steps aside to open its landing place, or to close
+            // the gap it left.
+            readonly property real shift: {
+              var from = root.dragIndex
+              if (from < 0 || cell.dragged) return 0
+              var item = root.dragItem
+              var slot = root.dragSlot
+              if (item.pinned) {
+                if (slot < 0) return cell.index > from ? -root.cellWidth : 0
+                if (cell.index > from && cell.index <= slot) return -root.cellWidth
+                if (cell.index < from && cell.index >= slot) return root.cellWidth
+                return 0
+              }
+              return slot >= 0 && cell.index >= slot && cell.index < from ? root.cellWidth : 0
+            }
+            z: cell.dragged ? 2 : 0
+
+            // The dragged icon follows the pointer, fading once it is far enough off the dock to remove.
+            transform: Translate {
+              x: root.vertical ? (cell.dragged ? (root.edge === "left" ? root.dragAway : -root.dragAway) : 0)
+                : (cell.dragged ? root.dragAlong - root.dragStartAlong : cell.shift)
+              y: root.vertical ? (cell.dragged ? root.dragAlong - root.dragStartAlong : cell.shift)
+                : (cell.dragged ? -root.dragAway : 0)
+
+              Behavior on x {
+                enabled: !cell.dragged
+                NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+              }
+              Behavior on y {
+                enabled: !cell.dragged
+                NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+              }
+            }
+            opacity: cell.dragged && root.dragRemoving ? 0.5 : 1
+
+            Behavior on opacity {
+              NumberAnimation { duration: 120 }
+            }
             readonly property bool hovered: root.pointerX >= 0 && Math.abs(cell.distance) <= root.cellWidth / 2
             readonly property bool keyed: root.keyboardActive && !root.menuOpen && root.keyCursor === cell.index
             readonly property int windowCount: cell.modelData.windows.length
@@ -872,22 +1090,57 @@ Item {
             }
 
             DockLabel {
-              visible: (cell.hovered || cell.keyed) && !root.menuOpen
-              text: cell.modelData.name
+              visible: cell.dragged ? root.dragRemoving
+                : (cell.hovered || cell.keyed) && !root.menuOpen && !root.pickerOpen && root.dragIndex < 0
+              text: cell.dragged ? "Remove" : cell.modelData.name
               x: root.edge === "left" ? iconBox.x + iconBox.width + root.labelGap
                 : (root.edge === "right" ? iconBox.x - width - root.labelGap : iconBox.x + (iconBox.width - width) / 2)
               y: root.vertical ? iconBox.y + (iconBox.height - height) / 2 : iconBox.y - height - root.labelGap
             }
 
-            // Clicks count from the screen edge out past the magnified icon, not just on the icon.
+            // Clicks count from the screen edge out past the magnified icon, not just on the icon. A press
+            // that moves drags the icon: along the dock to reorder, off it to remove.
             MouseArea {
+              id: cellMouse
+              property point pressPoint: Qt.point(0, 0)
+              property bool moved: false
               x: root.edge === "left" ? -root.reachEdge : (root.edge === "right" ? -root.reachAway : 0)
               y: root.edge === "bottom" ? -root.reachAway : 0
               width: root.vertical ? root.iconSize + root.reachAway + root.reachEdge : parent.width
               height: root.vertical ? parent.height : root.iconSize + root.reachAway + root.reachEdge
               acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
-              cursorShape: Qt.PointingHandCursor
+              cursorShape: cell.dragged ? Qt.ClosedHandCursor : Qt.PointingHandCursor
+              onPressed: function(mouse) {
+                cellMouse.pressPoint = cellMouse.mapToItem(iconRow, mouse.x, mouse.y)
+                cellMouse.moved = false
+                if (mouse.button === Qt.LeftButton) root.iconPressed = true
+              }
+              onPositionChanged: function(mouse) {
+                if (!(cellMouse.pressedButtons & Qt.LeftButton)) return
+                var point = cellMouse.mapToItem(iconRow, mouse.x, mouse.y)
+                var along = root.vertical ? point.y : point.x
+                var startAlong = root.vertical ? cellMouse.pressPoint.y : cellMouse.pressPoint.x
+                var away = root.edge === "bottom" ? cellMouse.pressPoint.y - point.y
+                  : (root.edge === "left" ? point.x - cellMouse.pressPoint.x : cellMouse.pressPoint.x - point.x)
+                if (!cellMouse.moved && Math.hypot(point.x - cellMouse.pressPoint.x, point.y - cellMouse.pressPoint.y) > Style.space(10)) {
+                  cellMouse.moved = true
+                  root.startIconDrag(cell.index, startAlong)
+                }
+                if (cell.dragged) {
+                  root.dragAlong = along
+                  root.dragAway = Math.max(0, away)
+                }
+              }
+              onReleased: {
+                root.iconPressed = false
+                if (cell.dragged) root.endIconDrag()
+              }
+              onCanceled: {
+                root.iconPressed = false
+                if (cell.dragged) root.dragIndex = -1
+              }
               onClicked: function(mouse) {
+                if (cellMouse.moved) return
                 if (mouse.button === Qt.RightButton) {
                   root.openMenu(cell.modelData, cell, false)
                 } else if (mouse.button === Qt.MiddleButton) {
@@ -908,6 +1161,250 @@ Item {
         x: root.edge === "left" ? dockBackground.x + dockBackground.width + root.labelGap
           : (root.edge === "right" ? dockBackground.x - width - root.labelGap : dockBackground.x + (dockBackground.width - width) / 2)
         y: root.vertical ? dockBackground.y - height - root.labelGap : dockBackground.y - height - root.labelGap * 5
+      }
+    }
+
+    // Add apps: every installed app with the kept ones checked, beside the dock like its menu. Typing
+    // searches, and Enter, Space, or a click keeps or removes an app at once.
+    BorderSurface {
+      id: pickerCard
+      visible: root.pickerOpen
+      width: Style.space(340)
+      height: pickerColumn.implicitHeight + Style.spacing.lg * 2
+      x: root.edge === "left" ? root.edgeGap + root.baseHeight + root.labelGap
+        : (root.edge === "right" ? dockWindow.width - root.edgeGap - root.baseHeight - width - root.labelGap
+          : Math.max(Style.gapsOut, Math.min(dockWindow.width - width - Style.gapsOut, root.menuCenter - width / 2)))
+      y: root.vertical ? Math.max(Style.gapsOut, Math.min(dockWindow.height - height - Style.gapsOut, root.menuCenter - height / 2))
+        : dockWindow.height - root.baseHeight - root.edgeGap - height - root.labelGap
+      radius: Style.cornerRadius
+      color: Color.menu.background
+      borderSpec: Border.surfaceSpec("menu", "border", Color.menu.border, Math.max(1, Style.space(2)))
+
+      // Clicks inside the panel stay in it, instead of reaching the area that closes it.
+      MouseArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+      }
+
+      Column {
+        id: pickerColumn
+        x: Style.spacing.lg
+        y: Style.spacing.lg
+        width: parent.width - Style.spacing.lg * 2
+        spacing: Style.spacing.sm
+
+        Item {
+          width: parent.width
+          height: pickerTitle.implicitHeight
+
+          Text {
+            id: pickerTitle
+            textFormat: Text.PlainText
+            text: "Add apps"
+            color: Color.menu.text
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.body
+            font.bold: true
+          }
+
+          Text {
+            anchors.right: parent.right
+            anchors.baseline: pickerTitle.baseline
+            textFormat: Text.PlainText
+            text: root.keptIds.length === 1 ? "1 in the dock" : root.keptIds.length + " in the dock"
+            color: Color.menu.text
+            opacity: 0.6
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.caption
+          }
+        }
+
+        Rectangle {
+          width: parent.width
+          height: Style.space(34)
+          radius: Style.cornerRadius
+          color: Util.alpha(Color.menu.text, 0.06)
+          border.width: Math.max(1, Style.space(1))
+          border.color: Color.accent
+
+          Row {
+            anchors.left: parent.left
+            anchors.leftMargin: Style.spacing.sm
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.spacing.sm
+
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              textFormat: Text.PlainText
+              text: String.fromCodePoint(0xF0349)
+              color: Color.menu.text
+              opacity: 0.6
+              font.family: Style.font.family
+              font.pixelSize: Style.font.body
+            }
+
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              width: Math.min(implicitWidth, pickerColumn.width - Style.space(60))
+              elide: Text.ElideLeft
+              textFormat: Text.PlainText
+              text: root.pickerQuery !== "" ? root.pickerQuery : "Search apps"
+              color: Color.menu.text
+              opacity: root.pickerQuery !== "" ? 1 : 0.5
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.body
+            }
+
+            Rectangle {
+              anchors.verticalCenter: parent.verticalCenter
+              width: Math.max(1, Style.space(2))
+              height: Style.font.body + Style.spacing.xs
+              color: Color.accent
+
+              SequentialAnimation on opacity {
+                running: root.pickerOpen
+                loops: Animation.Infinite
+                NumberAnimation { to: 1; duration: 0 }
+                PauseAnimation { duration: 530 }
+                NumberAnimation { to: 0; duration: 0 }
+                PauseAnimation { duration: 530 }
+              }
+            }
+          }
+        }
+
+        ListView {
+          id: pickerList
+          readonly property int rowHeight: Style.space(40)
+          width: parent.width
+          height: Math.max(pickerList.rowHeight, Math.min(root.pickerRows.length * pickerList.rowHeight, Style.space(360)))
+          clip: true
+          boundsBehavior: Flickable.StopAtBounds
+          model: root.pickerRows
+          currentIndex: root.pickerIndex
+          onCurrentIndexChanged: pickerList.positionViewAtIndex(pickerList.currentIndex, ListView.Contain)
+
+          delegate: Item {
+            id: pickerRow
+            required property var modelData
+            required property int index
+            readonly property bool highlighted: pickerRowMouse.containsMouse || root.pickerIndex === pickerRow.index
+            width: pickerList.width
+            height: pickerList.rowHeight
+
+            Rectangle {
+              anchors.fill: parent
+              radius: Style.cornerRadius
+              color: pickerRow.highlighted ? Color.menu.selectedBackground : "transparent"
+            }
+
+            Image {
+              id: pickerIcon
+              x: Style.spacing.sm
+              anchors.verticalCenter: parent.verticalCenter
+              width: Style.space(26)
+              height: width
+              sourceSize.width: Style.space(52)
+              sourceSize.height: Style.space(52)
+              source: root.iconSource(pickerRow.modelData.icon)
+              fillMode: Image.PreserveAspectFit
+              smooth: true
+            }
+
+            Column {
+              anchors.left: pickerIcon.right
+              anchors.leftMargin: Style.spacing.sm
+              anchors.right: pickerCheck.left
+              anchors.rightMargin: Style.spacing.sm
+              anchors.verticalCenter: parent.verticalCenter
+
+              Text {
+                width: parent.width
+                elide: Text.ElideRight
+                textFormat: Text.PlainText
+                text: pickerRow.modelData.name
+                color: pickerRow.highlighted ? Color.menu.selectedText : Color.menu.text
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.body
+              }
+
+              Text {
+                visible: pickerRow.modelData.detail !== ""
+                width: parent.width
+                elide: Text.ElideRight
+                textFormat: Text.PlainText
+                text: pickerRow.modelData.detail
+                color: pickerRow.highlighted ? Color.menu.selectedText : Color.menu.text
+                opacity: 0.6
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.caption
+              }
+            }
+
+            // A check box, filled while the app is kept.
+            Rectangle {
+              id: pickerCheck
+              anchors.right: parent.right
+              anchors.rightMargin: Style.spacing.sm
+              anchors.verticalCenter: parent.verticalCenter
+              width: Style.space(18)
+              height: width
+              radius: Math.round(width * 0.25)
+              color: pickerRow.modelData.kept ? Color.accent : "transparent"
+              border.width: Math.max(1, Style.space(1))
+              border.color: pickerRow.modelData.kept ? Color.accent : Util.alpha(pickerRow.highlighted ? Color.menu.selectedText : Color.menu.text, 0.4)
+
+              Behavior on color {
+                ColorAnimation { duration: 100 }
+              }
+
+              Text {
+                visible: pickerRow.modelData.kept
+                anchors.centerIn: parent
+                textFormat: Text.PlainText
+                text: String.fromCodePoint(0xF012C)
+                color: Color.menu.background
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption
+              }
+            }
+
+            MouseArea {
+              id: pickerRowMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: {
+                root.pickerIndex = pickerRow.index
+                root.togglePicked(pickerRow.modelData)
+              }
+            }
+          }
+
+          Text {
+            visible: root.pickerRows.length === 0
+            anchors.centerIn: parent
+            width: Math.min(implicitWidth, parent.width)
+            elide: Text.ElideMiddle
+            textFormat: Text.PlainText
+            text: root.pickerQuery !== "" ? "No apps match “" + root.pickerQuery + "”" : "No apps found"
+            color: Color.menu.text
+            opacity: 0.6
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.body
+          }
+        }
+
+        Text {
+          width: parent.width
+          wrapMode: Text.WordWrap
+          textFormat: Text.PlainText
+          text: "Drag an icon in the dock to move it, or off the dock to remove it."
+          color: Color.menu.text
+          opacity: 0.5
+          font.family: Style.font.menuFamily
+          font.pixelSize: Style.font.caption
+        }
       }
     }
 
