@@ -43,9 +43,9 @@ else
   fail "a planted word in a video is found with its time"
 fi
 
-magick -size 1200x300 xc:white -fill black -pointsize 64 -annotate +40+180 "net 192.168.0.112 up" "$media/address.png"
+magick -size 1200x300 xc:white -fill black -pointsize 64 -annotate +40+180 "net 10.20.30.40 up" "$media/address.png"
 output=$("$check" "$media/address.png" 2>&1 || true)
-if [[ $output == *"a local network address"* && $output != *"192.168"* ]]; then
+if [[ $output == *"a local network address"* && $output != *"10.20.30.40"* ]]; then
   pass "a local network address is found, and not printed"
 else
   fail "a local network address is found, and not printed"
