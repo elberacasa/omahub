@@ -61,6 +61,28 @@ if agent state '.omahub.dock.picker != null' | grep -q true; then
   check "Esc closes Add apps" '.omahub.dock.picker == null' 1
 fi
 
+section "Clicking an app on another desktop goes there and leaves the pointer on the dock"
+away=$(agent state .sandbox.away)
+warp_before=$(hyprctl getoption cursor:warp_on_change_workspace -j | jq -c '.int')
+agent focus a
+check "test window c is in the dock" 'any(.omahub.dock.apps[]; .id == "omahub-demo-c")' 2
+agent point dock.app:omahub-demo-c
+sleep 0.3
+agent click dock.app:omahub-demo-c
+check "c's desktop comes forward with c focused" ".desktop == $away and .focus.class == \"omahub-demo-c\"" 2
+sleep 0.2
+# Hovering magnifies the icons, so the exact spot moves a few pixels; what matters is that the pointer
+# is still on the dock rather than in the middle of the screen.
+check "the pointer stays on the dock" '.omahub.dock.shelf as $s | .pointer.x >= $s.x - 40 and .pointer.x <= $s.x + $s.width + 40
+  and .pointer.y >= $s.y - 80 and .pointer.y <= $s.y + $s.height + 40' 0
+sleep 0.6
+if [[ $(hyprctl getoption cursor:warp_on_change_workspace -j | jq -c '.int') == "$warp_before" ]]; then
+  echo "  ok    Omarchy's pointer setting is back afterwards"
+else
+  echo "  FAIL  Omarchy's pointer setting is back afterwards"
+  LIVE_FAILURES=$((LIVE_FAILURES + 1))
+fi
+
 section "Dragging an icon along the dock moves it"
 first=$(agent state '.omahub.dock.apps[0].id')
 spot=$(agent state '.omahub.dock.apps[2] | "\((.x + .width / 2 + 12) | floor),\((.y + .height / 2) | floor)"')

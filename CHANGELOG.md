@@ -41,6 +41,7 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - While the overview is open, Omarchy's SUPER shortcuts step aside, so dragging a card with SUPER still held from SUPER + TAB no longer moves a window behind it, and SUPER + SHIFT + a number moves a window once.
 - A quick SUPER + TAB where TAB and SUPER come up together flips to the last window, instead of leaving the overview open waiting for SUPER.
 - Opening the hub on a setting lands on it in whatever section it lives, instead of staying on the section already open.
+- Clicking an app in the dock, or a window or desktop in the overview, leaves the pointer where you clicked, even when the window is on another desktop, instead of jumping it to the middle of the screen. Switching from the keyboard still moves the pointer the way Omarchy does.
 - The dock's right-click menu stays open instead of closing the moment it appears.
 - The dock's menu and Add apps are never cut off at any dock position or magnification: the room beside the dock grows to fit what is open.
 - After SUPER + D, the arrows, Enter, and Space reach the dock even with SUPER still held, instead of Omarchy's own shortcuts. Clicking a window, changing desktop, or SUPER + D again gives the keyboard back.

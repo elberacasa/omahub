@@ -6,6 +6,7 @@ import Quickshell.Hyprland
 import qs.Commons
 import qs.Ui
 import "DockModel.js" as Model
+import "../desktops/DesktopsModel.js" as Desktops
 
 // The dock: pinned apps, then open apps that are not pinned, on one edge of the focused screen.
 // Its settings live in ~/.local/state/omahub/dock.json, which the hub, the terminal, and agents
@@ -249,8 +250,10 @@ Item {
     Quickshell.execDetached(["uwsm-app", "--", "gtk-launch", item.id + ".desktop"])
   }
 
-  // Click opens an app, or brings its windows forward one at a time.
-  function openItem(item) {
+  // Click opens an app, or brings its windows forward one at a time. From a click, the pointer stays on
+  // the dock instead of jumping to the window, even on another desktop; from the keyboard, focus moves
+  // the way Omarchy moves it.
+  function openItem(item, fromPointer) {
     var windows = item.windows || []
     if (windows.length === 0) {
       root.launch(item)
@@ -260,7 +263,22 @@ Item {
     for (var i = 0; i < windows.length; i++) {
       if (windows[i].activated) current = i
     }
-    windows[(current + 1) % windows.length].activate()
+    var next = windows[(current + 1) % windows.length]
+    var address = fromPointer === true ? root.addressFor(next) : ""
+    if (address !== "") {
+      Quickshell.execDetached(["hyprctl", "eval", Desktops.quietFocusLua({ window: "address:" + address })])
+    } else {
+      next.activate()
+    }
+  }
+
+  // Hyprland's address for a window the dock knows through the toplevel protocol.
+  function addressFor(toplevel) {
+    var list = Hyprland.toplevels.values || []
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].wayland === toplevel) return "0x" + String(list[i].address).replace(/^0x/, "")
+    }
+    return ""
   }
 
   function openMenu(item, cell, fromKeyboard) {
@@ -997,9 +1015,9 @@ Item {
 
             onLaunchingChanged: if (!cell.launching) cell.launchBaseline = -1
 
-            function open() {
+            function open(fromPointer) {
               if (cell.windowCount === 0) cell.startLaunch()
-              root.openItem(cell.modelData)
+              root.openItem(cell.modelData, fromPointer === true)
             }
 
             function startLaunch() {
@@ -1170,7 +1188,7 @@ Item {
                   cell.startLaunch()
                   root.launch(cell.modelData)
                 } else {
-                  cell.open()
+                  cell.open(true)
                 }
               }
             }

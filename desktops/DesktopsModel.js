@@ -38,6 +38,34 @@ function entryFor(appId, index) {
   return index.byClass[app] || index.byId[app] || (host ? index.byHost[host[1]] || null : null)
 }
 
+// Lua for Hyprland that focuses a window or a desktop without moving the pointer, for actions started with
+// the pointer. Omarchy moves the pointer to the window that gets focus when the desktop changes, which
+// suits the keyboard but makes a click jump across the screen. The person's settings come back a moment
+// later from a timer inside Hyprland, so they return even if the shell stops, and only the latest of
+// several quick clicks restores them, so a click never saves the settings another click turned off.
+// `target` is { window: "address:0x..." } or { workspace: "3" }.
+function quietFocusLua(target) {
+  const spec = target && target.window
+    ? "window = " + JSON.stringify(String(target.window))
+    : "workspace = " + JSON.stringify(String(target && target.workspace))
+  return [
+    "omahub_quiet_focus = omahub_quiet_focus or { count = 0 }",
+    "local quiet = omahub_quiet_focus",
+    "if quiet.saved == nil then",
+    "  quiet.saved = { warp = hl.get_config(\"cursor.warp_on_change_workspace\"), no_warps = hl.get_config(\"cursor.no_warps\") }",
+    "end",
+    "quiet.count = quiet.count + 1",
+    "local mine = quiet.count",
+    "hl.config({ cursor = { warp_on_change_workspace = 0, no_warps = true } })",
+    "hl.dispatch(hl.dsp.focus({ " + spec + " }))",
+    "hl.timer(function()",
+    "  if quiet.count ~= mine or quiet.saved == nil then return end",
+    "  hl.config({ cursor = { warp_on_change_workspace = quiet.saved.warp, no_warps = quiet.saved.no_warps } })",
+    "  quiet.saved = nil",
+    "end, { timeout = 400, type = \"oneshot\" })"
+  ].join("\n")
+}
+
 // Editors name the open project in the window title: "file - project - Cursor" or "project - Cursor".
 function projectFromTitle(appId, title) {
   if (EDITORS.indexOf(lower(appId)) < 0) return ""

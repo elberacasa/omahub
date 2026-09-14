@@ -86,9 +86,10 @@ state() {
     --argjson windows "$(hyprctl clients -j | jq -c --arg p "$TEST_PREFIX" '[.[] | {address, class, desktop: .workspace.id, test: (.class | startswith($p))}]')" \
     --arg keyset "$(hyprctl submap | head -1)" \
     --argjson held "$([[ -f $HELD ]] && echo true || echo false)" \
+    --argjson pointer "$(hyprctl cursorpos -j 2>/dev/null | jq -c '{x, y}' 2>/dev/null || echo null)" \
     --argjson sandbox "$(sandbox_json)" \
     '{omahub: $omahub, focus: $focus, desktop: $desktop, desktops: $desktops, windows: $windows,
-      keyset: $keyset, heldSuper: $held, sandbox: $sandbox}'
+      keyset: $keyset, heldSuper: $held, pointer: $pointer, sandbox: $sandbox}'
 }
 
 milliseconds() {

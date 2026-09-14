@@ -82,6 +82,27 @@ check "b is on the other desktop" "$(on_desktop b) == $away" 1
 agent chord u
 check "u brings it back" "$(on_desktop b) == $home" 1
 
+section "Clicking another desktop goes there and leaves the pointer where it clicked"
+warp_before=$(hyprctl getoption cursor:warp_on_change_workspace -j | jq -c '.int')
+agent focus a
+agent call open '{"overview":"open"}' >/dev/null
+check "the overview is open" '.omahub.overview.opened' 2
+agent point "overview.desktop:$away"
+sleep 0.3
+before=$(agent state '.pointer | "\(.x) \(.y)"')
+agent click "overview.desktop:$away"
+check "the other desktop comes forward" "(.omahub.overview.opened | not) and .desktop == $away" 2
+sleep 0.2
+read -r bx by <<<"$before"
+check "the pointer stays where it clicked" "(.pointer.x - $bx | fabs) <= 3 and (.pointer.y - $by | fabs) <= 3" 0
+sleep 0.6
+if [[ $(hyprctl getoption cursor:warp_on_change_workspace -j | jq -c '.int') == "$warp_before" ]]; then
+  echo "  ok    Omarchy's pointer setting is back afterwards"
+else
+  echo "  FAIL  Omarchy's pointer setting is back afterwards"
+  LIVE_FAILURES=$((LIVE_FAILURES + 1))
+fi
+
 section "Esc closes the overview and leaves focus where it was"
 agent focus b
 agent call open '{"overview":"open"}' >/dev/null

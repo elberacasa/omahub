@@ -548,35 +548,45 @@ Item {
     root.windowIndex = 0
   }
 
-  function goToSelected() {
+  // From a click, the pointer stays where it clicked; from the keyboard, focus moves the way Omarchy
+  // moves it.
+  function goToSelected(fromPointer) {
     var window = root.selectedWindow
     if (window) {
-      root.focusAfterClose('hl.dsp.focus({ window = "' + Model.selector(window.address) + '" })')
+      root.focusAfterClose('hl.dsp.focus({ window = "' + Model.selector(window.address) + '" })',
+        fromPointer === true ? { window: Model.selector(window.address) } : null)
     } else if (root.selectedDesktop && !root.searchActive) {
-      root.focusAfterClose('hl.dsp.focus({ workspace = "' + root.selectedDesktop.id + '" })')
+      root.focusAfterClose('hl.dsp.focus({ workspace = "' + root.selectedDesktop.id + '" })',
+        fromPointer === true ? { workspace: String(root.selectedDesktop.id) } : null)
     } else {
       root.close()
     }
   }
 
-  function goToDesktop(id) {
-    root.focusAfterClose('hl.dsp.focus({ workspace = "' + id + '" })')
+  function goToDesktop(id, fromPointer) {
+    root.focusAfterClose('hl.dsp.focus({ workspace = "' + id + '" })', fromPointer === true ? { workspace: String(id) } : null)
   }
 
   // The overview gives the keyboard back as it closes, then focuses. Focusing first would lose to
   // Hyprland handing focus back to the window that had it when the overview's surface lets go, which
-  // looks like nothing happened when the choice is on the same desktop.
-  function focusAfterClose(command) {
+  // looks like nothing happened when the choice is on the same desktop. `quiet` focuses without moving
+  // the pointer.
+  function focusAfterClose(command, quiet) {
     root.close()
     focusTimer.command = command
+    focusTimer.quiet = quiet || null
     focusTimer.restart()
   }
 
   Timer {
     id: focusTimer
     property string command: ""
+    property var quiet: null
     interval: 30
-    onTriggered: root.dispatch(focusTimer.command)
+    onTriggered: {
+      if (focusTimer.quiet) Quickshell.execDetached(["hyprctl", "eval", Desktops.quietFocusLua(focusTimer.quiet)])
+      else root.dispatch(focusTimer.command)
+    }
   }
 
   function goToDesktopNumber(number) {
@@ -867,9 +877,8 @@ Item {
     root.dropTarget = null
   }
 
-  function newDesktop() {
-    root.dispatch('hl.dsp.focus({ workspace = "empty" })')
-    root.close()
+  function newDesktop(fromPointer) {
+    root.focusAfterClose('hl.dsp.focus({ workspace = "empty" })', fromPointer === true ? { workspace: "empty" } : null)
   }
 
   ParallelAnimation {
@@ -1427,7 +1436,7 @@ Item {
                 cursorShape: Qt.PointingHandCursor
                 onClicked: function(mouse) {
                   if (mouse.button === Qt.RightButton) root.beginRename(thumb.modelData.id)
-                  else root.goToDesktop(thumb.modelData.id)
+                  else root.goToDesktop(thumb.modelData.id, true)
                 }
               }
             }
@@ -1484,7 +1493,7 @@ Item {
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
-              onClicked: root.newDesktop()
+              onClicked: root.newDesktop(true)
             }
           }
         }
@@ -1886,7 +1895,7 @@ Item {
                   root.dropAt(cardMouse.mapToItem(scene, mouse.x, mouse.y))
                 } else if (cardMouse.containsMouse) {
                   root.windowIndex = card.index
-                  root.goToSelected()
+                  root.goToSelected(true)
                 }
               }
             }
