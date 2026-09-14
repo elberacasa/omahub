@@ -22,6 +22,8 @@ Usage: omahub <command>
   agent [agent] [--pick]      Start a coding agent in your projects folder, or a folder you pick
   edit [--pick]               Open your projects folder, or a folder you pick, in your editor
   project new <name>          Create a project and start your agent there (--editor, --no-open)
+  project list                List the projects in your projects folder, newest first, as JSON
+  project open <name>         Open a project on a free desktop in your editor and agent (--desktop <n>, --editor, --agent, --no-focus)
   dock pins|pin|unpin <app>   List, add, or remove the apps kept in the dock
   dock order <app>...         Keep exactly these apps, in this order
   desktop names               List the names given to desktops, as JSON
@@ -123,6 +125,82 @@ new_project() {
   elif [[ $open == "editor" ]]; then
     exec omarchy-launch-editor "$dir"
   fi
+}
+
+project_command() {
+  case "${1:-}" in
+    new)
+      new_project "$@"
+      ;;
+    list)
+      source "$OMAHUB_PATH/lib/defaults.sh"
+      omahub_projects_list
+      ;;
+    open)
+      shift
+      open_project "$@"
+      ;;
+    *)
+      omahub_fail "usage: omahub project new|list|open"
+      ;;
+  esac
+}
+
+# Go to a desktop, the first free one unless one is given, and open a project there. Hyprland keeps the
+# windows on that desktop even when the editor or the agent takes a while to start.
+open_project() {
+  local usage="usage: omahub project open <name> [--desktop <number>] [--editor|--agent] [--no-focus]"
+  local name="" desktop="" open="both" focus=true dir quoted lua="" q="'"
+  while (( $# )); do
+    case "$1" in
+      --desktop)
+        (( $# >= 2 )) || omahub_fail "$usage"
+        desktop="$2"
+        shift 2
+        ;;
+      --editor) open="editor"; shift ;;
+      --agent) open="agent"; shift ;;
+      --no-focus) focus=false; shift ;;
+      -*) omahub_fail "$usage" ;;
+      *)
+        [[ -z $name ]] || omahub_fail "$usage"
+        name="$1"
+        shift
+        ;;
+    esac
+  done
+
+  source "$OMAHUB_PATH/lib/defaults.sh"
+  if [[ ! $name =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+    omahub_fail "$usage"
+  fi
+  dir="$(omahub_projects_folder)/$name"
+  if [[ ! -d $dir ]]; then
+    omahub_fail "$(omahub_home_label "$dir") does not exist. Create it with: omahub project new $name"
+  fi
+  if [[ -z $desktop ]]; then
+    desktop=$(omahub_free_desktop)
+  fi
+  if [[ ! $desktop =~ ^[1-9][0-9]*$ ]]; then
+    omahub_fail "'$desktop' is not a desktop number"
+  fi
+  if [[ $dir == *"]]"* || $dir == *$'\n'* ]]; then
+    omahub_fail "Hyprland cannot start a command in $(omahub_home_label "$dir"), since its path has ]] or a line break"
+  fi
+
+  quoted="$q${dir//$q/$q\\$q$q}$q"
+  # --no-focus leaves going there to the caller, such as the overview, which keeps the pointer in place.
+  if [[ $focus == true ]]; then
+    lua="hl.dispatch(hl.dsp.focus({ workspace = \"$desktop\" }))"$'\n'
+  fi
+  if [[ $open != "agent" ]]; then
+    lua+="hl.exec_cmd([[omarchy-launch-editor $quoted]], { workspace = \"$desktop\" })"
+  fi
+  if [[ $open != "editor" ]]; then
+    lua+=$'\n'"hl.exec_cmd([[cd $quoted && exec omarchy-agent --pick]], { workspace = \"$desktop\" })"
+  fi
+  hyprctl eval "$lua" >/dev/null
+  jq -nc --arg path "$dir" --argjson desktop "$desktop" --arg open "$open" '{path: $path, desktop: $desktop, open: $open}'
 }
 
 desktop_command() {
@@ -243,7 +321,7 @@ case "${1:-help}" in
     ;;
   project)
     shift
-    new_project "$@"
+    project_command "$@"
     ;;
   dock)
     shift

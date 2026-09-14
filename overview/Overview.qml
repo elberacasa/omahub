@@ -12,7 +12,8 @@ import "../desktops/DesktopsModel.js" as Desktops
 // out large with live previews. Keyboard first: h, j, k, and l move between windows like the arrows,
 // and past the end of a row to the next desktop. Shift + h and l jump desktops, Tab walks windows,
 // Enter goes, x closes, a number shows that desktop, Shift + a number moves a window there, Shift + n
-// moves it to a new desktop, u undoes a move, and typing searches. Desktops 1 to 5 are always there.
+// moves it to a new desktop, u undoes a move, p opens a project, and typing searches. Desktops 1 to 5 are
+// always there.
 // Opened again while SUPER is held, it walks windows and letting go of SUPER jumps to the choice.
 Item {
   id: root
@@ -43,6 +44,24 @@ Item {
   property var dragWindow: null
   property point dragPoint: Qt.point(0, 0)
   property var dropTarget: null
+
+  // Opening a project: p lists the projects in the projects folder, typing filters them, and Enter opens the
+  // chosen one on a free desktop, or goes to the desktop it is already open on.
+  property bool picking: false
+  property string pickQuery: ""
+  property int pickIndex: 0
+  property var projects: []
+  property bool projectsLoading: false
+  readonly property var pickRows: root.picking ? Model.projectRows(root.projects, root.pickQuery, root.openProjects) : []
+  // Each project on a desktop, found the same way the desktops are named.
+  readonly property var openProjects: {
+    var map = {}
+    root.desktops.forEach(function(desktop) {
+      var summary = root.summaries[desktop.id]
+      if (summary && summary.project && map[summary.project] === undefined) map[summary.project] = desktop.id
+    })
+    return map
+  }
 
   readonly property var monitor: Hyprland.focusedMonitor
   readonly property real monitorX: root.monitor ? root.monitor.x : 0
@@ -197,6 +216,44 @@ Item {
     root.terminalInfo = next
   }
 
+  function beginPick() {
+    root.searching = false
+    root.query = ""
+    root.pickQuery = ""
+    root.pickIndex = 0
+    root.picking = true
+    root.projectsLoading = true
+    projectReader.running = true
+  }
+
+  function endPick() {
+    root.picking = false
+    root.pickQuery = ""
+  }
+
+  function setPickQuery(text) {
+    root.pickQuery = text
+    root.pickIndex = 0
+  }
+
+  // Goes to the desktop a project is open on, or opens it on a free desktop, creating it first when that is
+  // the row. The overview goes there itself, so a click leaves the pointer where it clicked, and a project
+  // that fails to open says why in a notification, since the overview has closed by then.
+  function openPicked(row, fromPointer) {
+    if (!row) return
+    root.endPick()
+    if (row.desktop > 0) {
+      root.goToDesktop(row.desktop, fromPointer)
+      return
+    }
+    var desktop = Model.freeDesktop(Hyprland.toplevels.values || [])
+    root.goToDesktop(desktop, fromPointer)
+    var steps = row.create ? '"$0" project new "$1" --no-open >/dev/null 2>"$err" && ' : ''
+    var script = 'err=$(mktemp); if ' + steps + '"$0" project open "$1" --desktop "$2" --no-focus >/dev/null 2>>"$err"; '
+      + 'then :; else notify-send -a Omahub "Couldn\'t open $1" "$(cat "$err")"; fi; rm -f "$err"'
+    Quickshell.execDetached(["sh", "-c", script, root.omahubCommand, row.name, String(desktop)])
+  }
+
   function beginRename(id) {
     if (!(id > 0)) return
     root.searching = false
@@ -223,6 +280,22 @@ Item {
     } else {
       renameProcess.command = command
       renameProcess.running = true
+    }
+  }
+
+  Process {
+    id: projectReader
+    command: [root.omahubCommand, "project", "list"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        try {
+          var list = JSON.parse(text)
+          root.projects = Array.isArray(list) ? list : []
+        } catch (e) {
+          root.projects = []
+        }
+        root.projectsLoading = false
+      }
     }
   }
 
@@ -300,7 +373,9 @@ Item {
       searching: root.searching, query: root.query,
       undo: root.lastMove ? root.lastMove.to : null, flying: flight.running,
       selected: selected ? { address: selected.address, workspace: selected.workspace, title: selected.title } : null,
-      cards: cards, desktops: desktops, newDesktop: place(newTile)
+      cards: cards, desktops: desktops, newDesktop: place(newTile),
+      picker: root.picking ? { query: root.pickQuery, index: root.pickIndex, loading: root.projectsLoading,
+        rows: root.pickRows, panel: place(pickerPanel) } : null
     })
   }
 
@@ -370,6 +445,7 @@ Item {
     root.query = ""
     root.searching = false
     root.cycling = false
+    root.picking = false
     root.userMoved = false
     root.shiftHeld = false
     root.leaving = ({})
@@ -478,6 +554,7 @@ Item {
     if (!root.mounted) return
     root.cancelDrag()
     root.finishRename(false)
+    root.endPick()
     root.leaveKeySet()
     root.opened = false
     root.cycling = false
@@ -1020,6 +1097,28 @@ Item {
             event.accepted = true
             return
           }
+          // The project picker types into its search, and only the arrows and Tab move through it.
+          if (root.picking) {
+            var rowCount = root.pickRows.length
+            if (event.key === Qt.Key_Escape) {
+              if (root.pickQuery !== "") root.setPickQuery("")
+              else root.endPick()
+            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+              root.openPicked(root.pickRows[root.pickIndex])
+            } else if (event.key === Qt.Key_Down || (event.key === Qt.Key_Tab && !shifted)) {
+              if (rowCount > 0) root.pickIndex = (root.pickIndex + 1) % rowCount
+            } else if (event.key === Qt.Key_Up || event.key === Qt.Key_Backtab) {
+              if (rowCount > 0) root.pickIndex = (root.pickIndex - 1 + rowCount) % rowCount
+            } else if (Util.editsFilter(event, root.pickQuery)) {
+              root.setPickQuery(Util.editedFilter(event, root.pickQuery))
+            } else if (event.key === Qt.Key_Backspace) {
+              root.endPick()
+            } else if ((printable || event.key === Qt.Key_Space) && !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) {
+              root.setPickQuery(root.pickQuery + event.text)
+            }
+            event.accepted = true
+            return
+          }
           if (event.key === Qt.Key_Shift) {
             root.shiftHeld = true
             return
@@ -1108,6 +1207,8 @@ Item {
             root.undoMove()
           } else if (event.text === "r" && root.selectedDesktop) {
             root.beginRename(root.selectedDesktop.id)
+          } else if (event.text === "p") {
+            root.beginPick()
           } else if (event.text === "/") {
             root.searching = true
           } else if (printable) {
@@ -1723,8 +1824,198 @@ Item {
         }
       }
 
+      // Open a project: a search, then your projects, newest first. Enter or a click opens the chosen one on
+      // a free desktop, or goes to the desktop it is already open on.
+      BorderSurface {
+        id: pickerPanel
+        visible: root.picking
+        anchors.top: strip.bottom
+        anchors.topMargin: Style.space(28)
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: Math.min(Style.space(560), parent.width - Style.space(96))
+        height: pickerColumn.implicitHeight + Style.spacing.md * 2
+        radius: Style.cornerRadius
+        color: Util.alpha(Color.menu.background, 0.96)
+        borderSpec: Border.flat(Util.alpha(Color.menu.text, 0.14), Math.max(1, Style.space(1)))
+
+        readonly property int rowHeight: Style.space(48)
+
+        Column {
+          id: pickerColumn
+          x: Style.spacing.md
+          y: Style.spacing.md
+          width: parent.width - Style.spacing.md * 2
+          spacing: Style.spacing.sm
+
+          BorderSurface {
+            width: parent.width
+            height: Style.space(40)
+            radius: Style.cornerRadius
+            color: Color.menu.background
+            borderSpec: Border.controlSpec("focus", Color.menu.text, Color.accent)
+
+            Row {
+              anchors.left: parent.left
+              anchors.leftMargin: Style.spacing.controlPaddingX
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.spacing.xs
+
+              Text {
+                anchors.verticalCenter: parent.verticalCenter
+                textFormat: Text.PlainText
+                text: root.pickQuery !== "" ? root.pickQuery : "Open a project"
+                width: Math.min(implicitWidth, pickerPanel.width - Style.space(80))
+                elide: Text.ElideLeft
+                color: Color.menu.text
+                opacity: root.pickQuery !== "" ? 1 : 0.5
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.body
+              }
+
+              Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.max(1, Style.space(2))
+                height: Style.font.body + Style.spacing.xs
+                color: Color.accent
+
+                SequentialAnimation on opacity {
+                  running: root.picking
+                  loops: Animation.Infinite
+                  NumberAnimation { to: 1; duration: 0 }
+                  PauseAnimation { duration: 530 }
+                  NumberAnimation { to: 0; duration: 0 }
+                  PauseAnimation { duration: 530 }
+                }
+              }
+            }
+          }
+
+          Text {
+            visible: root.pickRows.length === 0
+            width: parent.width
+            topPadding: Style.spacing.sm
+            bottomPadding: Style.spacing.sm
+            leftPadding: Style.spacing.controlPaddingX
+            rightPadding: Style.spacing.controlPaddingX
+            wrapMode: Text.WordWrap
+            textFormat: Text.PlainText
+            text: root.projectsLoading ? "Reading your projects…"
+              : root.pickQuery === "" ? "No projects in your projects folder yet. Type a name to create one."
+              : "No project matches. A new project's name uses letters, numbers, dots, dashes, and underscores."
+            color: Color.menu.text
+            opacity: 0.6
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.body
+          }
+
+          ListView {
+            id: pickerList
+            visible: root.pickRows.length > 0
+            width: parent.width
+            height: Math.min(root.pickRows.length, 8) * pickerPanel.rowHeight
+            clip: true
+            model: root.pickRows
+            currentIndex: root.pickIndex
+            boundsBehavior: Flickable.StopAtBounds
+            onCurrentIndexChanged: pickerList.positionViewAtIndex(pickerList.currentIndex, ListView.Contain)
+
+            delegate: Item {
+              id: pickRow
+              required property var modelData
+              required property int index
+              readonly property bool chosen: pickRow.index === root.pickIndex
+              width: pickerList.width
+              height: pickerPanel.rowHeight
+
+              Rectangle {
+                anchors.fill: parent
+                radius: Style.cornerRadius
+                color: pickRow.chosen ? Util.alpha(Color.accent, 0.18) : "transparent"
+              }
+
+              // The project's first letter, or a plus on the row that creates one.
+              Rectangle {
+                id: pickBadge
+                anchors.left: parent.left
+                anchors.leftMargin: Style.spacing.sm
+                anchors.verticalCenter: parent.verticalCenter
+                width: Style.space(30)
+                height: width
+                radius: Math.round(width * 0.26)
+                color: pickRow.modelData.create ? "transparent"
+                  : Util.alpha(pickRow.chosen ? Color.accent : Color.menu.text, pickRow.chosen ? 0.28 : 0.1)
+                border.width: pickRow.modelData.create ? Math.max(1, Style.space(1)) : 0
+                border.color: Util.alpha(Color.menu.text, 0.4)
+
+                Text {
+                  anchors.centerIn: parent
+                  textFormat: Text.PlainText
+                  text: pickRow.modelData.create ? "+" : pickRow.modelData.name.charAt(0).toUpperCase()
+                  color: pickRow.chosen ? Color.accent : Color.menu.text
+                  font.family: Style.font.menuFamily
+                  font.pixelSize: Style.font.body
+                  font.bold: true
+                }
+              }
+
+              Column {
+                anchors.left: pickBadge.right
+                anchors.leftMargin: Style.spacing.md
+                anchors.right: pickPlace.left
+                anchors.rightMargin: Style.spacing.md
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Style.spacing.xxs
+
+                Text {
+                  width: parent.width
+                  elide: Text.ElideRight
+                  textFormat: Text.PlainText
+                  text: pickRow.modelData.create ? "Create " + pickRow.modelData.name : pickRow.modelData.name
+                  color: Color.menu.text
+                  font.family: Style.font.menuFamily
+                  font.pixelSize: Style.font.body
+                }
+
+                Text {
+                  width: parent.width
+                  elide: Text.ElideRight
+                  textFormat: Text.PlainText
+                  text: pickRow.modelData.create ? "A new project in your projects folder"
+                    : (pickRow.modelData.branch !== "" ? pickRow.modelData.branch : (pickRow.modelData.git ? "Git project" : "Folder"))
+                  color: Color.menu.text
+                  opacity: 0.55
+                  font.family: Style.font.menuFamily
+                  font.pixelSize: Style.font.caption
+                }
+              }
+
+              Text {
+                id: pickPlace
+                anchors.right: parent.right
+                anchors.rightMargin: Style.spacing.md
+                anchors.verticalCenter: parent.verticalCenter
+                textFormat: Text.PlainText
+                text: pickRow.modelData.desktop > 0 ? "On desktop " + pickRow.modelData.desktop : ""
+                color: Color.accent
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.caption
+              }
+
+              MouseArea {
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onEntered: root.pickIndex = pickRow.index
+                onClicked: root.openPicked(pickRow.modelData, true)
+              }
+            }
+          }
+        }
+      }
+
       Item {
         id: mainArea
+        visible: !root.picking
         anchors.top: strip.bottom
         anchors.topMargin: Style.space(72)
         anchors.bottom: footer.top
@@ -1990,6 +2281,8 @@ Item {
           model: root.cycling
             ? [{ keys: ["tab"], label: "Next window" }, { keys: ["shift", "tab"], label: "Previous" },
                { keys: ["super"], label: "Let go to jump" }, { keys: ["click"], label: "Go" }, { keys: ["esc"], label: "Cancel" }]
+            : root.picking
+            ? [{ keys: ["↑", "↓"], label: "Move" }, { keys: ["enter"], label: "Open" }, { keys: ["esc"], label: "Back" }]
             : root.renamingDesktop > 0
             ? [{ keys: ["enter"], label: "Save name" }, { keys: [], label: "An empty name brings back the automatic one" }, { keys: ["esc"], label: "Cancel" }]
             : root.dragWindow !== null
@@ -2001,7 +2294,7 @@ Item {
                { keys: ["shift", "h", "l"], label: "Previous or next desktop" }]
             : [{ keys: ["h", "j", "k", "l"], label: "Move" }, { keys: ["1-9"], label: "Desktop" }, { keys: ["shift"], label: "Hold to move windows" },
                { keys: ["enter"], label: "Go" }, { keys: ["x"], label: "Close" }, { keys: ["r"], label: "Rename" },
-               { keys: ["/"], label: "Search" }, { keys: ["esc"], label: "Back" }]
+               { keys: ["p"], label: "Projects", action: "projects" }, { keys: ["/"], label: "Search" }, { keys: ["esc"], label: "Back" }]
 
           delegate: Row {
             id: hint
@@ -2039,9 +2332,20 @@ Item {
               textFormat: Text.PlainText
               text: hint.modelData.label
               color: Color.menu.text
-              opacity: 0.7
+              opacity: hintMouse.containsMouse ? 1 : 0.7
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.caption
+              font.underline: hintMouse.containsMouse
+
+              // A hint for an action you can also click, such as Projects.
+              MouseArea {
+                id: hintMouse
+                anchors.fill: parent
+                enabled: (hint.modelData.action || "") !== ""
+                hoverEnabled: enabled
+                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                onClicked: if (hint.modelData.action === "projects") root.beginPick()
+              }
             }
           }
         }

@@ -97,6 +97,36 @@ function desktops(workspaces, toplevels, monitorName, atLeast) {
   return list
 }
 
+// The project picker's rows: projects whose name has every typed word, newest first, each with the desktop
+// it is already open on, or 0. A typed name that is no project's, and could name a folder, ends the list as
+// a row that creates it. `openProjects` maps a project's name to its desktop.
+function projectRows(projects, query, openProjects) {
+  const list = projects || []
+  const open = openProjects || {}
+  const words = String(query || "").toLowerCase().split(/\s+/).filter(word => word.length > 0)
+  const rows = list
+    .filter(project => words.every(word => String(project.name).toLowerCase().indexOf(word) >= 0))
+    .map(project => ({ name: String(project.name), branch: String(project.branch || ""), git: project.git === true,
+      desktop: open[project.name] || 0, create: false }))
+  const name = String(query || "").trim().replace(/\s+/g, "-")
+  if (name !== "" && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) && !list.some(project => project.name === name)) {
+    rows.push({ name: name, branch: "", git: false, desktop: 0, create: true })
+  }
+  return rows
+}
+
+// The lowest desktop number with no windows on it, on any screen.
+function freeDesktop(toplevels) {
+  const busy = {}
+  for (const toplevel of toplevels || []) {
+    const id = toplevel && toplevel.workspace ? toplevel.workspace.id : 0
+    if (id > 0) busy[id] = true
+  }
+  let number = 1
+  while (busy[number]) number++
+  return number
+}
+
 // Every word must appear in a window's title or app.
 function search(desktopList, query) {
   const words = String(query || "").toLowerCase().split(/\s+/).filter(word => word.length > 0)

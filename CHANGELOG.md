@@ -13,6 +13,7 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - Each desktop in the overview is named after what is on it: the project its terminals and editor are in, with the git branch and its apps' icons. Press r or right-click a desktop to give it your own name, which stays even when the desktop empties, and `omahub desktop name` does the same from a terminal.
 - A badge on each desktop shows the agent running in its project, whether it runs in a terminal, in Cursor's terminal, or in a terminal inside Neovim, and a window asking for attention or media playing. It only shows what Omahub can read for certain.
 - Search in the overview also finds desktops by their name, project, or branch.
+- Press p in the overview, or click Projects, to open a project: your projects folder, newest first with each branch. Enter opens the project on a free desktop with your editor and agent, goes to the desktop it is already open on, or creates a project from a new name. `omahub project list` and `omahub project open` do the same from a terminal.
 - Add apps in the dock's menu lists every installed app with the ones in the dock checked. Type to search, and click or press Enter to keep or remove an app.
 - Drag an icon along the dock to move it, drag an open app among the kept ones to keep it there, or drag an icon off the dock to remove it. Shift + h and l move the app under the cursor after SUPER + D.
 - `omahub dock order <app>...` keeps exactly those apps, in that order.

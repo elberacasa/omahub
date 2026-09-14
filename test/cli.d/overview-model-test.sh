@@ -12,7 +12,7 @@ fi
 results=$(node - "$OMAHUB_PATH/overview/OverviewModel.js" <<'EOF'
 const fs = require("fs")
 const source = fs.readFileSync(process.argv[2], "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { selector, desktops, search, pack, neighbor, recent }")()
+const Model = new Function(source + "\nreturn { selector, desktops, search, pack, neighbor, recent, projectRows, freeDesktop }")()
 const checks = []
 const check = (name, ok) => checks.push({ name, ok: !!ok })
 
@@ -79,6 +79,19 @@ check("packing never makes a window larger than it is", Model.pack([{ width: 400
 const grid = Model.pack([{ width: 800, height: 600 }, { width: 800, height: 600 }, { width: 800, height: 600 }, { width: 800, height: 600 }], 1000, 800, 20)
 check("right from the first window reaches its neighbor", Model.neighbor(grid, 0, 1, 0) === 1)
 check("a move off the edge keeps the selection", Model.neighbor(grid, 1, 1, 0) === 1)
+
+const projects = [{ name: "orbit-api", branch: "feature/search", git: true }, { name: "lumen-docs", branch: "", git: true }, { name: "notes", git: false }]
+const allRows = Model.projectRows(projects, "", { "lumen-docs": 2 })
+check("the picker lists every project in order, with no create row", allRows.map(r => r.name).join(",") === "orbit-api,lumen-docs,notes" && !allRows.some(r => r.create))
+check("a project open on a desktop says which", allRows[1].desktop === 2 && allRows[0].desktop === 0)
+check("typing keeps projects with every word", Model.projectRows(projects, "ORB api", {}).filter(r => !r.create).map(r => r.name).join(",") === "orbit-api")
+const created = Model.projectRows(projects, "new idea", {})
+check("a new name ends the list as a row that creates it, spaces as dashes", created.length === 1 && created[0].create && created[0].name === "new-idea")
+check("an existing name is not offered again", !Model.projectRows(projects, "notes", {}).some(r => r.create))
+check("a name no folder could have is not offered", Model.projectRows(projects, "../x", {}).length === 0)
+const top = ws => ({ workspace: { id: ws } })
+check("the free desktop is the lowest with no windows", Model.freeDesktop([top(1), top(3), top(-98)]) === 2)
+check("with nothing open, desktop 1 is free", Model.freeDesktop([]) === 1)
 
 console.log(JSON.stringify(checks))
 EOF

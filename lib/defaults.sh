@@ -203,3 +203,40 @@ omahub_projects_set() {
   mkdir -p "$dir" "$OMAHUB_STATE_DIR"
   printf '%s\n' "$dir" >"$OMAHUB_PROJECTS_FILE"
 }
+
+# The projects in the projects folder as JSON, most recently changed first: each folder's name and path,
+# whether it is a git repository, and the branch it is on.
+omahub_projects_list() {
+  local root dir head branch git modified
+  root=$(omahub_projects_folder)
+  if [[ ! -d $root ]]; then
+    echo '[]'
+    return
+  fi
+  for dir in "$root"/*/; do
+    [[ -d $dir ]] || continue
+    dir=${dir%/}
+    git=false
+    branch=""
+    if [[ -e $dir/.git ]]; then
+      git=true
+      if [[ -f $dir/.git/HEAD ]]; then
+        head=$(<"$dir/.git/HEAD")
+        if [[ $head == "ref: refs/heads/"* ]]; then
+          branch=${head#ref: refs/heads/}
+        fi
+      fi
+    fi
+    modified=$(stat -c %Y "$dir" "$dir/.git/index" "$dir/.git/HEAD" 2>/dev/null | sort -rn | head -1 || true)
+    printf '%s\t%s\t%s\t%s\t%s\n' "${dir##*/}" "$dir" "$git" "$branch" "${modified:-0}"
+  done | jq -Rsc 'split("\n") | map(select(length > 0) | split("\t")
+    | {name: .[0], path: .[1], git: (.[2] == "true"), branch: .[3], modified: (.[4] | tonumber)}) | sort_by(-.modified)'
+}
+
+# The lowest desktop number with no windows, where a project opens without covering other work.
+omahub_free_desktop() {
+  local free
+  free=$(hyprctl workspaces -j 2>/dev/null | jq -r '[.[]? | select(.id > 0 and .windows > 0) | .id] as $busy
+    | first(range(1; 1000) | select(. as $n | $busy | index($n) | not))' 2>/dev/null || true)
+  printf '%s\n' "${free:-1}"
+}
