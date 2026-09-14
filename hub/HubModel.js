@@ -77,7 +77,7 @@ function errorText(stderr) {
 }
 
 // Beyond the keyboard, the welcome offers the few choices that change a first day the most.
-const WELCOME_EXTRAS = ["capture/thumbnail", "projects/default-agent", "projects/editor"]
+const WELCOME_EXTRAS = ["capture/thumbnail", "dock/show", "projects/default-agent", "projects/editor"]
 
 // The welcome shows the keyboard's size and the settings recommended for it, in recommended order,
 // then the extras. A keyboard Omahub does not recognize sees every keyboard setting instead.

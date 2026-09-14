@@ -35,6 +35,12 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - Dock settings that a Mac user knows, in the hub's Dock section: Size, Magnification with Off, Subtle, and Large, open app dots, showing open apps that are not kept, and the bounce when an app opens. A magnification switch saved before keeps working.
 - The dock can sit on the left, bottom, or right, from `dock/position` or its right-click menu, like the Mac's Position on screen. On a side it stands upright, grows its icons away from the edge, shows names beside them, and when it stays on screen, windows make room on that side.
 - `dock/tiles` puts every dock icon on the same rounded tile, so icons from different apps look like one set.
+- The welcome offers the dock, and every keyboard now recommends SUPER + TAB, as the keyboard table always said.
+- The guide for coding agents and the Omahub skill cover the dock, SUPER + TAB, projects, limits on the bar, and uninstalling.
+
+### Fixed
+
+- A long list in the hub or the welcome fades out at the bottom instead of cutting its last row in half.
 - `omahub uninstall` resets every setting and removes Omahub's data, then shows the command that removes the plugin. It asks first, or takes `--yes`.
 
 ### Performance

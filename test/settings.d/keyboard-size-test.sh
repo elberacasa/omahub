@@ -47,11 +47,13 @@ assert_eq "a known keyboard is detected by id" "$(jq -r .value <<<"$state")" "60
 assert_eq "its source is the known list" "$(jq -r .source <<<"$state")" "known"
 assert_eq "virtual keyboards are skipped" "$(jq -r .keyboard <<<"$state")" "WIN 60 HE"
 assert_true "a compact keyboard recommends Vim focus" recommends keyboard/vim-focus
+assert_true "a compact keyboard recommends SUPER + TAB" recommends keyboard/overview
 assert_true "a mouse with side buttons recommends mouse buttons" recommends keyboard/mouse-buttons
 
 { keyboard 0003 3434 0280 "Keychron K8 Pro TKL"; mouse 70000; } >"$OMAHUB_INPUT_DEVICES"
 assert_eq "an unknown keyboard is sized from its name" "$(omahub get keyboard/size | jq -r .value)" "tkl"
 assert_eq "its source is the name" "$(omahub get keyboard/size | jq -r .source)" "name"
+assert_true "a keyboard with arrows recommends SUPER + TAB too" recommends keyboard/overview
 if recommends keyboard/vim-focus >/dev/null; then
   fail "a keyboard with arrows does not recommend Vim focus"
 else

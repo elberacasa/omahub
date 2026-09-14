@@ -8,6 +8,7 @@ You are a coding agent on an [Omarchy](https://omarchy.org) machine. The person 
 - Installs run in a terminal the person can see. Never pass `--yes` to `omarchy plugin add`, never use `sudo`.
 - Change settings only through the `omahub` command. Never edit Omahub's marked blocks in config files by hand.
 - If a command fails, show the person its message and stop that step. Every Omahub setting can be undone with `omahub reset <setting>`.
+- Offer, do not push. A Mac user usually wants the dock and SUPER + TAB, but ask each time.
 
 ## 1. Check the machine
 
@@ -93,10 +94,62 @@ Then ask where screenshots should be saved:
 "$omahub" set capture/screenshot-folder ~/Pictures/Screenshots
 ```
 
-## 6. Show them
+## 6. The dock
+
+Offer a dock for their pinned and open apps. It starts from Omarchy's own terminal, browser, file manager, and editor:
+
+```bash
+"$omahub" set dock/show on
+```
+
+Then ask how they had it on the Mac, one question at a time, and set only what they answer:
+
+```bash
+"$omahub" options dock/position   # left, bottom, or right
+"$omahub" options dock/size       # small, medium, or large
+"$omahub" options dock/magnify    # off, subtle, or large
+"$omahub" set dock/autohide off   # keep it on screen, with windows sized around it
+"$omahub" dock pin <app>          # keep another app, by its .desktop name
+```
+
+## 7. Switching windows
+
+If "Overview" was not among the keyboard settings they turned on, offer it: SUPER + TAB flips to the last window, and held, walks every window on every desktop with live previews.
+
+```bash
+"$omahub" set keyboard/overview on
+```
+
+## 8. Projects and agents
+
+Ask which coding agent and editor they use, and where their projects live:
+
+```bash
+"$omahub" options projects/default-agent
+"$omahub" set projects/default-agent <agent>
+"$omahub" options projects/editor
+"$omahub" set projects/editor <editor>
+"$omahub" set projects/folder ~/Projects
+```
+
+If they use Claude or Codex, ask whether they want each plan's limit on the bar, and which limit it shows:
+
+```bash
+"$omahub" set agents/bar-limits on
+"$omahub" options agents/claude-bar-limit
+```
+
+## 9. Show them
 
 ```bash
 "$omahub" open
 ```
 
 Finish with a short summary: what is on, the keys worth remembering, SUPER + A to open Omahub if "Omahub key" is on, and that anything can be changed back from the hub or by asking you.
+
+If they ever want Omahub gone, everything it changed goes back with one command run in a terminal they can see, before the plugin is removed:
+
+```bash
+"$omahub" uninstall
+omarchy plugin remove io.github.elberacasa.omahub
+```

@@ -799,6 +799,26 @@ Item {
               }
             }
 
+            // Rows that run past the card fade into it, so the list reads as more to scroll rather than
+            // a row cut in half. The fade leaves once the last row is in view.
+            Rectangle {
+              z: 1
+              anchors.left: settingsList.left
+              anchors.right: settingsList.right
+              anchors.bottom: settingsList.bottom
+              height: Style.space(44)
+              visible: settingsList.visible
+              opacity: settingsList.contentHeight > settingsList.height && !settingsList.atYEnd ? 1 : 0
+              gradient: Gradient {
+                GradientStop { position: 0; color: Util.alpha(Color.menu.background, 0) }
+                GradientStop { position: 1; color: Color.menu.background }
+              }
+
+              Behavior on opacity {
+                NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+              }
+            }
+
             ListView {
               id: settingsList
               anchors.fill: parent

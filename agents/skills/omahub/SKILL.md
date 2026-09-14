@@ -2,11 +2,13 @@
 name: omahub
 description: >
   Read and change Omahub settings on an Omarchy machine: keyboard layers such as Mac
-  screenshot keys, Vim focus, and agent keys, the detected keyboard size, the screenshot
-  folder, and anything else the Omahub hub shows. Use when asked to change a keybinding
-  Omahub manages, turn a Mac touch on or off, find where screenshots are saved, or explain
-  what SUPER + A shows. Triggers: omahub, SUPER + A hub, Mac keys, screenshot keys, vim
-  focus, agent keys, keyboard size, screenshot folder.
+  screenshot keys, Vim focus, agent keys, and SUPER + TAB, the dock (position, size,
+  magnification, hiding, pinned apps), subscription limits on the bar, the screenshot folder,
+  the default agent and editor, and anything else the Omahub hub shows. Use when asked to
+  change a keybinding Omahub manages, turn a Mac touch on or off, move or resize the dock,
+  start work in a project, or remove Omahub. Triggers: omahub, SUPER + A hub, Mac keys,
+  screenshot keys, vim focus, agent keys, SUPER + TAB, overview, dock, bar limits, keyboard
+  size, screenshot folder, uninstall omahub.
 ---
 
 # Omahub
@@ -60,6 +62,33 @@ omahub dock pin obsidian    # keep an app in the dock, by its .desktop file name
 ```
 
 The default agent, editor, and projects folder are the settings `projects/default-agent`, `projects/editor`, and `projects/folder`.
+
+## The dock and windows
+
+```bash
+omahub set dock/show on
+omahub set dock/position left        # left, bottom, or right
+omahub set dock/size large           # small, medium, or large
+omahub set dock/magnify subtle       # off, subtle, or large
+omahub set dock/autohide off         # stay on screen, with windows sized around it
+omahub set keyboard/overview on      # SUPER + TAB walks every window with live previews
+omahub open overview                 # show every desktop and window now
+```
+
+## Limits on the bar
+
+`agents/bar-limits` puts each subscription's limit on the bar. Each plan chooses which of the
+limits it reports shows there, for example `omahub set agents/claude-bar-limit Weekly`. Run
+`omahub options agents/claude-bar-limit` first, since plans report different limits.
+
+## Remove Omahub
+
+Only when the person asks. It resets every setting and removes Omahub's data, then prints the
+command that removes the plugin. Run it where they can see and confirm it:
+
+```bash
+omahub uninstall
+```
 
 ## Rules
 

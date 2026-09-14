@@ -124,10 +124,10 @@ omahub_keyboard_label() {
   esac
 }
 
-# Compact boards lack arrows and function keys, so they also get Vim focus. Mouse buttons are
-# recommended only when a mouse really has side buttons.
+# Every keyboard gets the Omahub key and SUPER + TAB. Compact boards lack arrows and function keys,
+# so they also get Vim focus. Mouse buttons are recommended only when a mouse really has side buttons.
 omahub_keyboard_recommended() {
-  local ids=(keyboard/omahub-key)
+  local ids=(keyboard/omahub-key keyboard/overview)
 
   case "$1" in
     60 | 65) ids+=(keyboard/mac-screenshot-keys keyboard/vim-focus keyboard/agent-keys) ;;
