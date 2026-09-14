@@ -125,3 +125,51 @@ omahub_agents_bar_limits_setting() {
     omahub_state false "Off"
   fi
 }
+
+# Every limit the bar can show: the fixed choices, then each model limit a subscription reports
+# today, such as "Fable Weekly", read from the records Omarchy's usage collectors write.
+omahub_agents_bar_limit_choices() {
+  local usage="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/agents/usage"
+  printf '%s\n' Auto Weekly Session Fullest
+  if [[ -d $usage ]]; then
+    find "$usage" -maxdepth 1 -name '*.json' -exec jq -r '.limits[]? | .title // empty' {} + 2>/dev/null | sort -u
+  fi
+}
+
+omahub_agents_bar_limit() {
+  omahub_agents_entry | jq -r '.barLimit // "Auto"'
+}
+
+# The get, options, set, and reset verbs of the choice of which limit the bar shows.
+omahub_agents_bar_limit_setting() {
+  local id="$1" verb="${2:-}" value="${3:-}" current choice
+
+  case "$verb" in
+    get) ;;
+    options)
+      current=$(omahub_agents_bar_limit)
+      { omahub_agents_bar_limit_choices; echo "$current"; } | awk '!seen[$0]++' | while IFS= read -r choice; do
+        jq -nc --arg value "$choice" --arg current "$current" '{value: $value, label: $value, current: ($value == $current)}'
+      done | jq -sc '.'
+      return
+      ;;
+    set)
+      if ! grep -qxF -- "$value" <<<"$(omahub_agents_bar_limit_choices)"; then
+        omahub_fail "usage: omahub set $id <limit>. Run 'omahub options $id' to list them."
+      fi
+      if ! omahub_agents_supports barLimit; then
+        omahub_fail "your Agents widget cannot choose its bar limit yet"
+      fi
+      omahub_agents_write barLimit "$(jq -nc --arg value "$value" '$value')"
+      ;;
+    reset)
+      if omahub_agents_supports barLimit; then
+        omahub_agents_write barLimit '"Auto"'
+      fi
+      ;;
+    *) omahub_fail "usage: omahub get|set|options|reset $id" ;;
+  esac
+
+  current=$(omahub_agents_bar_limit)
+  omahub_state "$(jq -nc --arg value "$current" '$value')" "$current"
+}
