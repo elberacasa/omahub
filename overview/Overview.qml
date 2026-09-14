@@ -36,6 +36,8 @@ Item {
   // Hyprland's fresher window list arriving a moment after the key press.
   property int cycleSteps: 0
   property real switchStartedAt: 0
+  // TAB walked on from the first step, even if SHIFT + TAB walked back to it.
+  property bool walked: false
   // A quick tap can let go of SUPER before the overview even opens; that release is remembered.
   property real releasedAt: 0
   property var dragWindow: null
@@ -425,7 +427,10 @@ Item {
       root.query = ""
       root.cycling = true
       root.cycleSteps = 0
+      root.walked = false
       root.switchStartedAt = Date.now()
+    } else {
+      root.walked = true
     }
     root.cycleSteps += step
     root.selectWindow(root.cycleSteps)
@@ -450,7 +455,7 @@ Item {
     } else if (root.cycling) {
       // A slow press with nothing else means looking around, so the overview stays open on the choice.
       // A quick tap, or walking with TAB, jumps.
-      if (root.cycleSteps === 1 && Date.now() - root.switchStartedAt >= 350) {
+      if (root.cycleSteps === 1 && !root.walked && Date.now() - root.switchStartedAt >= 350) {
         root.browseSelection()
       } else {
         root.goToSelected()
@@ -1217,10 +1222,23 @@ Item {
                       color: Util.alpha(Color.menu.text, 0.1)
                     }
 
+                    // One still frame, taken again once a window that just moved or resized has settled,
+                    // so it never keeps a frame from halfway through.
                     ScreencopyView {
+                      id: still
                       anchors.fill: parent
                       captureSource: root.mounted && miniature.modelData.toplevel ? miniature.modelData.toplevel.wayland : null
                       live: false
+                    }
+
+                    onWidthChanged: recapture.restart()
+                    onHeightChanged: recapture.restart()
+
+                    Timer {
+                      id: recapture
+                      interval: 450
+                      running: true
+                      onTriggered: if (still.captureSource) still.captureFrame()
                     }
                   }
                 }

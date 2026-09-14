@@ -50,6 +50,20 @@ check "b has focus" '.focus.class == "omahub-demo-b"' 1
 agent chord SUPER+TAB
 check "a has focus and the overview stays closed" '.focus.class == "omahub-demo-a" and (.omahub.overview.opened | not)' 1
 
+section "Walking on with TAB and back with SHIFT + TAB, then letting go, jumps"
+agent focus b
+agent focus a
+agent hold SUPER
+agent chord TAB
+sleep 0.3
+agent chord TAB
+sleep 0.3
+agent chord SHIFT+TAB
+sleep 0.4
+check "SHIFT + TAB walks back to b" '.omahub.overview.opened and .omahub.overview.selected.address == (.windows[] | select(.class == "omahub-demo-b") | .address)' 1
+agent let-go SUPER
+check "letting go focuses b and closes" '(.omahub.overview.opened | not) and .focus.class == "omahub-demo-b"' 1
+
 section "Shift + a number moves the selected window at once, and u puts it back"
 agent focus a
 agent call open '{"overview":"open"}' >/dev/null
