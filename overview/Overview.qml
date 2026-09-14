@@ -22,6 +22,9 @@ Item {
   property bool searching: false
   property bool cycling: false
   property bool userMoved: false
+  property var dragWindow: null
+  property point dragPoint: Qt.point(0, 0)
+  property var dropTarget: null
 
   readonly property var monitor: Hyprland.focusedMonitor
   readonly property real monitorX: root.monitor ? root.monitor.x : 0
@@ -40,9 +43,11 @@ Item {
   readonly property var selectedDesktop: root.desktops.length > 0
     ? root.desktops[Math.max(0, Math.min(root.desktopIndex, root.desktops.length - 1))] : null
   readonly property bool searchActive: root.searching && root.query !== ""
-  readonly property var shownWindows: root.searchActive
-    ? Model.search(root.desktops, root.query)
-    : (root.selectedDesktop ? root.selectedDesktop.windows : [])
+  readonly property var shownWindows: root.cycling
+    ? Model.recent(root.desktops)
+    : root.searchActive
+      ? Model.search(root.desktops, root.query)
+      : (root.selectedDesktop ? root.selectedDesktop.windows : [])
   readonly property var rects: Model.pack(root.shownWindows, mainArea.width, mainArea.height, root.cardGap)
   readonly property var selectedWindow: root.shownWindows.length > 0 ? root.shownWindows[root.windowIndex] || null : null
 
@@ -52,6 +57,29 @@ Item {
     (overviewWindow.width - Style.space(160) - root.stripGap * root.desktops.length) / Math.max(1, root.desktops.length + 1)))
   readonly property int thumbHeight: Math.round(root.thumbWidth * root.monitorHeight / root.monitorWidth)
   readonly property int labelSpace: Style.space(28)
+
+  // Where the overview's pieces are on screen, in the compositor's coordinates, for demo scripts
+  // and agents that drive it with a pointer.
+  function layoutJson() {
+    function place(item) {
+      var point = item.mapToItem(scene, 0, 0)
+      return {
+        x: Math.round(point.x + root.monitorX), y: Math.round(point.y + root.monitorY),
+        width: Math.round(item.width), height: Math.round(item.height)
+      }
+    }
+    var cards = []
+    for (var i = 0; i < cardRepeater.count; i++) {
+      var card = cardRepeater.itemAt(i)
+      if (card) cards.push(Object.assign({ address: card.modelData.address, workspace: card.modelData.workspace, title: card.modelData.title }, place(card)))
+    }
+    var desktops = []
+    for (var j = 0; j < thumbRepeater.count; j++) {
+      var thumb = thumbRepeater.itemAt(j)
+      if (thumb) desktops.push(Object.assign({ id: thumb.modelData.id }, place(thumb.frame)))
+    }
+    return JSON.stringify({ opened: root.opened, cards: cards, desktops: desktops, newDesktop: place(newTile) })
+  }
 
   function dispatch(command) {
     Quickshell.execDetached(["hyprctl", "dispatch", command])
@@ -85,10 +113,7 @@ Item {
 
   function open(mode) {
     if (root.opened) {
-      if (mode === "next") {
-        root.cycling = true
-        root.selectWindow(root.windowIndex + 1)
-      }
+      if (mode === "next") root.cycle(1)
       return
     }
 
@@ -110,6 +135,18 @@ Item {
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
+  // Walking windows covers every desktop, most recent first. It starts from the window focused now,
+  // so the first step lands on the one used before it.
+  function cycle(step) {
+    if (!root.cycling) {
+      root.searching = false
+      root.query = ""
+      root.cycling = true
+      root.windowIndex = 0
+    }
+    root.selectWindow(root.windowIndex + step)
+  }
+
   function close() {
     if (!root.mounted) return
     root.opened = false
@@ -122,6 +159,12 @@ Item {
     var count = root.shownWindows.length
     if (count === 0) return
     root.windowIndex = ((index % count) + count) % count
+    // While walking, the strip follows the chosen window's desktop.
+    if (root.cycling) {
+      var chosen = root.shownWindows[root.windowIndex]
+      var desktop = chosen ? root.desktops.findIndex(function(item) { return item.id === chosen.workspace }) : -1
+      if (desktop >= 0) root.desktopIndex = desktop
+    }
     if (!fromPointer) {
       root.userMoved = true
       pointerGate.reset()
@@ -184,11 +227,38 @@ Item {
     settleTimer.restart()
   }
 
-  function moveSelectedTo(number) {
-    var window = root.selectedWindow
+  function moveWindow(window, workspace) {
     if (!window) return
-    root.dispatch('hl.dsp.window.move({ workspace = "' + number + '", window = "' + Model.selector(window.address) + '", follow = false })')
+    root.dispatch('hl.dsp.window.move({ workspace = "' + workspace + '", window = "' + Model.selector(window.address) + '", follow = false })')
     settleTimer.restart()
+  }
+
+  function moveSelectedTo(number) {
+    root.moveWindow(root.selectedWindow, String(number))
+  }
+
+  // The desktop thumbnail, or the new desktop tile, under a point in the scene.
+  function desktopAt(point) {
+    var local = stripRow.mapFromItem(scene, point.x, point.y)
+    var target = stripRow.childAt(local.x, local.y)
+    if (!target) return null
+    if (target.isNewDesktop) return { id: "empty" }
+    return target.modelData && target.modelData.id !== undefined ? { id: target.modelData.id } : null
+  }
+
+  function dragTo(window, point) {
+    root.dragWindow = window
+    root.dragPoint = point
+    root.dropTarget = root.desktopAt(point)
+  }
+
+  function dropAt(point) {
+    var window = root.dragWindow
+    var target = root.desktopAt(point)
+    root.dragWindow = null
+    root.dropTarget = null
+    if (!window || !target || target.id === window.workspace) return
+    root.moveWindow(window, String(target.id))
   }
 
   function newDesktop() {
@@ -224,6 +294,11 @@ Item {
     id: settleTimer
     interval: 140
     onTriggered: {
+      // Rebuilding replaces the cards, so it waits for a drag to finish.
+      if (root.dragWindow !== null) {
+        settleTimer.restart()
+        return
+      }
       root.rebuild()
       if (!root.userMoved) root.selectCurrent()
     }
@@ -234,8 +309,10 @@ Item {
     function onRawEvent(event) {
       if (!root.opened) return
       var name = event && event.name ? String(event.name) : ""
+      // Titles are left out on purpose: agents in terminals retitle many times a second, and
+      // cards read titles live, so a title never needs a rebuild.
       if (["openwindow", "closewindow", "movewindow", "movewindowv2", "createworkspace", "createworkspacev2",
-           "destroyworkspace", "destroyworkspacev2", "windowtitle", "windowtitlev2"].indexOf(name) !== -1) {
+           "destroyworkspace", "destroyworkspacev2"].indexOf(name) !== -1) {
         Hyprland.refreshWorkspaces()
         Hyprland.refreshToplevels()
         settleTimer.restart()
@@ -268,7 +345,7 @@ Item {
       // things on screen.
       Rectangle {
         anchors.fill: parent
-        color: Qt.rgba(Color.menu.background.r, Color.menu.background.g, Color.menu.background.b, 0.94)
+        color: Qt.rgba(Color.menu.background.r, Color.menu.background.g, Color.menu.background.b, 0.97)
       }
 
       MouseArea {
@@ -315,10 +392,13 @@ Item {
             } else {
               return
             }
-          } else if (event.key === Qt.Key_Tab) {
-            root.selectWindow(root.windowIndex + 1)
-          } else if (event.key === Qt.Key_Backtab) {
-            root.selectWindow(root.windowIndex - 1)
+          } else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
+            var back = event.key === Qt.Key_Backtab || shifted
+            if (event.modifiers & Qt.MetaModifier) {
+              root.cycle(back ? -1 : 1)
+            } else {
+              root.selectWindow(root.windowIndex + (back ? -1 : 1))
+            }
           } else if (event.key === Qt.Key_Left) {
             root.moveSelection(-1, 0)
           } else if (event.key === Qt.Key_Right) {
@@ -381,6 +461,7 @@ Item {
           spacing: root.stripGap
 
           Repeater {
+            id: thumbRepeater
             model: root.desktops
 
             delegate: Item {
@@ -389,8 +470,10 @@ Item {
               required property int index
 
               readonly property bool current: Hyprland.focusedWorkspace !== null && Hyprland.focusedWorkspace.id === thumb.modelData.id
-              readonly property bool selected: !root.searchActive && thumb.index === root.desktopIndex
+              readonly property bool dropping: root.dropTarget !== null && root.dropTarget.id === thumb.modelData.id
+              readonly property bool selected: (!root.searchActive && thumb.index === root.desktopIndex) || thumb.dropping
               readonly property real ratio: root.thumbWidth / root.monitorWidth
+              readonly property Item frame: thumbFrame
 
               width: root.thumbWidth
               height: root.thumbHeight + root.labelSpace
@@ -401,6 +484,11 @@ Item {
                 height: root.thumbHeight
                 radius: Style.cornerRadius
                 clip: true
+                scale: thumb.dropping ? 1.06 : 1
+
+                Behavior on scale {
+                  NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+                }
                 color: Util.alpha(Color.menu.background, 0.92)
                 border.width: thumb.selected ? Style.space(3) : Math.max(1, Style.space(1))
                 border.color: thumb.selected ? Color.accent
@@ -463,6 +551,9 @@ Item {
           }
 
           Item {
+            id: newTile
+            readonly property bool isNewDesktop: true
+            readonly property bool dropping: root.dropTarget !== null && root.dropTarget.id === "empty"
             width: root.thumbWidth
             height: root.thumbHeight + root.labelSpace
 
@@ -471,9 +562,14 @@ Item {
               width: root.thumbWidth
               height: root.thumbHeight
               radius: Style.cornerRadius
-              color: newMouse.containsMouse ? Util.alpha(Color.menu.background, 0.92) : "transparent"
-              border.width: Math.max(1, Style.space(1))
-              border.color: Util.alpha(Color.menu.text, newMouse.containsMouse ? 0.4 : 0.22)
+              scale: parent.dropping ? 1.06 : 1
+              color: newMouse.containsMouse || parent.dropping ? Util.alpha(Color.menu.background, 0.92) : "transparent"
+              border.width: parent.dropping ? Style.space(3) : Math.max(1, Style.space(1))
+              border.color: parent.dropping ? Color.accent : Util.alpha(Color.menu.text, newMouse.containsMouse ? 0.4 : 0.22)
+
+              Behavior on scale {
+                NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+              }
 
               Text {
                 anchors.centerIn: parent
@@ -577,6 +673,7 @@ Item {
         anchors.rightMargin: Style.space(96)
 
         Repeater {
+          id: cardRepeater
           model: root.shownWindows
 
           delegate: Item {
@@ -655,7 +752,7 @@ Item {
                 spacing: Style.spacing.sm
 
                 Text {
-                  visible: root.searchActive
+                  visible: root.searchActive || root.cycling
                   anchors.verticalCenter: parent.verticalCenter
                   textFormat: Text.PlainText
                   text: String(card.modelData.workspace)
@@ -679,7 +776,10 @@ Item {
                   anchors.verticalCenter: parent.verticalCenter
                   width: Math.min(implicitWidth, card.width - Style.space(90))
                   textFormat: Text.PlainText
-                  text: card.modelData.title !== "" ? card.modelData.title : card.modelData.appId
+                  text: {
+                    var title = card.modelData.toplevel && card.modelData.toplevel.title ? card.modelData.toplevel.title : card.modelData.title
+                    return title !== "" ? title : card.modelData.appId
+                  }
                   color: Color.menu.text
                   elide: Text.ElideRight
                   font.family: Style.font.menuFamily
@@ -688,16 +788,37 @@ Item {
               }
             }
 
+            // A click goes to the window. A drag carries it to a desktop thumbnail.
             MouseArea {
+              id: cardMouse
+              property point pressPoint: Qt.point(0, 0)
+              property bool dragging: false
               anchors.fill: parent
               hoverEnabled: true
-              cursorShape: Qt.PointingHandCursor
-              onPositionChanged: function(mouse) {
-                if (pointerGate.moved(card, mouse)) root.selectWindow(card.index, true)
+              cursorShape: cardMouse.dragging ? Qt.ClosedHandCursor : Qt.PointingHandCursor
+              onPressed: function(mouse) {
+                cardMouse.pressPoint = Qt.point(mouse.x, mouse.y)
+                cardMouse.dragging = false
               }
-              onClicked: {
-                root.windowIndex = card.index
-                root.goToSelected()
+              onPositionChanged: function(mouse) {
+                if (!cardMouse.pressed) {
+                  if (pointerGate.moved(card, mouse)) root.selectWindow(card.index, true)
+                  return
+                }
+                if (!cardMouse.dragging && Math.hypot(mouse.x - cardMouse.pressPoint.x, mouse.y - cardMouse.pressPoint.y) > Style.space(8)) {
+                  cardMouse.dragging = true
+                  root.windowIndex = card.index
+                }
+                if (cardMouse.dragging) root.dragTo(card.modelData, cardMouse.mapToItem(scene, mouse.x, mouse.y))
+              }
+              onReleased: function(mouse) {
+                if (cardMouse.dragging) {
+                  cardMouse.dragging = false
+                  root.dropAt(cardMouse.mapToItem(scene, mouse.x, mouse.y))
+                } else if (cardMouse.containsMouse) {
+                  root.windowIndex = card.index
+                  root.goToSelected()
+                }
               }
             }
           }
@@ -731,6 +852,45 @@ Item {
         }
       }
 
+      // The window being dragged, as a small card under the pointer.
+      BorderSurface {
+        visible: root.dragWindow !== null
+        x: root.dragPoint.x - width / 2
+        y: root.dragPoint.y - height / 2
+        width: dragRow.implicitWidth + Style.spacing.md * 2
+        height: dragRow.implicitHeight + Style.spacing.sm * 2
+        radius: Style.cornerRadius
+        color: Color.menu.background
+        borderSpec: Border.controlSpec("focus", Color.menu.text, Color.accent)
+
+        Row {
+          id: dragRow
+          anchors.centerIn: parent
+          spacing: Style.spacing.sm
+
+          Image {
+            anchors.verticalCenter: parent.verticalCenter
+            width: Style.font.body
+            height: width
+            sourceSize.width: Style.space(32)
+            sourceSize.height: Style.space(32)
+            source: root.dragWindow ? root.iconFor(root.dragWindow.appId) : ""
+            fillMode: Image.PreserveAspectFit
+          }
+
+          Text {
+            anchors.verticalCenter: parent.verticalCenter
+            width: Math.min(implicitWidth, Style.space(260))
+            textFormat: Text.PlainText
+            text: root.dragWindow ? (root.dragWindow.title || root.dragWindow.appId) : ""
+            color: Color.menu.text
+            elide: Text.ElideRight
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.caption
+          }
+        }
+      }
+
       Row {
         id: footer
         anchors.bottom: parent.bottom
@@ -739,7 +899,10 @@ Item {
         spacing: Style.spacing.xxl
 
         Repeater {
-          model: root.searching
+          model: root.cycling
+            ? [{ keys: ["tab"], label: "Next window" }, { keys: ["⇧", "tab"], label: "Previous" },
+               { keys: ["super"], label: "Let go to jump" }, { keys: ["esc"], label: "Cancel" }]
+            : root.searching
             ? [{ keys: ["↑", "↓"], label: "Move" }, { keys: ["enter"], label: "Go" }, { keys: ["esc"], label: "Clear" }]
             : [{ keys: ["h", "l"], label: "Desktops" }, { keys: ["j", "k"], label: "Windows" }, { keys: ["enter"], label: "Go" },
                { keys: ["x"], label: "Close" }, { keys: ["⇧", "1-9"], label: "Move to" }, { keys: ["n"], label: "New" },

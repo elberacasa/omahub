@@ -37,7 +37,9 @@ Item {
   readonly property int edgeGap: Style.gapsOut
   readonly property real maxScale: root.magnify ? 1.5 : 1
   readonly property real magnifyRange: root.cellWidth * 2.5
-  readonly property int baseWidth: root.layout.width + root.dockPadding * 2
+  // The overview button leads the dock, set off from the apps by a divider.
+  readonly property int overviewButtonWidth: root.cellWidth + root.dividerWidth
+  readonly property int baseWidth: root.layout.width + root.dockPadding * 2 + root.overviewButtonWidth
   // Room above the dock for magnified icons and the app name.
   readonly property int bandHeight: Math.ceil(root.iconSize * root.maxScale) + root.dockPadding * 2
     + root.dotSpace + root.edgeGap + Style.space(40)
@@ -83,6 +85,31 @@ Item {
 
   function reload() {
     stateView.reload()
+  }
+
+  // Where the dock's pieces are on screen, in the compositor's coordinates, for demo scripts and
+  // agents that drive it with a pointer. The bottom edge is where a hidden dock wakes up.
+  function layoutJson() {
+    var screen = root.focusedScreen
+    var screenX = screen ? screen.x : 0
+    var screenY = screen ? screen.y : 0
+    var screenHeight = screen ? screen.height : dockWindow.height
+    function place(item) {
+      var point = item.mapToItem(null, 0, 0)
+      return {
+        x: Math.round(screenX + point.x), y: Math.round(screenY + screenHeight - dockWindow.height + point.y),
+        width: Math.round(item.width), height: Math.round(item.height)
+      }
+    }
+    var apps = []
+    for (var i = 0; i < iconRepeater.count; i++) {
+      var cell = iconRepeater.itemAt(i)
+      if (cell) apps.push(Object.assign({ id: cell.modelData.id, name: cell.modelData.name, windows: cell.modelData.windows.length }, place(cell)))
+    }
+    return JSON.stringify({
+      shown: root.shown, apps: apps, overview: place(overviewButton),
+      edge: { x: Math.round(screenX + (screen ? screen.width : 0) / 2), y: Math.round(screenY + screenHeight - 1), width: 1, height: 1 }
+    })
   }
 
   function iconSource(icon) {
@@ -288,7 +315,7 @@ Item {
       }
       onPositionChanged: function(mouse) {
         root.pointerInside = true
-        var origin = (dockWindow.width - root.baseWidth) / 2 + root.dockPadding
+        var origin = (dockWindow.width - root.baseWidth) / 2 + root.dockPadding + root.overviewButtonWidth
         root.pointerX = dockHit.x + mouse.x - origin
       }
     }
@@ -315,20 +342,86 @@ Item {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         anchors.bottomMargin: root.edgeGap
-        width: iconRow.width + root.dockPadding * 2
+        width: iconRow.width + root.dockPadding * 2 + root.overviewButtonWidth
         height: root.baseHeight
         radius: Style.cornerRadius
         color: Util.alpha(Color.menu.background, 0.94)
         borderSpec: Border.surfaceSpec("menu", "border", Color.menu.border, Math.max(1, Style.space(2)))
       }
 
+      Item {
+        id: overviewButton
+        readonly property bool hovered: root.pointerX > -root.overviewButtonWidth && root.pointerX < -root.dividerWidth
+        anchors.left: dockBackground.left
+        anchors.leftMargin: root.dockPadding
+        anchors.bottom: dockBackground.bottom
+        anchors.bottomMargin: root.dockPadding + root.dotSpace
+        width: root.overviewButtonWidth
+        height: root.iconSize
+
+        Text {
+          anchors.centerIn: parent
+          anchors.horizontalCenterOffset: -root.dividerWidth / 2
+          textFormat: Text.PlainText
+          text: "󰖯"
+          color: overviewButton.hovered ? Color.accent : Color.menu.text
+          opacity: overviewButton.hovered ? 1 : 0.8
+          font.family: Style.font.family
+          font.pixelSize: Math.round(root.iconSize * 0.62)
+
+          Behavior on color {
+            ColorAnimation { duration: 120 }
+          }
+        }
+
+        Rectangle {
+          x: root.cellWidth + root.dividerWidth / 2
+          anchors.bottom: parent.bottom
+          width: Math.max(1, Style.space(1))
+          height: root.iconSize
+          color: Util.alpha(Color.menu.text, 0.18)
+        }
+
+        Rectangle {
+          visible: overviewButton.hovered && !root.menuOpen
+          x: (root.cellWidth - width) / 2
+          anchors.bottom: parent.top
+          anchors.bottomMargin: Style.space(8)
+          width: overviewLabel.implicitWidth + Style.spacing.md * 2
+          height: overviewLabel.implicitHeight + Style.spacing.xs * 2
+          radius: Style.cornerRadius
+          color: Color.menu.background
+          border.width: Math.max(1, Style.space(1))
+          border.color: Util.alpha(Color.menu.text, 0.18)
+
+          Text {
+            id: overviewLabel
+            anchors.centerIn: parent
+            textFormat: Text.PlainText
+            text: "Overview"
+            color: Color.menu.text
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.caption
+          }
+        }
+
+        MouseArea {
+          width: root.cellWidth
+          height: parent.height
+          cursorShape: Qt.PointingHandCursor
+          onClicked: Quickshell.execDetached([root.omahub, "open", "overview"])
+        }
+      }
+
       Row {
         id: iconRow
-        anchors.horizontalCenter: dockBackground.horizontalCenter
+        anchors.right: dockBackground.right
+        anchors.rightMargin: root.dockPadding
         anchors.bottom: dockBackground.bottom
         anchors.bottomMargin: root.dockPadding + root.dotSpace
 
         Repeater {
+          id: iconRepeater
           model: root.items
 
           delegate: Item {

@@ -27,8 +27,19 @@ function windowInfo(toplevel) {
     x: Number(at[0]) || 0,
     y: Number(at[1]) || 0,
     width: Number(size[0]) || 0,
-    height: Number(size[1]) || 0
+    height: Number(size[1]) || 0,
+    // Hyprland counts focus history from 0 for the window focused last.
+    focus: data.focusHistoryID !== undefined ? Number(data.focusHistoryID) : 1000
   }
+}
+
+// Every window on every desktop, most recently focused first, the order a window switcher walks.
+function recent(desktopList) {
+  const all = []
+  for (const desktop of desktopList) {
+    for (const window of desktop.windows) all.push(window)
+  }
+  return all.sort((a, b) => a.focus - b.focus)
 }
 
 function readingOrder(a, b) {

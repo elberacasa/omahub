@@ -12,7 +12,7 @@ fi
 results=$(node - "$OMAHUB_PATH/overview/OverviewModel.js" <<'EOF'
 const fs = require("fs")
 const source = fs.readFileSync(process.argv[2], "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { selector, desktops, search, pack, neighbor }")()
+const Model = new Function(source + "\nreturn { selector, desktops, search, pack, neighbor, recent }")()
 const checks = []
 const check = (name, ok) => checks.push({ name, ok: !!ok })
 
@@ -47,6 +47,14 @@ check("windows are in reading order", list[0].windows.map(w => w.address).join("
 check("windows without a size are left out", list[0].windows.length === 2)
 check("search finds windows on every desktop by title or app", Model.search(list, "pric").map(w => w.address).join(",") === "0xc")
 check("every search word must match", Model.search(list, "foot codex").length === 1 && Model.search(list, "foot pricing").length === 0)
+const focused = (item, order) => Object.assign(item, { lastIpcObject: Object.assign(item.lastIpcObject, { focusHistoryID: order }) })
+const history = Model.desktops([workspace(1), workspace(2)], [
+  focused(toplevel("0xa", 1, 10, 40, 940, 1030, "foot", "codex"), 1),
+  focused(toplevel("0xb", 1, 970, 40, 940, 1030, "cursor", "omahub"), 2),
+  focused(toplevel("0xc", 2, 10, 40, 1900, 1030, "chromium", "Pricing"), 0)
+], monitor.name)
+check("walking windows spans every desktop, most recent first", Model.recent(history).map(w => w.address).join(",") === "0xc,0xa,0xb")
+
 check("selectors always carry 0x", Model.selector("55ab") === "address:0x55ab" && Model.selector("0x55ab") === "address:0x55ab")
 
 const two = [{ width: 1920, height: 1080 }, { width: 1920, height: 1080 }]

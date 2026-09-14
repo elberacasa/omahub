@@ -31,10 +31,20 @@ Item {
 
   function close() {
     hub.close()
+    overview.close()
   }
 
   function dockReload() {
     dock.reload()
+  }
+
+  // Where the overview's and the dock's pieces are on screen, for demo scripts and agents.
+  function overviewLayout() {
+    return overview.layoutJson()
+  }
+
+  function dockLayout() {
+    return dock.layoutJson()
   }
 
   Hub {
