@@ -1,63 +1,103 @@
 #!/bin/bash
 
-# desktops/: what a terminal is working on, read from /proc and .git, and how a desktop reads from
-# its windows.
+# desktops/: what the terminals under a window are running, read from the process table, /proc, and
+# .git, and how a desktop reads from its windows. Everything shown is a fact, never a guess.
 
 source "$(dirname "$0")/../base-test.sh"
 
 context="$OMAHUB_PATH/desktops/context.sh"
+started=()
 
-# A terminal: `script` gives the command a terminal device, the way a terminal window does.
+# A terminal: `script` gives the command a terminal device, the way a terminal window does. The process
+# given to context.sh is `script` itself, so the command sits under it like a terminal's shell does.
 start_terminal() {
-  local folder="$1"
-  script -qfec "cd '$folder' && exec sleep 30" /dev/null >/dev/null 2>&1 &
+  local folder="$1" command="$2"
+  script -qfec "cd '$folder' && exec $command" /dev/null >/dev/null 2>&1 &
   terminal=$!
-  for _ in $(seq 30); do
-    pgrep -P "$terminal" >/dev/null && break
+  started+=("$terminal")
+  for _ in $(seq 40); do
+    [[ -n $(pgrep -P "$terminal") ]] && break
     sleep 0.05
   done
-  sleep 0.1
+  sleep 0.15
 }
 
-stop_terminal() {
-  pkill -P "$terminal" 2>/dev/null || true
-  kill "$terminal" 2>/dev/null || true
-  wait "$terminal" 2>/dev/null || true
+# An app whose terminals sit deep under its own process, as an editor's integrated terminal does.
+start_app() {
+  local folder="$1" command="$2"
+  bash -c "script -qfec \"cd '$folder' && exec $command\" /dev/null >/dev/null 2>&1; true" &
+  app=$!
+  started+=("$app")
+  sleep 0.4
 }
+
+stop_all() {
+  local pid
+  for pid in "${started[@]}"; do
+    pkill -P "$pid" 2>/dev/null || true
+    kill "$pid" 2>/dev/null || true
+  done
+  pkill -f "$TEST_ROOT/bin/" 2>/dev/null || true
+  wait 2>/dev/null || true
+  started=()
+}
+trap stop_all EXIT
 
 if ! command -v script >/dev/null 2>&1; then
   pass "script is not installed, so the terminal checks are skipped"
 else
   project="$TEST_ROOT/work/orbit-api"
-  mkdir -p "$project/src"
+  mkdir -p "$project/src" "$TEST_ROOT/bin"
   git -C "$project" init -q -b feature/search
-  start_terminal "$project/src"
+
+  start_terminal "$project/src" "sleep 30"
   output=$("$context" "0xabc=$terminal")
-  assert_eq "a terminal in a git folder reads its project" "$(jq -r '.[0].project' <<<"$output")" "orbit-api"
-  assert_eq "and its branch" "$(jq -r '.[0].branch' <<<"$output")" "feature/search"
-  assert_eq "and the command in front" "$(jq -r '.[0].command' <<<"$output")" "sleep"
-  assert_eq "the folder is a name, never a path" "$(jq -r '.[0].folder' <<<"$output")" "src"
+  session='.[0].sessions[0]'
+  assert_eq "a terminal in a git folder reads its project" "$(jq -r "$session.project" <<<"$output")" "orbit-api"
+  assert_eq "and its branch" "$(jq -r "$session.branch" <<<"$output")" "feature/search"
+  assert_eq "and the command in front" "$(jq -r "$session.command" <<<"$output")" "sleep"
+  assert_eq "and that command's process" "$(jq -r "$session.pid" <<<"$output")" "$(pgrep -P "$terminal" | head -1)"
   assert_eq "the window's address comes back with it" "$(jq -r '.[0].address' <<<"$output")" "0xabc"
   if [[ $output != *"$TEST_ROOT"* ]]; then
     pass "nothing printed shows where the folder lives"
   else
     fail "nothing printed shows where the folder lives"
   fi
-  stop_terminal
+  stop_all
+
+  start_app "$project" "sleep 30"
+  assert_eq "a terminal deep under an app's process is found, as in an editor" \
+    "$("$context" "0xdef=$app" | jq -r '.[0].sessions[0].project')" "orbit-api"
+  stop_all
+
+  # An agent run by a runtime is named by what it runs, like node .../@google/gemini-cli/dist/index.js.
+  mkdir -p "$TEST_ROOT/bin/@google/gemini-cli/dist"
+  printf '#!/bin/bash\nexec sleep 30\n' >"$TEST_ROOT/bin/@google/gemini-cli/dist/index.js"
+  printf '#!/bin/bash\nsleep 30\n' >"$TEST_ROOT/bin/node"
+  chmod +x "$TEST_ROOT/bin/node" "$TEST_ROOT/bin/@google/gemini-cli/dist/index.js"
+  start_terminal "$project" "$TEST_ROOT/bin/node $TEST_ROOT/bin/@google/gemini-cli/dist/index.js"
+  assert_eq "an agent started through a runtime is named by what it runs" \
+    "$("$context" "0x1=$terminal" | jq -r '.[0].sessions[0].command')" "gemini"
+  stop_all
+
+  printf '#!/bin/bash\nsleep 30\n' >"$TEST_ROOT/bin/claude"
+  chmod +x "$TEST_ROOT/bin/claude"
+  start_terminal "$project" "$TEST_ROOT/bin/claude"
+  assert_eq "an agent is named by its own name" "$("$context" "0x2=$terminal" | jq -r '.[0].sessions[0].command')" "claude"
+  stop_all
 
   outside=$(mktemp -d)
-  start_terminal "$outside"
-  assert_eq "a terminal outside git has no project" "$("$context" "0xdef=$terminal" | jq -r '.[0].project')" ""
-  stop_terminal
+  start_terminal "$outside" "sleep 30"
+  assert_eq "a terminal outside git has no project" "$("$context" "0x3=$terminal" | jq -r '.[0].sessions[0].project')" ""
+  stop_all
   rm -rf "$outside"
 fi
 
-# An app: no terminal device, so it is not read as a terminal.
 sleep 30 </dev/null >/dev/null 2>&1 &
-app=$!
-assert_eq "a window without a terminal is left out" "$("$context" "0x9=$app")" "[]"
-kill "$app" 2>/dev/null || true
-wait "$app" 2>/dev/null || true
+lone=$!
+assert_eq "a window without a terminal is left out" "$("$context" "0x9=$lone")" "[]"
+kill "$lone" 2>/dev/null || true
+wait "$lone" 2>/dev/null || true
 
 assert_eq "a window that is gone is left out" "$("$context" "0x1=999999999")" "[]"
 assert_eq "nonsense is left out" "$("$context" "0x1=abc")" "[]"
@@ -70,7 +110,7 @@ fi
 results=$(node - "$OMAHUB_PATH/desktops/DesktopsModel.js" <<'EOF'
 const fs = require("fs")
 const source = fs.readFileSync(process.argv[2], "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { projectFromTitle, windowContext, busy, summary, appIndex, entryFor }")()
+const Model = new Function(source + "\nreturn { projectFromTitle, windowContext, summary, appIndex, entryFor, agentLabel }")()
 const checks = []
 const check = (name, ok) => checks.push({ name, ok: !!ok })
 
@@ -79,15 +119,28 @@ check("a title with only the project works", Model.projectFromTitle("Cursor", "o
 check("an unsaved marker is ignored", Model.projectFromTitle("code", "● app.tsx - lumen - Visual Studio Code") === "lumen")
 check("other apps' titles are not read as projects", Model.projectFromTitle("chromium", "Docs - Orbit - Chromium") === "")
 
-check("an agent in front is an agent", Model.windowContext({ appId: "foot" }, { command: "claude", project: "orbit-api", branch: "main" }).kind === "agent")
-check("a build tool in front is a build", Model.windowContext({ appId: "foot" }, { command: "cargo" }).kind === "build")
-check("an editor app is an editor", Model.windowContext({ appId: "cursor", title: "a - orbit-api - Cursor" }).kind === "editor")
+// Windows and their terminals.
+const cursorSessions = { sessions: [
+  { terminal: "pts/1", command: "claude", project: "omahub", branch: "main" },
+  { terminal: "pts/2", command: "codex", project: "orbit-api", branch: "feature/search" }
+] }
+const omahubWindow = Model.windowContext({ appId: "cursor", title: "Dock.qml - omahub - Cursor" }, cursorSessions)
+check("an editor window only claims the agents in its own project", omahubWindow.project === "omahub" && omahubWindow.agent === "claude")
+const orbitWindow = Model.windowContext({ appId: "cursor", title: "server.ts - orbit-api - Cursor" }, cursorSessions)
+check("and the other window of the same app claims its own", orbitWindow.agent === "codex" && orbitWindow.branch === "feature/search")
+const nvimWindow = Model.windowContext({ appId: "foot", title: "nvim" }, { sessions: [
+  { terminal: "pts/4", command: "nvim", project: "tidewater", branch: "perf/cache" },
+  { terminal: "pts/5", command: "codex", project: "tidewater", branch: "perf/cache" }
+] })
+check("an agent in a terminal inside Neovim is found and wins over the editor", nvimWindow.kind === "agent" && nvimWindow.agent === "codex")
+check("an agent is never working or waiting unless it said so", !omahubWindow.agentWorking && !omahubWindow.agentWaiting)
+const reported = Model.windowContext({ appId: "foot" }, { sessions: [{ command: "claude", project: "lumen", state: "waiting" }] })
+check("an agent that reports waiting shows waiting", reported.agentWaiting && !reported.agentWorking)
+check("an editor app without terminals is an editor", Model.windowContext({ appId: "cursor", title: "a - orbit-api - Cursor" }).kind === "editor")
 check("a branch only comes with a project read from git", Model.windowContext({ appId: "cursor", title: "a - x - Cursor" }).branch === "")
+check("agents go by their own names", Model.agentLabel("claude") === "Claude" && Model.agentLabel("cursor-agent") === "Cursor Agent")
 
-check("a command using a tenth of a processor is busy", Model.busy(100, 110, 1000))
-check("a command using almost nothing is not", !Model.busy(100, 100, 1000))
-check("without an earlier look nothing is busy", !Model.busy(undefined, 110, 1000))
-
+// Desktops.
 const windows = [
   { address: "a", appId: "cursor", appName: "Cursor", focus: 1 },
   { address: "b", appId: "foot", appName: "Terminal", focus: 0 },
@@ -95,26 +148,16 @@ const windows = [
 ]
 const contexts = {
   a: { project: "orbit-api", branch: "", kind: "editor" },
-  b: { project: "orbit-api", branch: "feature/search", kind: "agent", busy: true },
+  b: { project: "orbit-api", branch: "feature/search", kind: "agent", command: "claude", agent: "claude" },
   c: { project: "", kind: "" }
 }
 const desktop = Model.summary({ id: 2, windows: windows }, contexts, "")
 check("a desktop is named after its project", desktop.title === "orbit-api" && !desktop.named)
 check("with the branch git reports", desktop.branch === "feature/search")
 check("apps come in the order they were last used, once each", desktop.apps.map(app => app.appId).join(",") === "foot,cursor,chromium")
-check("a working agent shows, and a waiting one does not", desktop.activity.agentWorking && !desktop.activity.agentWaiting)
+check("the agent running on it shows", desktop.activity.agent === "claude")
 check("media playing shows", desktop.activity.media)
 check("a name given by the person wins", Model.summary({ id: 2, windows: windows }, contexts, "Launch week").title === "Launch week")
-
-const idle = Model.summary({ id: 3, windows: [{ address: "d", appId: "foot", appName: "Terminal", focus: 0 }] },
-  { d: { project: "lumen", kind: "agent", busy: false } }, "")
-check("an agent that is not busy is waiting for you", idle.activity.agentWaiting && !idle.activity.agentWorking)
-const unknown = Model.summary({ id: 3, windows: [{ address: "d", appId: "foot", focus: 0 }] }, { d: { project: "lumen", kind: "agent" } }, "")
-check("an agent looked at only once shows neither working nor waiting", !unknown.activity.agentWaiting && !unknown.activity.agentWorking)
-
-const plain = Model.summary({ id: 4, windows: [{ address: "e", appId: "chrome-web.whatsapp.com__-Default", appName: "WhatsApp", focus: 0 }] }, {}, "")
-check("a desktop without a project is named after its app", plain.title === "WhatsApp" && plain.project === "")
-check("an empty desktop has no title", Model.summary({ id: 5, windows: [] }, {}, "").title === "")
 
 const tool = Model.summary({ id: 7, windows: [{ address: "t", appId: "foot", appName: "Foot", focus: 0 }] }, { t: { project: "", command: "btop", kind: "" } }, "")
 check("a terminal running a tool outside a project names the desktop after the tool", tool.title === "btop")
@@ -131,6 +174,9 @@ check("a window finds its app by startup class", (Model.entryFor("org.gnome.Naut
 check("a window finds its app by id, without .desktop", (Model.entryFor("foot", index) || {}).name === "Foot")
 check("a window with no app finds nothing", Model.entryFor("omahub-demo-a", index) === null)
 
+const plain = Model.summary({ id: 4, windows: [{ address: "e", appId: "chrome-web.whatsapp.com__-Default", appName: "WhatsApp", focus: 0 }] }, {}, "")
+check("a desktop without a project is named after its app", plain.title === "WhatsApp" && plain.project === "")
+check("an empty desktop has no title", Model.summary({ id: 5, windows: [] }, {}, "").title === "")
 const crowded = Model.summary({ id: 6, windows: ["a", "b", "c", "d", "e", "f"].map((id, i) => ({ address: id, appId: "app" + i, focus: i })) }, {}, "")
 check("at most four app icons, and a count of the rest", crowded.apps.length === 4 && crowded.moreApps === 2)
 

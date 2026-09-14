@@ -108,7 +108,6 @@ Item {
   readonly property string omahubCommand: Qt.resolvedUrl("../bin/omahub").toString().replace("file://", "")
   readonly property string desktopsFile: Quickshell.env("HOME") + "/.local/state/omahub/desktops.json"
   property var terminalInfo: ({})
-  property var cpuSeen: ({})
   property var attention: ({})
   property var desktopNames: ({})
   property int renamingDesktop: 0
@@ -124,7 +123,6 @@ Item {
       var windows = desktop.windows.map(function(window) {
         var read = info[window.address]
         var context = Desktops.windowContext(window, read)
-        context.busy = read ? read.busy : undefined
         contexts[window.address] = context
         return {
           address: window.address, appId: window.appId, appName: root.appName(window.appId),
@@ -183,26 +181,17 @@ Item {
       root.terminalInfo = ({})
       return
     }
-    contextReader.startedAt = Date.now()
     contextReader.command = [root.contextScript].concat(pairs)
     contextReader.running = true
   }
 
-  // A command is busy when it used processor time since the look before. The first look has nothing
-  // to compare with, so it leaves busy unknown and shows no activity yet.
-  function readContexts(text, at) {
+  // Each look replaces the one before: what runs in a terminal is read fresh, never inferred.
+  function readContexts(text) {
     var list
     try { list = JSON.parse(text) } catch (e) { return }
     if (!Array.isArray(list)) return
     var next = {}
-    var seen = {}
-    list.forEach(function(item) {
-      var before = root.cpuSeen[item.address]
-      item.busy = before && at - before.at < 5000 ? Desktops.busy(before.cpu, item.cpu, at - before.at) : undefined
-      next[item.address] = item
-      seen[item.address] = { cpu: item.cpu, at: at }
-    })
-    root.cpuSeen = seen
+    list.forEach(function(item) { next[item.address] = item })
     root.terminalInfo = next
   }
 
@@ -237,16 +226,15 @@ Item {
 
   Process {
     id: contextReader
-    property real startedAt: 0
     stdout: StdioCollector {
-      onStreamFinished: root.readContexts(text, contextReader.startedAt)
+      onStreamFinished: root.readContexts(text)
     }
   }
 
-  // The second look comes soon after opening, so activity shows within a moment, then every second.
+  // Terminals are read as the overview opens, then every second while it stays open.
   Timer {
     id: contextTimer
-    interval: Object.keys(root.cpuSeen).length === 0 ? 350 : 1000
+    interval: 1000
     repeat: true
     running: root.opened
     triggeredOnStart: true
@@ -1166,15 +1154,15 @@ Item {
               readonly property Item label: labelColumn
               readonly property var summary: root.summaries[thumb.modelData.id] || null
               readonly property bool renaming: root.renamingDesktop === thumb.modelData.id
-              // What most needs a look on this desktop: a window asking for attention, an agent waiting
-              // for you, an agent working, a build running, or media playing.
+              // What most needs a look on this desktop, from facts only: a window asking for attention,
+              // an agent's own report that it waits or works, the agent running there, or media playing.
               readonly property string activity: {
                 var activity = thumb.summary ? thumb.summary.activity : null
                 if (!activity) return ""
                 if (activity.attention) return "attention"
                 if (activity.agentWaiting) return "waiting"
                 if (activity.agentWorking) return "working"
-                if (activity.building) return "building"
+                if (activity.agent) return "agent"
                 return activity.media ? "media" : ""
               }
               readonly property bool calling: thumb.activity === "attention" || thumb.activity === "waiting"
@@ -1300,7 +1288,7 @@ Item {
 
                     // Work in progress breathes; something waiting on you holds still, so it reads as a call.
                     SequentialAnimation on opacity {
-                      running: thumb.activity === "working" || thumb.activity === "building"
+                      running: thumb.activity === "working"
                       loops: Animation.Infinite
                       NumberAnimation { to: 0.3; duration: 750; easing.type: Easing.InOutSine }
                       NumberAnimation { to: 1; duration: 750; easing.type: Easing.InOutSine }
@@ -1314,7 +1302,8 @@ Item {
                     visible: root.thumbWidth >= Style.space(130)
                     anchors.verticalCenter: parent.verticalCenter
                     textFormat: Text.PlainText
-                    text: ({ attention: "Needs you", waiting: "Your turn", working: "Working", building: "Building", media: "Playing" })[thumb.activity] || ""
+                    text: thumb.activity === "agent" ? Desktops.agentLabel(thumb.summary.activity.agent)
+                      : (({ attention: "Needs you", waiting: "Your turn", working: "Working", media: "Playing" })[thumb.activity] || "")
                     color: Color.menu.text
                     font.family: Style.font.menuFamily
                     font.pixelSize: Style.font.caption
