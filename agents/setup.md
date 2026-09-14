@@ -111,6 +111,8 @@ Then ask how they had it on the Mac, one question at a time, and set only what t
 "$omahub" set dock/autohide off   # keep it on screen, with windows sized around it
 "$omahub" dock pin <app>          # keep another app, by its .desktop name
 "$omahub" dock order <app>...     # keep exactly these apps, in this order
+"$omahub" desktop name <n> <name> # name a desktop, shown in the overview; no name clears it
+"$omahub" desktop names           # the names given so far, as JSON
 ```
 
 ## 7. Switching windows

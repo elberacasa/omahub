@@ -10,7 +10,9 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - A window moved with Shift + a number moves the moment the key is pressed and flies into its desktop's thumbnail, and u or Undo puts it back. The other windows slide into the room it leaves.
 - Holding SUPER from SUPER + TAB is one gesture: pick a desktop with a number, a window with h j k l, the arrows, or the pointer, and letting go of SUPER goes there. Moving windows while holding it keeps the overview open to keep organizing.
 - Holding Shift in the overview lights the desktop numbers and shows the keys that move windows. Dragging a window lights them too, and the desktop under it reads "Move here".
-- Each desktop's label says how many windows are on it.
+- Each desktop in the overview is named after what is on it: the project its terminals and editor are in, with the git branch and its apps' icons. Press r or right-click a desktop to give it your own name, which stays even when the desktop empties, and `omahub desktop name` does the same from a terminal.
+- A badge on each desktop shows what needs a look: a window asking for attention, an agent waiting for your turn, an agent or a build working, or media playing.
+- Search in the overview also finds desktops by their name, project, or branch.
 - Add apps in the dock's menu lists every installed app with the ones in the dock checked. Type to search, and click or press Enter to keep or remove an app.
 - Drag an icon along the dock to move it, drag an open app among the kept ones to keep it there, or drag an icon off the dock to remove it. Shift + h and l move the app under the cursor after SUPER + D.
 - `omahub dock order <app>...` keeps exactly those apps, in that order.

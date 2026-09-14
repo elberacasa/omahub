@@ -60,6 +60,7 @@ omahub edit                 # the projects folder, in the default editor
 omahub project new my-app   # create ~/Projects/my-app with git, then start the default agent
 omahub dock pin obsidian    # keep an app in the dock, by its .desktop file name
 omahub dock order foot chromium obsidian    # keep exactly these apps, in this order
+omahub desktop name 3 "orbit api"           # name desktop 3 in the overview; no name clears it
 ```
 
 The default agent, editor, and projects folder are the settings `projects/default-agent`, `projects/editor`, and `projects/folder`.

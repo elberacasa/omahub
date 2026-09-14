@@ -6,6 +6,7 @@ import Quickshell.Hyprland
 import qs.Commons
 import qs.Ui
 import "OverviewModel.js" as Model
+import "../desktops/DesktopsModel.js" as Desktops
 
 // Every desktop on the focused screen as a live thumbnail, and the selected desktop's windows laid
 // out large with live previews. Keyboard first: h, j, k, and l move between windows like the arrows,
@@ -61,7 +62,7 @@ Item {
   readonly property var shownWindows: {
     if (root.cycling) return Model.recent(root.desktops, root.focusOrder)
     var list = root.searchActive
-      ? Model.search(root.desktops, root.query)
+      ? root.searchWithDesktops()
       : (root.selectedDesktop ? root.selectedDesktop.windows : [])
     var leaving = root.leaving
     return list.filter(function(item) { return leaving[item.address] !== item.workspace })
@@ -99,7 +100,183 @@ Item {
   readonly property int thumbWidth: Math.max(Style.space(56), Math.min(Style.space(210),
     (overviewWindow.width - Style.space(160) - root.stripGap * root.desktops.length) / Math.max(1, root.desktops.length + (root.hasUnopened ? 0 : 1))))
   readonly property int thumbHeight: Math.round(root.thumbWidth * root.monitorHeight / root.monitorWidth)
-  readonly property int labelSpace: Style.space(28)
+  readonly property int labelSpace: Style.space(48)
+
+  // What each desktop is about. Terminals are read every second while the overview is open, editors
+  // name their project in their titles, and names people give desktops come from Omahub's state.
+  readonly property string contextScript: Qt.resolvedUrl("../desktops/context.sh").toString().replace("file://", "")
+  readonly property string omahubCommand: Qt.resolvedUrl("../bin/omahub").toString().replace("file://", "")
+  readonly property string desktopsFile: Quickshell.env("HOME") + "/.local/state/omahub/desktops.json"
+  property var terminalInfo: ({})
+  property var cpuSeen: ({})
+  property var attention: ({})
+  property var desktopNames: ({})
+  property int renamingDesktop: 0
+  property string renameText: ""
+
+  readonly property var summaries: {
+    var names = root.desktopNames
+    var info = root.terminalInfo
+    var attention = root.attention
+    var map = {}
+    root.desktops.forEach(function(desktop) {
+      var contexts = {}
+      var windows = desktop.windows.map(function(window) {
+        var read = info[window.address]
+        var context = Desktops.windowContext(window, read)
+        context.busy = read ? read.busy : undefined
+        contexts[window.address] = context
+        return {
+          address: window.address, appId: window.appId, appName: root.appName(window.appId),
+          focus: window.focus, media: window.media, attention: attention[window.address] === true
+        }
+      })
+      map[desktop.id] = Desktops.summary({ id: desktop.id, windows: windows }, contexts, names[String(desktop.id)] || "")
+    })
+    return map
+  }
+
+  // Apps by id, startup class, and web app site, built again only when apps are installed or removed.
+  readonly property var appIndex: Desktops.appIndex(DesktopEntries.applications.values || [])
+
+  function entryFor(appId) {
+    if (!appId) return null
+    return Desktops.entryFor(appId, root.appIndex) || DesktopEntries.heuristicLookup(String(appId))
+  }
+
+  function appName(appId) {
+    var entry = root.entryFor(appId)
+    return entry && entry.name ? String(entry.name) : String(appId || "")
+  }
+
+  // Search finds windows by title or app, and every window on a desktop whose name, project, or branch
+  // matches, so typing a project finds its whole desktop.
+  function searchWithDesktops() {
+    var found = Model.search(root.desktops, root.query)
+    var words = String(root.query || "").toLowerCase().split(/\s+/).filter(function(word) { return word !== "" })
+    if (words.length === 0) return found
+    var have = {}
+    found.forEach(function(window) { have[window.address] = true })
+    root.desktops.forEach(function(desktop) {
+      var summary = root.summaries[desktop.id]
+      if (!summary) return
+      var haystack = [summary.title, summary.project, summary.branch].join(" ").toLowerCase()
+      if (!words.every(function(word) { return haystack.indexOf(word) >= 0 })) return
+      desktop.windows.forEach(function(window) {
+        if (have[window.address]) return
+        have[window.address] = true
+        found.push(window)
+      })
+    })
+    return found
+  }
+
+  function refreshContexts() {
+    if (contextReader.running) return
+    var pairs = []
+    root.desktops.forEach(function(desktop) {
+      desktop.windows.forEach(function(window) {
+        if (window.pid > 0) pairs.push(window.address + "=" + window.pid)
+      })
+    })
+    if (pairs.length === 0) {
+      root.terminalInfo = ({})
+      return
+    }
+    contextReader.startedAt = Date.now()
+    contextReader.command = [root.contextScript].concat(pairs)
+    contextReader.running = true
+  }
+
+  // A command is busy when it used processor time since the look before. The first look has nothing
+  // to compare with, so it leaves busy unknown and shows no activity yet.
+  function readContexts(text, at) {
+    var list
+    try { list = JSON.parse(text) } catch (e) { return }
+    if (!Array.isArray(list)) return
+    var next = {}
+    var seen = {}
+    list.forEach(function(item) {
+      var before = root.cpuSeen[item.address]
+      item.busy = before && at - before.at < 5000 ? Desktops.busy(before.cpu, item.cpu, at - before.at) : undefined
+      next[item.address] = item
+      seen[item.address] = { cpu: item.cpu, at: at }
+    })
+    root.cpuSeen = seen
+    root.terminalInfo = next
+  }
+
+  function beginRename(id) {
+    if (!(id > 0)) return
+    root.searching = false
+    root.query = ""
+    root.renamingDesktop = id
+    var summary = root.summaries[id]
+    root.renameText = summary && summary.named ? summary.title : ""
+  }
+
+  // Saves the name at once, so the label never waits on the file, and says so if saving failed. An
+  // empty name gives the desktop back its automatic one.
+  function finishRename(save) {
+    var id = root.renamingDesktop
+    root.renamingDesktop = 0
+    if (!save || !(id > 0)) return
+    var text = root.renameText.trim()
+    var names = Object.assign({}, root.desktopNames)
+    if (text === "") delete names[String(id)]
+    else names[String(id)] = text
+    root.desktopNames = names
+    var command = [root.omahubCommand, "desktop", "name", String(id), text]
+    if (renameProcess.running) {
+      Quickshell.execDetached(command)
+    } else {
+      renameProcess.command = command
+      renameProcess.running = true
+    }
+  }
+
+  Process {
+    id: contextReader
+    property real startedAt: 0
+    stdout: StdioCollector {
+      onStreamFinished: root.readContexts(text, contextReader.startedAt)
+    }
+  }
+
+  // The second look comes soon after opening, so activity shows within a moment, then every second.
+  Timer {
+    id: contextTimer
+    interval: Object.keys(root.cpuSeen).length === 0 ? 350 : 1000
+    repeat: true
+    running: root.opened
+    triggeredOnStart: true
+    onTriggered: root.refreshContexts()
+  }
+
+  Process {
+    id: renameProcess
+    onExited: function(exitCode) {
+      if (exitCode !== 0) {
+        root.showNotice("Couldn't rename the desktop")
+        namesView.reload()
+      }
+    }
+  }
+
+  FileView {
+    id: namesView
+    path: root.desktopsFile
+    watchChanges: true
+    printErrors: false
+    onLoaded: {
+      try {
+        var parsed = JSON.parse(text())
+        root.desktopNames = parsed && parsed.names ? parsed.names : ({})
+      } catch (e) {}
+    }
+    onFileChanged: reload()
+    onLoadFailed: root.desktopNames = ({})
+  }
 
   // Where the overview's pieces are on screen, in the compositor's coordinates, for demo scripts
   // and agents that drive it with a pointer.
@@ -119,11 +296,17 @@ Item {
     var desktops = []
     for (var j = 0; j < thumbRepeater.count; j++) {
       var thumb = thumbRepeater.itemAt(j)
-      if (thumb) desktops.push(Object.assign({ id: thumb.modelData.id, unopened: thumb.modelData.unopened }, place(thumb.frame)))
+      if (thumb) desktops.push(Object.assign({
+        id: thumb.modelData.id, unopened: thumb.modelData.unopened,
+        title: thumb.summary ? thumb.summary.title : "", named: thumb.summary ? thumb.summary.named : false,
+        branch: thumb.summary ? thumb.summary.branch : "", activity: thumb.activity,
+        apps: thumb.summary ? thumb.summary.apps.map(function(app) { return app.appId }) : []
+      }, place(thumb.frame), { label: place(thumb.label) }))
     }
     var selected = root.selectedWindow
     return JSON.stringify({
       opened: root.opened, cycling: root.cycling, numbersLit: root.numbersLit, held: root.superHeld, choice: root.heldChoice,
+      renaming: root.renamingDesktop, renameText: root.renameText,
       searching: root.searching, query: root.query,
       undo: root.lastMove ? root.lastMove.to : null, flying: flight.running,
       selected: selected ? { address: selected.address, workspace: selected.workspace, title: selected.title } : null,
@@ -135,9 +318,13 @@ Item {
     Quickshell.execDetached(["hyprctl", "dispatch", command])
   }
 
+  // The app's own icon from its desktop entry, so web apps and apps named differently from their window
+  // class still show their icon.
   function iconFor(appId) {
     var name = String(appId || "").toLowerCase()
-    var themed = name !== "" ? Quickshell.iconPath(name, true) : ""
+    var entry = root.entryFor(appId)
+    var icon = entry && entry.icon ? String(entry.icon) : name
+    var themed = icon === "" ? "" : (icon.charAt(0) === "/" ? "file://" + icon : Quickshell.iconPath(icon, true))
     return themed !== "" ? themed : Quickshell.iconPath("application-x-executable", true)
   }
 
@@ -297,6 +484,7 @@ Item {
   function close() {
     if (!root.mounted) return
     root.cancelDrag()
+    root.finishRename(false)
     root.leaveKeySet()
     root.opened = false
     root.cycling = false
@@ -728,10 +916,23 @@ Item {
     target: Hyprland
     function onRawEvent(event) {
       var name = event && event.name ? String(event.name) : ""
+      // A window asking for attention is marked until it gets focus.
+      if (name === "urgent") {
+        var urgent = "0x" + String(event.data || "").replace(/^0x/, "")
+        var marked = Object.assign({}, root.attention)
+        marked[urgent] = true
+        root.attention = marked
+        return
+      }
       if (name === "activewindowv2") {
         var address = String(event.data || "").replace(/^0x/, "")
         if (address !== "" && address !== "," && !root.cycling) {
           root.focusOrder = [address].concat(root.focusOrder.filter(function(item) { return item !== address })).slice(0, 64)
+        }
+        if (root.attention["0x" + address]) {
+          var cleared = Object.assign({}, root.attention)
+          delete cleared["0x" + address]
+          root.attention = cleared
         }
         return
       }
@@ -801,6 +1002,21 @@ Item {
           if (root.superHeld && !(event.modifiers & Qt.MetaModifier) && event.key !== Qt.Key_Super_L
               && event.key !== Qt.Key_Super_R && event.key !== Qt.Key_Meta) {
             root.superHeld = false
+          }
+          // Typing a desktop's name takes every key until Enter saves it or Esc leaves it as it was.
+          if (root.renamingDesktop > 0) {
+            if (event.key === Qt.Key_Escape) {
+              root.finishRename(false)
+            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+              root.finishRename(true)
+            } else if (Util.editsFilter(event, root.renameText)) {
+              root.renameText = Util.editedFilter(event, root.renameText)
+            } else if ((printable || event.key === Qt.Key_Space) && !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))
+                       && root.renameText.length < 40) {
+              root.renameText += event.text
+            }
+            event.accepted = true
+            return
           }
           if (event.key === Qt.Key_Shift) {
             root.shiftHeld = true
@@ -888,6 +1104,8 @@ Item {
             root.moveWindow(root.selectedWindow, "empty")
           } else if (event.text === "u" && root.lastMove !== null) {
             root.undoMove()
+          } else if (event.text === "r" && root.selectedDesktop) {
+            root.beginRename(root.selectedDesktop.id)
           } else if (event.text === "/") {
             root.searching = true
           } else if (printable) {
@@ -936,6 +1154,21 @@ Item {
               readonly property bool selected: (!root.searchActive && thumb.index === root.desktopIndex) || thumb.dropping
               readonly property real ratio: root.thumbWidth / root.monitorWidth
               readonly property Item frame: thumbFrame
+              readonly property Item label: labelColumn
+              readonly property var summary: root.summaries[thumb.modelData.id] || null
+              readonly property bool renaming: root.renamingDesktop === thumb.modelData.id
+              // What most needs a look on this desktop: a window asking for attention, an agent waiting
+              // for you, an agent working, a build running, or media playing.
+              readonly property string activity: {
+                var activity = thumb.summary ? thumb.summary.activity : null
+                if (!activity) return ""
+                if (activity.attention) return "attention"
+                if (activity.agentWaiting) return "waiting"
+                if (activity.agentWorking) return "working"
+                if (activity.building) return "building"
+                return activity.media ? "media" : ""
+              }
+              readonly property bool calling: thumb.activity === "attention" || thumb.activity === "waiting"
 
               width: root.thumbWidth
               height: root.thumbHeight + root.labelSpace
@@ -1029,34 +1262,173 @@ Item {
                 }
               }
 
-              Text {
+              // The activity badge, in the corner opposite the number.
+              Rectangle {
+                visible: thumb.activity !== "" && !thumb.dropping
+                z: 2
+                anchors.top: thumbFrame.top
+                anchors.right: thumbFrame.right
+                anchors.margins: Style.space(6)
+                width: activityRow.implicitWidth + Style.spacing.sm * 2
+                height: activityText.implicitHeight + Style.spacing.xxs * 2
+                radius: height / 2
+                color: Util.alpha(Color.menu.background, 0.9)
+                border.width: Style.normalBorderWidth
+                border.color: thumb.calling ? Color.urgent : Util.alpha(Color.menu.text, 0.28)
+
+                Row {
+                  id: activityRow
+                  anchors.centerIn: parent
+                  spacing: Style.spacing.xs
+
+                  Rectangle {
+                    id: activityDot
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Style.space(6)
+                    height: width
+                    radius: width / 2
+                    color: thumb.calling ? Color.urgent : Color.accent
+
+                    // Work in progress breathes; something waiting on you holds still, so it reads as a call.
+                    SequentialAnimation on opacity {
+                      running: thumb.activity === "working" || thumb.activity === "building"
+                      loops: Animation.Infinite
+                      NumberAnimation { to: 0.3; duration: 750; easing.type: Easing.InOutSine }
+                      NumberAnimation { to: 1; duration: 750; easing.type: Easing.InOutSine }
+                      onRunningChanged: if (!running) activityDot.opacity = 1
+                    }
+                  }
+
+                  Text {
+                    id: activityText
+                    // A narrow thumbnail keeps only the dot.
+                    visible: root.thumbWidth >= Style.space(130)
+                    anchors.verticalCenter: parent.verticalCenter
+                    textFormat: Text.PlainText
+                    text: ({ attention: "Needs you", waiting: "Your turn", working: "Working", building: "Building", media: "Playing" })[thumb.activity] || ""
+                    color: Color.menu.text
+                    font.family: Style.font.menuFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                }
+              }
+
+              // Under the thumbnail: the desktop's name, then its apps and the branch it is on.
+              Column {
+                id: labelColumn
                 anchors.top: thumbFrame.bottom
                 anchors.topMargin: Style.space(6)
                 anchors.horizontalCenter: thumbFrame.horizontalCenter
-                textFormat: Text.PlainText
-                // The number is on the thumbnail, so the label says what is on the desktop.
-                text: {
-                  var count = thumb.modelData.windows.length
-                  if (thumb.dropping) return "Move here"
-                  if (thumb.modelData.name !== String(thumb.modelData.id)) return thumb.modelData.name
-                  return count === 0 ? "Empty" : count === 1 ? "1 window" : count + " windows"
+                width: root.thumbWidth
+                spacing: Style.space(3)
+
+                Item {
+                  width: parent.width
+                  height: titleText.implicitHeight
+
+                  Text {
+                    id: titleText
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: Math.min(implicitWidth, parent.width - Style.space(4))
+                    textFormat: Text.PlainText
+                    text: {
+                      if (thumb.dropping) return "Move here"
+                      if (thumb.renaming) {
+                        if (root.renameText !== "") return root.renameText
+                        return thumb.summary && thumb.summary.title !== "" && !thumb.summary.named ? thumb.summary.title : "Name this desktop"
+                      }
+                      if (thumb.summary && thumb.summary.title !== "") return thumb.summary.title
+                      return "Empty"
+                    }
+                    elide: thumb.renaming ? Text.ElideLeft : Text.ElideRight
+                    color: thumb.selected || thumb.renaming ? Color.accent : Color.menu.text
+                    opacity: thumb.renaming && root.renameText === "" ? 0.5 : (thumb.selected || thumb.current ? 1 : 0.7)
+                    font.family: Style.font.menuFamily
+                    font.pixelSize: Style.font.caption
+                    font.bold: thumb.selected || thumb.renaming
+                  }
+
+                  // The caret while a name is typed: after the name, or before the suggestion.
+                  Rectangle {
+                    visible: thumb.renaming
+                    x: root.renameText !== "" ? titleText.x + titleText.width + Style.space(1) : titleText.x - Style.space(3)
+                    anchors.verticalCenter: titleText.verticalCenter
+                    width: Math.max(1, Style.space(2))
+                    height: titleText.implicitHeight
+                    color: Color.accent
+
+                    SequentialAnimation on opacity {
+                      running: thumb.renaming
+                      loops: Animation.Infinite
+                      NumberAnimation { to: 1; duration: 0 }
+                      PauseAnimation { duration: 530 }
+                      NumberAnimation { to: 0; duration: 0 }
+                      PauseAnimation { duration: 530 }
+                    }
+                  }
                 }
-                width: Math.min(implicitWidth, root.thumbWidth)
-                elide: Text.ElideRight
-                color: thumb.selected ? Color.accent : Color.menu.text
-                opacity: thumb.selected || thumb.current ? 1 : 0.6
-                font.family: Style.font.menuFamily
-                font.pixelSize: Style.font.caption
-                font.bold: thumb.selected
+
+                Row {
+                  visible: !thumb.renaming && !thumb.dropping && thumb.summary !== null && thumb.modelData.windows.length > 0
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  height: Style.space(16)
+                  spacing: Style.spacing.xs
+
+                  Repeater {
+                    model: thumb.summary ? thumb.summary.apps : []
+
+                    delegate: Image {
+                      required property var modelData
+                      anchors.verticalCenter: parent.verticalCenter
+                      width: Style.space(14)
+                      height: width
+                      sourceSize.width: Style.space(28)
+                      sourceSize.height: Style.space(28)
+                      source: root.iconFor(modelData.appId)
+                      fillMode: Image.PreserveAspectFit
+                      smooth: true
+                      opacity: thumb.selected || thumb.current ? 1 : 0.75
+                    }
+                  }
+
+                  Text {
+                    visible: thumb.summary !== null && thumb.summary.moreApps > 0
+                    anchors.verticalCenter: parent.verticalCenter
+                    textFormat: Text.PlainText
+                    text: thumb.summary ? "+" + thumb.summary.moreApps : ""
+                    color: Color.menu.text
+                    opacity: 0.55
+                    font.family: Style.font.menuFamily
+                    font.pixelSize: Style.font.caption
+                  }
+
+                  Text {
+                    visible: thumb.summary !== null && thumb.summary.branch !== ""
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Math.min(implicitWidth, Math.max(0, root.thumbWidth - Style.space(28)
+                      - (thumb.summary ? thumb.summary.apps.length : 0) * (Style.space(14) + Style.spacing.xs)))
+                    elide: Text.ElideRight
+                    textFormat: Text.PlainText
+                    text: thumb.summary ? String.fromCodePoint(0xE725) + " " + thumb.summary.branch : ""
+                    color: Color.menu.text
+                    opacity: 0.55
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                  }
+                }
               }
 
-              // A click goes to the desktop at once, like clicking a window. h and l still browse
-              // desktops without leaving.
-              // The desktop's name under its thumbnail is part of what can be clicked.
+              // A click goes to the desktop at once, like clicking a window, and a right-click names it.
+              // h and l still browse desktops without leaving. The label under the thumbnail is part of
+              // what can be clicked.
               MouseArea {
                 anchors.fill: parent
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
                 cursorShape: Qt.PointingHandCursor
-                onClicked: root.goToDesktop(thumb.modelData.id)
+                onClicked: function(mouse) {
+                  if (mouse.button === Qt.RightButton) root.beginRename(thumb.modelData.id)
+                  else root.goToDesktop(thumb.modelData.id)
+                }
               }
             }
           }
@@ -1431,7 +1803,14 @@ Item {
                   visible: root.searchActive || root.cycling
                   anchors.verticalCenter: parent.verticalCenter
                   textFormat: Text.PlainText
-                  text: String(card.modelData.workspace)
+                  // The desktop's number and name, since cards from every desktop are mixed together here.
+                  text: {
+                    var summary = root.summaries[card.modelData.workspace]
+                    var number = String(card.modelData.workspace)
+                    return summary && summary.title !== "" ? number + "  " + summary.title : number
+                  }
+                  width: Math.min(implicitWidth, Style.space(160))
+                  elide: Text.ElideRight
                   color: Color.accent
                   font.family: Style.font.menuFamily
                   font.pixelSize: Style.font.caption
@@ -1595,6 +1974,8 @@ Item {
           model: root.cycling
             ? [{ keys: ["tab"], label: "Next window" }, { keys: ["shift", "tab"], label: "Previous" },
                { keys: ["super"], label: "Let go to jump" }, { keys: ["click"], label: "Go" }, { keys: ["esc"], label: "Cancel" }]
+            : root.renamingDesktop > 0
+            ? [{ keys: ["enter"], label: "Save name" }, { keys: [], label: "An empty name brings back the automatic one" }, { keys: ["esc"], label: "Cancel" }]
             : root.dragWindow !== null
             ? [{ keys: [], label: "Drop on a desktop to move the window there" }, { keys: ["esc"], label: "Cancel" }]
             : root.searching
@@ -1603,7 +1984,7 @@ Item {
             ? [{ keys: ["shift", "1-9"], label: "Move the window to that desktop" }, { keys: ["shift", "n"], label: "Move it to a new desktop" },
                { keys: ["shift", "h", "l"], label: "Previous or next desktop" }]
             : [{ keys: ["h", "j", "k", "l"], label: "Move" }, { keys: ["1-9"], label: "Desktop" }, { keys: ["shift"], label: "Hold to move windows" },
-               { keys: ["enter"], label: "Go" }, { keys: ["x"], label: "Close" }, { keys: ["n"], label: "New desktop" },
+               { keys: ["enter"], label: "Go" }, { keys: ["x"], label: "Close" }, { keys: ["r"], label: "Rename" },
                { keys: ["/"], label: "Search" }, { keys: ["esc"], label: "Back" }]
 
           delegate: Row {

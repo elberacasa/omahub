@@ -33,7 +33,9 @@ function windowInfo(toplevel) {
     width: measured ? Number(size[0]) || 0 : 1920,
     height: measured ? Number(size[1]) || 0 : 1080,
     // Hyprland counts focus history from 0 for the window focused last.
-    focus: data.focusHistoryID !== undefined ? Number(data.focusHistoryID) : 1000
+    focus: data.focusHistoryID !== undefined ? Number(data.focusHistoryID) : 1000,
+    pid: Number(data.pid) || 0,
+    media: data.inhibitingIdle === true || data.contentType === "video"
   }
 }
 

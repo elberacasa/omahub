@@ -24,6 +24,8 @@ Usage: omahub <command>
   project new <name>          Create a project and start your agent there (--editor, --no-open)
   dock pins|pin|unpin <app>   List, add, or remove the apps kept in the dock
   dock order <app>...         Keep exactly these apps, in this order
+  desktop names               List the names given to desktops, as JSON
+  desktop name <n> [name]     Name a desktop, or clear its name with no name
   uninstall [--yes]           Reset every setting and remove Omahub's data, before removing the plugin
   version                     Print the Omahub version
 
@@ -121,6 +123,16 @@ new_project() {
   elif [[ $open == "editor" ]]; then
     exec omarchy-launch-editor "$dir"
   fi
+}
+
+desktop_command() {
+  local usage="usage: omahub desktop names|name <number> [name]"
+  source "$OMAHUB_PATH/lib/desktops.sh"
+  case "${1:-}" in
+    names) omahub_desktop_names ;;
+    name) omahub_desktop_name "${2:-}" "${3:-}" ;;
+    *) omahub_fail "$usage" ;;
+  esac
 }
 
 dock_command() {
@@ -236,6 +248,10 @@ case "${1:-help}" in
   dock)
     shift
     dock_command "$@"
+    ;;
+  desktop)
+    shift
+    desktop_command "$@"
     ;;
   uninstall)
     shift
