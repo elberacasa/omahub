@@ -46,6 +46,8 @@ Rectangle {
     return shown
   }
   readonly property color ink: row.hasCursor ? Color.menu.selectedText : Color.menu.text
+  // Chips that would squeeze the title move to their own line under it.
+  readonly property bool stackChips: row.hasChips && choices.implicitWidth > row.width * 0.45
 
   implicitHeight: Math.max(Style.space(58), content.implicitHeight + Style.spacing.rowPaddingX * 2)
   radius: Style.cornerRadius
@@ -123,14 +125,26 @@ Rectangle {
         font.family: Style.font.menuFamily
         font.pixelSize: Style.font.caption
       }
+
+      Item {
+        id: chipsBelow
+        width: parent.width
+        height: row.stackChips ? choices.implicitHeight + Style.spacing.xs : 0
+        visible: row.stackChips
+
+        // A near miss between chips on their own line never reaches the row either.
+        MouseArea {
+          anchors.fill: parent
+        }
+      }
     }
 
     Item {
       id: control
       width: row.setting.kind === "toggle" ? toggle.implicitWidth
-        : row.hasChips ? choices.implicitWidth
+        : row.hasChips ? (row.stackChips ? 0 : choices.implicitWidth)
         : row.setting.kind === "action" ? actionControl.implicitWidth
-        : valueLabel.implicitWidth
+        : Math.min(valueLabel.implicitWidth, row.width * 0.4)
       height: Math.max(toggle.implicitHeight, choices.implicitHeight, valueLabel.implicitHeight, actionControl.implicitHeight)
       anchors.verticalCenter: parent.verticalCenter
       opacity: row.pending ? 0.55 : 1
@@ -164,6 +178,7 @@ Rectangle {
 
       Row {
         id: choices
+        parent: row.stackChips ? chipsBelow : control
         visible: row.hasChips
         anchors.verticalCenter: parent.verticalCenter
         spacing: Style.spacing.xs
@@ -181,9 +196,9 @@ Rectangle {
             bordered: true
             foreground: row.ink
             fontFamily: Style.font.menuFamily
-            fontSize: Style.font.caption
+            fontSize: Style.font.bodySmall
             horizontalPadding: Style.spacing.md
-            verticalPadding: Style.spacing.xs
+            verticalPadding: Style.spacing.controlPaddingY
             onClicked: row.chose(modelData.value)
           }
         }
@@ -194,9 +209,9 @@ Rectangle {
           bordered: true
           foreground: row.ink
           fontFamily: Style.font.menuFamily
-          fontSize: Style.font.caption
+          fontSize: Style.font.bodySmall
           horizontalPadding: Style.spacing.md
-          verticalPadding: Style.spacing.xs
+          verticalPadding: Style.spacing.controlPaddingY
           onClicked: row.moreChosen()
         }
 
@@ -206,9 +221,9 @@ Rectangle {
           bordered: true
           foreground: row.ink
           fontFamily: Style.font.menuFamily
-          fontSize: Style.font.caption
+          fontSize: Style.font.bodySmall
           horizontalPadding: Style.spacing.md
-          verticalPadding: Style.spacing.xs
+          verticalPadding: Style.spacing.controlPaddingY
           onClicked: row.chooseFolder()
         }
       }
@@ -288,9 +303,9 @@ Rectangle {
           selected: row.promptActive
           foreground: row.ink
           fontFamily: Style.font.menuFamily
-          fontSize: Style.font.caption
+          fontSize: Style.font.bodySmall
           horizontalPadding: Style.spacing.md
-          verticalPadding: Style.spacing.xs
+          verticalPadding: Style.spacing.controlPaddingY
           onClicked: row.activated()
         }
       }
@@ -299,6 +314,8 @@ Rectangle {
         id: valueLabel
         visible: row.setting.kind !== "toggle" && !row.hasChips && row.setting.kind !== "action"
         anchors.verticalCenter: parent.verticalCenter
+        width: Math.min(implicitWidth, row.width * 0.4)
+        elide: Text.ElideMiddle
         textFormat: Text.PlainText
         text: row.settingState ? row.settingState.label : ""
         color: row.ink

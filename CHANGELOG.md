@@ -13,6 +13,10 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - `omahub open` lands on a setting even when the hub had not loaded it yet.
 - A click between two choices, or inside a name field, no longer changes the setting.
 - The same change is never sent twice, and changes waiting their turn look it.
+- Chips and buttons in the hub are taller and easier to hit, and a choice with many chips gives them their own line when they would crowd the title.
+- Everything in the hub works from the keyboard: Shift + Space steps a choice back, Shift + Enter opens More… or Choose…, k from the first row reaches Turn on recommended, and Enter tries again after an error.
+- Search has a button to clear it, a click away from a name field cancels it, and the hub opens scrolled to the top.
+- The hub says what to do when Omarchy's folder chooser is missing, and its loading rows leave room for the keyboard card so nothing jumps.
 
 ## 0.1.0 - 2026-09-13
 

@@ -119,6 +119,8 @@ Item {
     pointerGate.reset()
     root.refresh()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    // The list starts at the top, keyboard card included, unless it opens on a particular setting.
+    if (root.pendingSetting === "") Qt.callLater(function() { settingsList.positionViewAtBeginning() })
     Qt.callLater(root.applyPendingSetting)
   }
 
@@ -298,9 +300,16 @@ Item {
     }
   }
 
-  function activate(index) {
+  // Space and Enter change the row under the cursor, and a step of -1 moves a choice back. The
+  // keyboard card above the first row is index -1 while it has settings to turn on.
+  function activate(index, step) {
+    if (index === -1) {
+      root.applyRecommended()
+      return
+    }
     var setting = root.rows[index]
     if (!setting) return
+    if (root.promptId !== "" && root.promptId !== setting.id) root.cancelPrompt()
     root.cursor = index
     if (setting.kind === "toggle") {
       var on = root.states[setting.id] && root.states[setting.id].value === true
@@ -309,7 +318,8 @@ Item {
       var choices = root.options[setting.id] || []
       if (choices.length === 0) return
       var current = choices.findIndex(function(option) { return option.current })
-      root.setValue(setting.id, choices[(current + 1) % choices.length].value)
+      var direction = step === -1 ? -1 : 1
+      root.setValue(setting.id, choices[(current + direction + choices.length) % choices.length].value)
     } else if (setting.kind === "folder") {
       root.chooseFolder(setting)
     } else if (setting.kind === "action") {
@@ -317,6 +327,21 @@ Item {
       else if (setting.prompt) root.beginPrompt(index)
       else root.setValue(setting.id, "run")
     }
+  }
+
+  // Shift + Enter opens what a row keeps behind a button: More… for a choice, Choose… for a folder.
+  function openSecondary(index) {
+    var setting = root.rows[index]
+    if (!setting) return
+    if (setting.kind === "folder") root.chooseFolder(setting)
+    else if (setting.more) root.openMore(setting)
+  }
+
+  readonly property string secondaryLabel: {
+    var setting = root.rows[root.cursor]
+    if (!setting) return ""
+    if (setting.kind === "folder") return "Choose"
+    return setting.more ? "More" : ""
   }
 
   // An action with a prompt asks for its value inline, the way search does: type, Enter to run,
@@ -392,18 +417,29 @@ Item {
     var cursor = folderProcess.returnCursor
     root.open(JSON.stringify({ section: root.sectionId }))
     root.cursor = cursor
-    if (exitCode === 0 && path !== "") root.setValue(folderProcess.settingId, path)
+    if (exitCode === 0 && path !== "") {
+      root.setValue(folderProcess.settingId, path)
+    } else if (exitCode === 127) {
+      var nextErrors = Object.assign({}, root.errors)
+      nextErrors[folderProcess.settingId] = "Couldn't open the folder chooser. Update Omarchy with 'omarchy update', then try again"
+      root.errors = nextErrors
+    }
   }
 
   function applyRecommended() {
     root.pending.forEach(function(id) { root.setValue(id, "on") })
   }
 
+  // The keyboard card takes the cursor above the first row while it offers settings to turn on.
+  readonly property int firstCursor: root.showKeyboardCard && root.pending.length > 0 ? -1 : 0
+  onFirstCursorChanged: if (root.cursor < root.firstCursor) root.cursor = root.firstCursor
+
   function moveCursor(delta) {
     if (root.rows.length === 0) return
     pointerGate.reset()
-    root.cursor = Math.max(0, Math.min(root.rows.length - 1, root.cursor + delta))
-    settingsList.positionViewAtIndex(root.cursor, ListView.Contain)
+    root.cursor = Math.max(root.firstCursor, Math.min(root.rows.length - 1, root.cursor + delta))
+    if (root.cursor < 0) settingsList.positionViewAtBeginning()
+    else settingsList.positionViewAtIndex(root.cursor, ListView.Contain)
   }
 
   function selectSection(id) {
@@ -412,6 +448,7 @@ Item {
     root.query = ""
     root.searching = false
     sectionFade.restart()
+    Qt.callLater(function() { settingsList.positionViewAtBeginning() })
   }
 
   function moveSection(delta) {
@@ -587,7 +624,8 @@ Item {
 
       transform: Translate { id: rise }
 
-      MouseArea { anchors.fill: parent; onClicked: {} }
+      // A click on the card away from any row leaves a name field without running it.
+      MouseArea { anchors.fill: parent; onClicked: root.cancelPrompt() }
 
       Item {
         id: keyCatcher
@@ -644,8 +682,12 @@ Item {
             root.moveSection(-1)
           } else if (event.key === Qt.Key_Right || event.text === "l" || event.key === Qt.Key_Tab) {
             root.moveSection(1)
+          } else if (root.loadError !== "" && (event.key === Qt.Key_Space || event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) {
+            root.refresh()
+          } else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && (event.modifiers & Qt.ShiftModifier)) {
+            root.openSecondary(root.cursor)
           } else if (event.key === Qt.Key_Space || event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-            root.activate(root.cursor)
+            root.activate(root.cursor, (event.modifiers & Qt.ShiftModifier) ? -1 : 1)
           } else if (event.text === "/") {
             if (root.view === "welcome") root.showAll("")
             else root.searching = true
@@ -803,6 +845,36 @@ Item {
               cursorShape: Qt.IBeamCursor
               onClicked: root.searching = true
             }
+
+            // Search can be left with the mouse too.
+            Item {
+              anchors.right: parent.right
+              anchors.top: parent.top
+              anchors.bottom: parent.bottom
+              width: root.headerHeight
+              visible: root.searching || root.query !== ""
+
+              Text {
+                anchors.centerIn: parent
+                textFormat: Text.PlainText
+                text: String.fromCodePoint(0xF0156)
+                color: Color.menu.text
+                opacity: clearMouse.containsMouse ? 1 : 0.6
+                font.family: Style.font.family
+                font.pixelSize: Style.font.icon
+              }
+
+              MouseArea {
+                id: clearMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                  root.setQuery("")
+                  root.searching = false
+                }
+              }
+            }
           }
         }
 
@@ -868,6 +940,22 @@ Item {
               visible: root.loadError === "" && !root.statesReady
               width: parent.width
               spacing: Style.spacing.sm
+
+              // Where the keyboard card will be, so the rows do not jump down when it appears.
+              Rectangle {
+                visible: root.query === "" && (root.view === "welcome" || root.sectionId === "keyboard")
+                width: parent.width
+                height: Style.space(96)
+                radius: Style.cornerRadius
+                color: Util.alpha(Color.menu.text, 0.04)
+
+                SequentialAnimation on opacity {
+                  running: root.mounted && !root.statesReady
+                  loops: Animation.Infinite
+                  NumberAnimation { to: 0.5; duration: 700; easing.type: Easing.InOutSine }
+                  NumberAnimation { to: 1; duration: 700; easing.type: Easing.InOutSine }
+                }
+              }
 
               Repeater {
                 model: 4
@@ -951,7 +1039,7 @@ Item {
                   height: keyboardContent.implicitHeight + Style.spacing.panelPadding * 2
                   radius: Style.cornerRadius
                   color: Util.alpha(Color.menu.text, 0.04)
-                  borderSpec: Border.controlSpec("normal", Color.menu.text, Color.accent)
+                  borderSpec: Border.controlSpec(root.cursor === -1 ? "focus" : "normal", Color.menu.text, Color.accent)
 
                   Row {
                     id: keyboardContent
@@ -1086,9 +1174,10 @@ Item {
             model: [
               { keys: ["j", "k"], label: "Move" },
               { keys: ["h", "l"], label: "Sections", hidden: root.view !== "hub" || root.sections.length < 2 },
-              { keys: ["space"], label: "Change" },
+              { keys: ["space"], label: root.cursor === -1 ? "Turn on" : "Change" },
+              { keys: ["shift", "enter"], label: root.secondaryLabel, hidden: root.secondaryLabel === "" },
               { keys: ["/"], label: root.view === "welcome" ? "All settings" : "Search" },
-              { keys: ["esc"], label: "Close", hidden: root.view === "welcome" },
+              { keys: ["esc"], label: root.view === "welcome" ? "Done" : "Close" },
               { keys: ["enter"], label: root.promptAction, prompt: true },
               { keys: ["esc"], label: "Cancel", prompt: true }
             ].filter(function(hint) {
