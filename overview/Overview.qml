@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import Quickshell.Wayland
 import Quickshell.Hyprland
 import qs.Commons
@@ -7,8 +8,10 @@ import qs.Ui
 import "OverviewModel.js" as Model
 
 // Every desktop on the focused screen as a live thumbnail, and the selected desktop's windows laid
-// out large with live previews. Keyboard first: h and l move between desktops, j, k, Tab, and the
-// arrows between windows, Enter goes, x closes, Shift + a number moves a window, typing searches.
+// out large with live previews. Keyboard first: h, j, k, and l move between windows like the arrows,
+// and past the end of a row to the next desktop. Shift + h and l jump desktops, Tab walks windows,
+// Enter goes, x closes, Shift + a number moves a window, Shift + n moves it to a new desktop, and
+// typing searches.
 // Opened again while SUPER is held, it walks windows and letting go of SUPER jumps to the choice.
 Item {
   id: root
@@ -65,7 +68,8 @@ Item {
 
   readonly property int cardGap: Style.space(32)
   readonly property int stripGap: Style.space(14)
-  readonly property int thumbWidth: Math.max(Style.space(90), Math.min(Style.space(210),
+  // Many desktops shrink their thumbnails before the strip would run off the screen.
+  readonly property int thumbWidth: Math.max(Style.space(56), Math.min(Style.space(210),
     (overviewWindow.width - Style.space(160) - root.stripGap * root.desktops.length) / Math.max(1, root.desktops.length + 1)))
   readonly property int thumbHeight: Math.round(root.thumbWidth * root.monitorHeight / root.monitorWidth)
   readonly property int labelSpace: Style.space(28)
@@ -164,10 +168,28 @@ Item {
     exitAnimation.stop()
     root.mounted = true
     root.opened = true
+    root.enterKeySet()
     enterAnimation.restart()
     pointerGate.reset()
     settleTimer.restart()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  // While open, Hyprland switches to the overview's own key set from keymaps/overview.lua, so SUPER
+  // shortcuts held over from SUPER + TAB never move windows behind it. Without that keyboard layer the
+  // key set does not exist and Hyprland ignores the switch.
+  property bool inKeySet: false
+
+  function enterKeySet() {
+    if (root.inKeySet) return
+    root.inKeySet = true
+    root.dispatch('hl.dsp.submap("omahub-overview")')
+  }
+
+  function leaveKeySet() {
+    if (!root.inKeySet) return
+    root.inKeySet = false
+    root.dispatch('hl.dsp.submap("reset")')
   }
 
   // Walking windows covers every desktop, most recent first. It starts from the window focused now,
@@ -213,6 +235,8 @@ Item {
 
   function close() {
     if (!root.mounted) return
+    root.cancelDrag()
+    root.leaveKeySet()
     root.opened = false
     root.cycling = false
     enterAnimation.stop()
@@ -295,14 +319,63 @@ Item {
   function closeSelected() {
     var window = root.selectedWindow
     if (!window) return
-    root.dispatch('hl.dsp.window.close({ window = "' + Model.selector(window.address) + '" })')
+    root.dispatchChecked('hl.dsp.window.close({ window = "' + Model.selector(window.address) + '" })',
+      "Couldn't close " + (window.title || "the window"))
     settleTimer.restart()
   }
 
   function moveWindow(window, workspace) {
     if (!window) return
-    root.dispatch('hl.dsp.window.move({ workspace = "' + workspace + '", window = "' + Model.selector(window.address) + '", follow = false })')
+    root.dispatchChecked('hl.dsp.window.move({ workspace = "' + workspace + '", window = "' + Model.selector(window.address) + '", follow = false })',
+      "Couldn't move " + (window.title || "the window"))
     settleTimer.restart()
+  }
+
+  // Closing and moving windows are checked, so a window Hyprland refuses to close or move says so
+  // instead of nothing happening. A second action while one is being checked runs unchecked.
+  function dispatchChecked(command, failure) {
+    if (checkedDispatch.running) {
+      root.dispatch(command)
+      return
+    }
+    checkedDispatch.failure = failure
+    checkedDispatch.reported = false
+    checkedDispatch.command = ["hyprctl", "dispatch", command]
+    checkedDispatch.running = true
+  }
+
+  function showNotice(text) {
+    root.notice = text
+    noticeTimer.restart()
+  }
+
+  property string notice: ""
+
+  Timer {
+    id: noticeTimer
+    interval: 3000
+    onTriggered: root.notice = ""
+  }
+
+  Process {
+    id: checkedDispatch
+    property string failure: ""
+    property bool reported: false
+    stdout: StdioCollector {
+      onStreamFinished: {
+        var answer = String(text || "").toLowerCase()
+        if (!checkedDispatch.reported && (answer.indexOf("error") >= 0 || answer.indexOf("invalid") >= 0 || answer.indexOf("no such") >= 0)) {
+          checkedDispatch.reported = true
+          root.showNotice(checkedDispatch.failure)
+        }
+      }
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0 && !checkedDispatch.reported) {
+        checkedDispatch.reported = true
+        root.showNotice(checkedDispatch.failure)
+      }
+    }
   }
 
   function moveSelectedTo(number) {
@@ -331,6 +404,13 @@ Item {
     root.dropTarget = null
     if (!window || !target || target.id === window.workspace) return
     root.moveWindow(window, String(target.id))
+  }
+
+  // A drag that ends without a drop, from Esc, closing the overview, or the pointer being taken
+  // away, leaves nothing behind: no floating card, and no rebuild left waiting for it.
+  function cancelDrag() {
+    root.dragWindow = null
+    root.dropTarget = null
   }
 
   function newDesktop() {
@@ -444,10 +524,14 @@ Item {
           var plain = !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))
           var shifted = (event.modifiers & Qt.ShiftModifier) !== 0
           var printable = event.text.length === 1 && event.text.charCodeAt(0) > 32 && event.text.charCodeAt(0) !== 127
-          var shiftedDigits = ")!@#$%^&*("
+          // The number row by its physical keys, 1 to 9 and then 0 for 10, so every keyboard layout
+          // moves and jumps the same way.
+          var digit = event.nativeScanCode >= 10 && event.nativeScanCode <= 19 ? ((event.nativeScanCode - 9) % 10 || 10) : -1
 
           if (event.key === Qt.Key_Escape) {
-            if (root.searching) {
+            if (root.dragWindow !== null) {
+              root.cancelDrag()
+            } else if (root.searching) {
               root.setQuery("")
               root.searching = false
             } else {
@@ -490,24 +574,30 @@ Item {
             root.moveSelection(0, 1)
           } else if (event.key === Qt.Key_Space) {
             root.goToSelected()
+          } else if (digit > 0 && !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier))) {
+            // SUPER may still be held from SUPER + TAB, and the overview's key set leaves numbers to it.
+            if (shifted) root.moveSelectedTo(digit)
+            else root.goToDesktopNumber(digit)
           } else if (!plain) {
             return
           } else if (event.text === "h") {
-            root.selectDesktop(root.desktopIndex - 1)
+            root.moveSelection(-1, 0)
           } else if (event.text === "l") {
-            root.selectDesktop(root.desktopIndex + 1)
-          } else if (event.text === "j") {
-            root.selectWindow(root.windowIndex + 1)
+            root.moveSelection(1, 0)
           } else if (event.text === "k") {
-            root.selectWindow(root.windowIndex - 1)
+            root.moveSelection(0, -1)
+          } else if (event.text === "j") {
+            root.moveSelection(0, 1)
+          } else if (event.text === "H") {
+            root.selectDesktop(root.desktopIndex - 1)
+          } else if (event.text === "L") {
+            root.selectDesktop(root.desktopIndex + 1)
           } else if (event.text === "x") {
             root.closeSelected()
           } else if (event.text === "n") {
             root.newDesktop()
-          } else if (!shifted && event.text >= "0" && event.text <= "9" && event.text.length === 1) {
-            root.goToDesktopNumber(Number(event.text) || 10)
-          } else if (shifted && event.text.length === 1 && shiftedDigits.indexOf(event.text) >= 0) {
-            root.moveSelectedTo(shiftedDigits.indexOf(event.text) || 10)
+          } else if (event.text === "N") {
+            root.moveWindow(root.selectedWindow, "empty")
           } else if (event.text === "/") {
             root.searching = true
           } else if (printable) {
@@ -611,6 +701,8 @@ Item {
                 anchors.horizontalCenter: thumbFrame.horizontalCenter
                 textFormat: Text.PlainText
                 text: thumb.modelData.name
+                width: Math.min(implicitWidth, root.thumbWidth)
+                elide: Text.ElideRight
                 color: thumb.selected ? Color.accent : Color.menu.text
                 opacity: thumb.selected || thumb.current ? 1 : 0.6
                 font.family: Style.font.menuFamily
@@ -620,8 +712,9 @@ Item {
 
               // A click goes to the desktop at once, like clicking a window. h and l still browse
               // desktops without leaving.
+              // The desktop's name under its thumbnail is part of what can be clicked.
               MouseArea {
-                anchors.fill: thumbFrame
+                anchors.fill: parent
                 cursorShape: Qt.PointingHandCursor
                 onClicked: root.goToDesktop(thumb.modelData.id)
               }
@@ -674,12 +767,45 @@ Item {
 
             MouseArea {
               id: newMouse
-              anchors.fill: newFrame
+              anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
               onClicked: root.newDesktop()
             }
           }
+        }
+      }
+
+      // A short message when closing or moving a window did not work.
+      Rectangle {
+        z: 2
+        visible: opacity > 0
+        opacity: root.notice !== "" ? 1 : 0
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Style.space(72)
+        width: Math.min(noticeText.implicitWidth + Style.spacing.lg * 2, parent.width * 0.6)
+        height: noticeText.implicitHeight + Style.spacing.sm * 2
+        radius: height / 2
+        color: Util.alpha(Color.menu.background, 0.94)
+        border.width: Math.max(1, Style.space(1))
+        border.color: Util.alpha(Color.urgent, 0.6)
+
+        Behavior on opacity {
+          NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+        }
+
+        Text {
+          id: noticeText
+          anchors.centerIn: parent
+          width: parent.width - Style.spacing.lg * 2
+          horizontalAlignment: Text.AlignHCenter
+          elide: Text.ElideMiddle
+          textFormat: Text.PlainText
+          text: root.notice
+          color: Color.menu.text
+          font.family: Style.font.menuFamily
+          font.pixelSize: Style.font.body
         }
       }
 
@@ -715,6 +841,9 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             textFormat: Text.PlainText
             text: root.query !== "" ? root.query : "Search windows"
+            // A long search keeps its end in view, where the typing is.
+            width: Math.min(implicitWidth, Style.space(520))
+            elide: Text.ElideLeft
             color: Color.menu.text
             opacity: root.query !== "" ? 1 : 0.5
             font.family: Style.font.menuFamily
@@ -856,7 +985,7 @@ Item {
                   textFormat: Text.PlainText
                   text: {
                     var title = card.modelData.toplevel && card.modelData.toplevel.title ? card.modelData.toplevel.title : card.modelData.title
-                    return title !== "" ? title : card.modelData.appId
+                    return title !== "" ? title : (card.modelData.appId || "Untitled window")
                   }
                   color: Color.menu.text
                   elide: Text.ElideRight
@@ -866,20 +995,26 @@ Item {
               }
             }
 
-            // A click goes to the window. A drag carries it to a desktop thumbnail.
+            // A click goes to the window, a middle click closes it, and a drag carries it to a desktop
+            // thumbnail.
             MouseArea {
               id: cardMouse
               property point pressPoint: Qt.point(0, 0)
               property bool dragging: false
               anchors.fill: parent
               hoverEnabled: true
+              acceptedButtons: Qt.LeftButton | Qt.MiddleButton
               cursorShape: cardMouse.dragging ? Qt.ClosedHandCursor : Qt.PointingHandCursor
               onPressed: function(mouse) {
                 cardMouse.pressPoint = Qt.point(mouse.x, mouse.y)
                 cardMouse.dragging = false
               }
+              onCanceled: {
+                cardMouse.dragging = false
+                root.cancelDrag()
+              }
               onPositionChanged: function(mouse) {
-                if (!cardMouse.pressed) {
+                if (!cardMouse.pressed || !(cardMouse.pressedButtons & Qt.LeftButton)) {
                   // Cards zoom in under a resting pointer as the overview opens, so only a pointer
                   // that really moves after that picks a window.
                   if (enterAnimation.running) return
@@ -893,7 +1028,12 @@ Item {
                 if (cardMouse.dragging) root.dragTo(card.modelData, cardMouse.mapToItem(scene, mouse.x, mouse.y))
               }
               onReleased: function(mouse) {
-                if (cardMouse.dragging) {
+                if (mouse.button === Qt.MiddleButton) {
+                  if (cardMouse.containsMouse) {
+                    root.windowIndex = card.index
+                    root.closeSelected()
+                  }
+                } else if (cardMouse.dragging) {
                   cardMouse.dragging = false
                   root.dropAt(cardMouse.mapToItem(scene, mouse.x, mouse.y))
                 } else if (cardMouse.containsMouse) {
@@ -906,7 +1046,7 @@ Item {
         }
 
         Column {
-          visible: root.shownWindows.length === 0 && (root.settled || root.searchActive)
+          visible: root.shownWindows.length === 0 && (root.settled || root.searchActive) && !root.cycling
           anchors.centerIn: parent
           spacing: Style.spacing.md
 
@@ -914,6 +1054,8 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             textFormat: Text.PlainText
             text: root.searchActive ? "No windows match “" + root.query + "”" : "Empty desktop"
+            width: Math.min(implicitWidth, root.monitorWidth * 0.6)
+            elide: Text.ElideMiddle
             color: Color.menu.text
             opacity: 0.8
             font.family: Style.font.menuFamily
@@ -985,8 +1127,9 @@ Item {
                { keys: ["super"], label: "Let go to jump" }, { keys: ["click"], label: "Go" }, { keys: ["esc"], label: "Cancel" }]
             : root.searching
             ? [{ keys: ["↑", "↓"], label: "Move" }, { keys: ["enter"], label: "Go" }, { keys: ["esc"], label: "Clear" }]
-            : [{ keys: ["h", "l"], label: "Desktops" }, { keys: ["j", "k"], label: "Windows" }, { keys: ["enter"], label: "Go" },
+            : [{ keys: ["h", "j", "k", "l"], label: "Move" }, { keys: ["⇧", "h", "l"], label: "Desktops" }, { keys: ["enter"], label: "Go" },
                { keys: ["x"], label: "Close" }, { keys: ["⇧", "1-9"], label: "Move to" }, { keys: ["n"], label: "New" },
+               { keys: ["⇧", "n"], label: "To new desktop" },
                { keys: ["/"], label: "Search" }, { keys: ["esc"], label: "Back" }]
 
           delegate: Row {

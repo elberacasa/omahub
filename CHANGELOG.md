@@ -20,6 +20,11 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - Error messages say what went wrong and how to fix it, and name a value that was not understood.
 - Setting summaries say one thing each, and the README, the agent guide, and the skill match what ships, including how to remove Omahub.
 - Menu items and hints use sentence case, such as "Open in editor" and "Press Enter to go there".
+- In the overview, h, j, k, and l move like the arrows, Shift + h and l jump desktops, and Shift + n moves the window to a new desktop. A middle click closes a window.
+- Shift + a number moves a window on every keyboard layout, not only US ones.
+- Esc during a drag in the overview cancels it, instead of leaving the dragged card stuck.
+- While the overview is open, Omarchy's SUPER shortcuts step aside, so dragging a card with SUPER still held from SUPER + TAB no longer moves a window behind it, and SUPER + SHIFT + a number moves a window once.
+- Many desktops fit in the overview's strip, long names and searches are shortened instead of spilling, and a window with no title reads "Untitled window".
 - The screenshot thumbnail slides in at its real size, instead of resizing after it appears, and shows the file's name when the image can't be shown.
 - The thumbnail says Copied only after the copy worked, and says so when copying, opening the editor or Files, moving to trash, or saving fails, instead of disappearing.
 - A screenshot taken while the thumbnail is saving or being dragged shows as soon as it is free, instead of being lost.

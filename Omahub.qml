@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 import "hub"
 import "capture"
 import "dock"
@@ -13,6 +14,11 @@ Item {
   id: root
 
   readonly property bool opened: hub.opened
+
+  // The overview and the dock turn SUPER shortcuts off while they have the keyboard. If the shell stopped
+  // in the middle, Hyprland would stay in that key set, so a starting shell always switches back.
+  Component.onCompleted: Quickshell.execDetached(["hyprctl", "eval",
+    'local current = hl.get_current_submap() if current == "omahub-overview" or current == "omahub-dock" then hl.dispatch(hl.dsp.submap("reset")) end'])
 
   function open(payloadJson) {
     var payload = {}
