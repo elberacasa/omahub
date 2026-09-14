@@ -4,61 +4,50 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 
 ## Unreleased
 
+## 0.1.0 - 2026-09-13
+
+The first release: the Mac layer for Omarchy, one plugin with a hub for every setting. Nothing changes until you turn it on, and `omahub uninstall` puts everything back.
+
 ### Added
 
-- Switchable keyboard layouts in `scripts/keymap.sh`: Omarchy defaults or Mac screenshot keys, with SUPER + A for Omahub in both.
-- Mac screenshot keys use Omahub Capture when it is installed and fall back to Omarchy's screenshot flow when it is not.
-- Development tools: `bin/dev-sync`, plus `bin/take`, `bin/frames`, and `bin/export-media` for recording takes and reviewing motion frame by frame.
-- Keycap brand in `assets/`: mark, logo, and an animated hero for light and dark grounds, plus a block-character logo for terminals.
+#### Hub
+
+- SUPER + A opens a search-first hub of every setting, grouped by section, with the real state of your system in every row. j and k move, h and l switch sections, Space changes, / searches, and Esc closes.
+- A welcome opens once on first load with your detected keyboard, the settings recommended for it, the screenshot thumbnail, the dock, and your default agent and editor. `omahub open welcome` brings it back.
+- Settings are files. Each one is a small executable with `# omahub:` headers, and a file with the same name in `~/.config/omahub/settings` replaces the shipped one. See `docs/settings.md`.
+- The `omahub` command runs the same settings from a terminal or an agent: `settings`, `get`, `set`, `options`, `reset`, `open`, `agent`, `edit`, `project new`, `dock`, `uninstall`, and `version`.
+
+#### Keyboard
+
+- Detects your keyboard and recommends the settings that fit it. Contributors add a keyboard with one file in `keyboards/`.
+- The Omahub key (SUPER + A), Mac screenshot keys, Vim focus, agent keys, mouse side buttons, and SUPER + TAB, each a setting you can turn off.
+- No Omarchy action loses its key. Every change compares the actions before and after, and undoes itself if one would lose its key. The README lists where moved actions now live.
+- Each layer loads on its own, so a layer broken by an Omarchy update is skipped and named instead of stopping the rest of your bindings.
+
+#### Overview
+
+- SUPER + TAB flips to your last window with a tap. Held, it walks every window on every desktop, most recently used first, with live previews, and letting go jumps. A slow press stays open so you can look around and click any window.
+- Every desktop as a live thumbnail: click one to go there, drag a window onto it to move it, and type to search every window. h, j, k, and l, Enter, x, Shift + a number, and n work from the keyboard.
+
+#### Dock
+
+- Your kept and open apps on a soft rounded shelf that follows your theme, starting from Omarchy's default terminal, browser, file manager, and editor.
+- The Mac's dock settings: position on the left, bottom, or right, size, magnification, automatic hiding that steps aside only when a window reaches the dock, open app dots, open apps after a divider, the bounce when an app opens, and optional icon tiles.
+- Kept on screen, the dock reserves its room so windows sit beside it. A right-click opens, keeps, or quits apps and changes the dock, and `omahub dock pin <app>` does the same from a terminal.
+
+#### Screenshots
+
+- A floating thumbnail after every screenshot: click to edit, drag into any app, drag right to dismiss, or right-click to copy, show in Files, trash, or save somewhere else.
+- Pick the screenshot folder from the hub.
+
+#### Projects and agents
+
+- New project: type a name, and Omahub creates the folder, starts git, and opens your agent or editor there.
+- Your default agent, editor, and projects folder, built on Omarchy's own `omarchy default` commands, so agents and editors Omarchy adds appear on their own.
+- Choose which subscriptions show in Omarchy's Agents panel, put their limits on the bar, and pick for each plan which limit shows. Hovering a percentage names the limit and when it resets.
+- An agent skill and a setup guide in `agents/`, so any coding agent can set up Omahub with you, asking before every change.
+
+#### Development
+
+- `test/all` runs every test against a disposable home, and `dev/` has tools to sync the plugin, record takes, script demos, and review motion frame by frame.
 - `AGENTS.md`, `CONTRIBUTING.md`, a code of conduct, a security policy, and issue and pull request templates.
-- The `omahub` command: `settings`, `get`, `set`, `options`, `reset`, `open`, and `version`, shared by the hub, the terminal, and agents.
-- Settings as files. Each setting is one executable with `# omahub:` headers, found across Omahub, its sibling plugins, and `~/.config/omahub/settings`, where a file with the same name replaces the shipped one. Documented in `docs/settings.md`.
-- `test/all`, which runs every test against a disposable home.
-- Keyboard settings compare the actions Omarchy has keys for before and after every change, and undo the change if any action would lose its key.
-- `keyboard/vim-focus`: H, J, K, and L focus, swap, and group windows wherever Omarchy uses arrows. Keybindings join a help family on `/`.
-- `keyboard/agent-keys`: Agent on SUPER + SHIFT + A, browser on SUPER + B, and dictation on SUPER + R.
-- `keyboard/mouse-buttons`: hold SUPER and press a mouse side button to take a screenshot or toggle dictation.
-- `keyboard/size`: detects the keyboard from known models and its name, and recommends the keyboard settings that fit it. Contributors add a keyboard with one file in `keyboards/`.
-- The hub. SUPER + A opens a search-first overlay of every setting, grouped by section, with live state, a keyboard card that shows the detected keyboard and turns on its recommended settings, and full keyboard control: j and k move, h and l switch sections, Space changes, / searches, Esc closes. Settings are read when the shell starts, so the hub opens on real state with nothing shifting into place.
-- An agent skill in `agents/skills/omahub`, and an Agents section: "Let agents use Omahub" links the skill into `~/.agents/skills`, and "Omahub command" puts `omahub` on the PATH. Both are off until turned on, and neither ever replaces a file already there.
-- `agents/setup.md`, a guide any coding agent can follow to install Omahub and set it up with the person, asking before every change.
-- `agents/claude-usage`, `agents/codex-usage`, and `agents/fireworks-usage` choose which subscriptions show in Omarchy's Agents bar panel, through `omarchy bar set`. They follow a clone of the widget made with `omarchy plugin clone`.
-- `agents/bar-limits` shows every subscription's limit on the bar when the Agents widget offers a Limits mode.
-- `agents/claude-bar-limit` and `agents/codex-bar-limit` choose which limit the bar shows for each plan, offering only the limits that plan reports: Auto, the weekly limit unless a shorter one is nearly full, or Session, Weekly, a single model's limit such as Fable Weekly, or Fullest. A limit that caps one model no longer stands for the whole plan on Auto, and hovering a percentage names its limit and when it resets.
-- `projects/default-agent`, `projects/editor`, and `projects/folder`, built on Omarchy's own `omarchy default` commands, so agents and editors Omarchy adds appear on their own. Reset restores what was chosen before.
-- The overview. Turn on `keyboard/overview` and SUPER + TAB shows every desktop on the screen as a live thumbnail and the selected desktop's windows as large live previews. h and l move between desktops, j, k, Tab, and the arrows between windows, Enter goes, x closes a window, Shift + a number moves it, n opens a new desktop, and typing searches every window. Pressed again with SUPER held it walks windows, and letting go of SUPER jumps to the choice. Omarchy's Next workspace moves to SUPER + CTRL + ALT + TAB.
-- SUPER + TAB is a window switcher from the first press: a quick tap flips to the window you used before, and holding SUPER while tapping TAB walks every window on every desktop, most recently used first, with the desktop strip following. Letting go of SUPER jumps, even on the quickest tap. A slow press keeps the overview open on the window used before, so you can look around and click any window, and a click while SUPER is still held goes there at once.
-- Drag a window preview in the overview onto a desktop thumbnail, or the new desktop tile, to move it there. Terminals running coding agents retitle constantly, and a drag over them no longer gets interrupted.
-- An Overview button leads the dock.
-- The overview and the dock report where their pieces are on screen through `omarchy-shell shell call io.github.elberacasa.omahub overviewLayout ""` and `dockLayout`, for agents and scripted demos.
-- The dock. Turn on `dock/show` for your pinned and open apps at the bottom of the screen, starting from Omarchy's default terminal, browser, file manager, and editor. Click opens or cycles windows, icons magnify, it hides when a window reaches it, and its right-click menu keeps apps and changes `dock/autohide` and `dock/magnify`. `omahub dock pin <app>` does the same from a terminal.
-- New project: name it in the hub, or run `omahub project new <name>`, and Omahub creates the folder in your projects folder, starts git, and opens your agent or editor there. `omahub open projects/new` jumps straight to the name.
-- Action settings with an inline prompt, and a More… chip on the default agent and editor that opens Omarchy's own menu to install and pick others.
-- `omahub agent [agent] [--pick]` starts a coding agent in your projects folder or a folder you pick, and `omahub edit [--pick]` opens it in your editor.
-- Folder settings in the hub: the current folder and quick places as chips, plus Choose… for any folder. Omahub Capture's screenshot folder is the first.
-- The screenshot thumbnail, which began as Omahub Capture, now ships inside Omahub. Turn on `capture/thumbnail` and PRINT, the Mac screenshot keys, and the mouse shortcut show a floating thumbnail: click to edit, drag into any app, drag right to dismiss, or right-click to copy, show in Files, trash, or save to another folder.
-- The welcome. The first time Omahub loads, it opens once with the detected keyboard and the settings recommended for it. `omahub open welcome` brings it back. After the keyboard, it offers the screenshot thumbnail and your default agent and editor.
-- The dock looks at home next to the Mac's: a soft rounded shelf with a hairline edge, larger icons that stay sharp when magnified, an Overview tile, and names in small pills. With `dock/autohide` off it stays on screen and windows are sized to sit above it.
-- Clicking a desktop in the overview goes there at once.
-- Dock settings that a Mac user knows, in the hub's Dock section: Size, Magnification with Off, Subtle, and Large, open app dots, showing open apps that are not kept, and the bounce when an app opens. A magnification switch saved before keeps working.
-- The dock can sit on the left, bottom, or right, from `dock/position` or its right-click menu, like the Mac's Position on screen. On a side it stands upright, grows its icons away from the edge, shows names beside them, and when it stays on screen, windows make room on that side.
-- `dock/tiles` puts every dock icon on the same rounded tile, so icons from different apps look like one set.
-- The welcome offers the dock, and every keyboard now recommends SUPER + TAB, as the keyboard table always said.
-- The guide for coding agents and the Omahub skill cover the dock, SUPER + TAB, projects, limits on the bar, and uninstalling.
-- `omahub uninstall` resets every setting and removes Omahub's data, then shows the command that removes the plugin. It asks first, or takes `--yes`.
-
-### Changed
-
-- Development tools moved from `bin/` to `dev/`, leaving `bin/` for the upcoming `omahub` command.
-- Keyboard layouts are now two independent settings, `keyboard/omahub-key` and `keyboard/mac-screenshot-keys`, replacing `scripts/keymap.sh`. Existing setups keep working unchanged.
-- The Mac screenshot keys move windows to a workspace with SUPER + ALT + number, and group windows move to SUPER + CTRL + ALT + 1 to 5. Silent moves keep Omarchy's own SUPER + SHIFT + ALT + number.
-- An auto-hiding dock decides when to step aside from what the shell already knows about windows, instead of starting several processes every second and a half.
-
-### Fixed
-
-- The Mac layout no longer drops Omarchy's "move window silently to workspace". It now lives on SUPER + CTRL + ALT + number.
-- A slow SUPER + TAB always browses the window used before. It could snap back to the current window a moment after the overview opened.
-- A window opened moments before the overview shows on its desktop from the first frame, instead of the desktop reading "Empty desktop" until Hyprland reported its size.
-- A long list in the hub or the welcome fades out at the bottom instead of cutting its last row in half.
-- A keyboard layer that fails to load, for example after an Omarchy update renames a helper, is skipped instead of stopping the rest of `bindings.lua`. Turning a setting on undoes itself and names the layer when that happens.
-- Agents settings read a `shell.json` that is not valid JSON, and usage records in shapes they do not know, as Omarchy's defaults instead of failing.
