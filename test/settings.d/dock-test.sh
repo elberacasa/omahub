@@ -19,11 +19,16 @@ for app in foot chromium org.gnome.Nautilus cursor obsidian; do
 done
 export XDG_DATA_DIRS="$TEST_ROOT/no-system-apps"
 
+bindings="$HOME/.config/hypr/bindings.lua"
+mkdir -p "$(dirname "$bindings")"
+printf -- '-- my own binding\n' >"$bindings"
+
 dock_file="$HOME/.local/state/omahub/dock.json"
 defaults='["foot","chromium","org.gnome.Nautilus","cursor"]'
 
 assert_eq "the dock starts off" "$(omahub get dock/show | jq -r .value)" "false"
 assert_eq "turning it on succeeds" "$(omahub set dock/show on | jq -r .value)" "true"
+assert_true "the dock brings its key, SUPER + D" grep -qF '"dock"' "$bindings"
 assert_eq "pins start from Omarchy's default apps" "$(jq -c .pins "$dock_file")" "$defaults"
 assert_eq "omahub dock pins lists them" "$(omahub dock pins)" "$defaults"
 
@@ -96,5 +101,6 @@ done
 assert_eq "resetting pins returns to the defaults" "$(omahub reset dock/pins | jq -c .value)" "$defaults"
 omahub reset dock/show >/dev/null
 assert_eq "resetting the dock leaves no file" "$([[ -e $dock_file ]] && echo left || echo clean)" "clean"
+assert_eq "turning the dock off takes its key away" "$(grep -c '"dock"' "$bindings" || true)" "0"
 
 finish

@@ -12,7 +12,7 @@ fi
 results=$(node - "$OMAHUB_PATH/dock/DockModel.js" <<'EOF'
 const fs = require("fs")
 const source = fs.readFileSync(process.argv[2], "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { covered, items }")()
+const Model = new Function(source + "\nreturn { covered, items, parseConfig }")()
 const checks = []
 const check = (name, ok) => checks.push({ name, ok: !!ok })
 
@@ -49,6 +49,10 @@ check("open apps that are not kept follow the kept ones", all.map(i => i.id).joi
 const kept = Model.items(["foot"], entries, open, false)
 check("with open apps hidden, only kept apps show", kept.map(i => i.id).join(",") === "foot")
 check("kept apps still know their open windows", kept[0].windows.length === 1)
+
+check("settings read from the dock file", Model.parseConfig('{"show":true}').show === true)
+check("an empty dock file means no settings", JSON.stringify(Model.parseConfig("")) === "{}")
+check("a broken dock file is not taken as settings", Model.parseConfig('{"show":') === null && Model.parseConfig("[1]") === null)
 
 console.log(JSON.stringify(checks))
 EOF

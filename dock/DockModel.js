@@ -7,12 +7,15 @@ function key(value) {
   return String(value || "").toLowerCase().replace(/\.desktop$/, "")
 }
 
+// The dock's settings, or null when the file holds something that is not a settings object, so the
+// dock keeps the last good settings instead of vanishing. An empty file means no settings.
 function parseConfig(text) {
+  if (String(text || "").trim() === "") return {}
   try {
     const value = JSON.parse(text)
-    return value && typeof value === "object" && !Array.isArray(value) ? value : {}
+    return value && typeof value === "object" && !Array.isArray(value) ? value : null
   } catch (e) {
-    return {}
+    return null
   }
 }
 

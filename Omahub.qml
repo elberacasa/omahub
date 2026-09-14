@@ -44,6 +44,13 @@ Item {
     dock.reload()
   }
 
+  // SUPER + D: the keyboard moves to the dock, so the hub and the overview step aside.
+  function dockFocus() {
+    hub.close()
+    overview.close()
+    return dock.focusDock()
+  }
+
   // From the keyboard: the screenshot thumbnail's menu, while a thumbnail is showing.
   function captureMenu() {
     return capture.openMenuFromKeyboard()

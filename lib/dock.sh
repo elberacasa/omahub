@@ -6,6 +6,16 @@
 
 OMAHUB_DOCK_FILE="$OMAHUB_STATE_DIR/dock.json"
 
+source "$OMAHUB_PATH/lib/keymap.sh"
+
+# SUPER + D reaches the dock only while it is on. Without a bindings file the dock still works, just
+# without its key.
+omahub_dock_key() {
+  if [[ -f $OMAHUB_BINDINGS ]]; then
+    omahub_keymap_set dock "$1"
+  fi
+}
+
 omahub_dock_read() {
   if [[ -s $OMAHUB_DOCK_FILE ]] && jq -e 'type == "object"' "$OMAHUB_DOCK_FILE" >/dev/null 2>&1; then
     cat "$OMAHUB_DOCK_FILE"
@@ -149,7 +159,7 @@ omahub_dock_choice_setting() {
       ;;
     set)
       if [[ -z $value || " $choices " != *" $value="* ]]; then
-        omahub_fail "usage: omahub set $id <$(tr ' ' '\n' <<<"$choices" | cut -d= -f1 | paste -sd '|')>"
+        omahub_fail "'$value' is not one of the choices. Use: omahub set $id $(tr ' ' '\n' <<<"$choices" | cut -d= -f1 | paste -sd '|')"
       fi
       omahub_dock_update --arg key "$key" --arg value "$value" '.[$key] = $value'
       ;;
@@ -175,15 +185,27 @@ omahub_dock_toggle_setting() {
       case "$value" in
         on | true)
           if [[ $key == "show" ]]; then
+            # The key comes first, so a key that cannot be added leaves the dock off rather than half on.
+            omahub_dock_key on
             omahub_dock_ensure_pins
           fi
           omahub_dock_update --arg key "$key" '.[$key] = true'
           ;;
-        off | false) omahub_dock_update --arg key "$key" '.[$key] = false' ;;
-        *) omahub_fail "usage: omahub set $id on|off" ;;
+        off | false)
+          omahub_dock_update --arg key "$key" '.[$key] = false'
+          if [[ $key == "show" ]]; then
+            omahub_dock_key off
+          fi
+          ;;
+        *) omahub_fail "'$value' is not on or off. Use: omahub set $id on|off" ;;
       esac
       ;;
-    reset) omahub_dock_update --arg key "$key" 'del(.[$key])' ;;
+    reset)
+      omahub_dock_update --arg key "$key" 'del(.[$key])'
+      if [[ $key == "show" && $default != "true" ]]; then
+        omahub_dock_key off
+      fi
+      ;;
     *) omahub_fail "usage: omahub get|set|reset $id" ;;
   esac
 

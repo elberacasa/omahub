@@ -4,7 +4,7 @@
 # Each layer is a file in keymaps/, loaded in a fixed order. Requires lib/settings.sh.
 
 OMAHUB_BINDINGS="$HOME/.config/hypr/bindings.lua"
-OMAHUB_KEYMAP_ORDER=(hotkey thumbnail overview mac vim agents mouse)
+OMAHUB_KEYMAP_ORDER=(hotkey thumbnail overview dock mac vim agents mouse)
 # Layers that fail to load, one "name: error" per line, written by the block while Hyprland loads it.
 OMAHUB_KEYMAP_ERRORS="$HOME/.local/state/omahub/keymap-errors"
 
@@ -80,7 +80,7 @@ omahub_keymap_set() {
     return 0
   fi
 
-  [[ -f $OMAHUB_BINDINGS ]] || omahub_fail "missing $OMAHUB_BINDINGS"
+  [[ -f $OMAHUB_BINDINGS ]] || omahub_fail "Can't find $OMAHUB_BINDINGS. Run 'omarchy refresh hyprland', then try again"
 
   for name in "${OMAHUB_KEYMAP_ORDER[@]}"; do
     if [[ $name == "$layer" ]]; then
@@ -109,7 +109,7 @@ omahub_keymap_set() {
   hyprctl reload >/dev/null
   if [[ -n $(hyprctl configerrors 2>/dev/null | grep -v '^\s*$') ]]; then
     omahub_keymap_restore "$backup"
-    omahub_fail "Hyprland reported config errors, so the change was undone"
+    omahub_fail "Hyprland reported config errors, so the change was undone. Run 'hyprctl configerrors' to see them"
   fi
   if [[ -s $OMAHUB_KEYMAP_ERRORS ]]; then
     omahub_keymap_restore "$backup"
@@ -127,7 +127,7 @@ omahub_keymap_set() {
 
   if [[ -n $missing ]]; then
     omahub_keymap_restore "$backup"
-    omahub_fail "the change was undone because these actions would lose their keys: $(paste -sd '|' <<<"$missing" | sed 's/|/, /g')"
+    omahub_fail "the change was undone because these actions would lose their keys: $(paste -sd '|' <<<"$missing" | sed 's/|/, /g'). Turn off the setting that uses those keys, then try again"
   fi
   rm -f "$backup"
 }
@@ -142,7 +142,7 @@ omahub_keymap_toggle_setting() {
       case "$value" in
         on | true) omahub_keymap_set "$layer" on ;;
         off | false) omahub_keymap_set "$layer" off ;;
-        *) omahub_fail "usage: omahub set $id on|off" ;;
+        *) omahub_fail "'$value' is not on or off. Use: omahub set $id on|off" ;;
       esac
       ;;
     reset) omahub_keymap_set "$layer" off ;;

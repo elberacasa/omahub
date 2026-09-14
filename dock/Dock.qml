@@ -63,6 +63,10 @@ Item {
     + root.dotSpace + root.edgeGap + Style.space(40)
   readonly property int menuSpace: Style.space(300)
   readonly property int labelGap: Style.space(10)
+  // How far a click still counts from an icon: past its magnified size away from the edge, and all the
+  // way to the screen edge, so the dock is easy to hit.
+  readonly property real reachAway: root.iconSize * (root.maxScale - 1)
+  readonly property real reachEdge: root.dockPadding + root.dotSpace + root.edgeGap
 
   // The pointer's position along the dock in the unscaled layout, or -1 when it is away.
   property real pointerX: -1
@@ -72,9 +76,17 @@ Item {
   property bool menuOpen: false
   property var menuItem: null
   property real menuCenter: 0
+  // SUPER + D puts the keyboard on the dock. The cursor is an app's index, or -1 for the Overview tile.
+  property bool keyboardActive: false
+  property int keyCursor: 0
+  // The highlighted menu row while the menu is used from the keyboard, or -1.
+  property int menuIndex: -1
+  // A short message above the dock, such as an app that did not open.
+  property string notice: ""
 
-  readonly property bool shown: root.enabled && root.items.length > 0
-    && (!root.autohide || !root.covered || root.pointerInside || root.lingering || root.menuOpen)
+  readonly property bool shown: root.enabled
+    && (!root.autohide || !root.covered || root.pointerInside || root.lingering || root.menuOpen
+      || root.keyboardActive || root.notice !== "")
 
   readonly property var focusedScreen: {
     var name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : ""
@@ -96,7 +108,10 @@ Item {
     if (item.windows.length > 0) list.push({ label: item.windows.length > 1 ? "Quit all windows" : "Quit", action: "quit" })
     list.push({ separator: true })
     list.push({ label: "Automatically hide", action: "autohide", checked: root.autohide })
-    list.push({ label: "Magnification", action: "magnify", checked: root.magnify })
+    list.push({ heading: "Magnification" })
+    list.push({ label: "Off", action: "magnify", value: "off", checked: root.magnification === "off" })
+    list.push({ label: "Subtle", action: "magnify", value: "subtle", checked: root.magnification === "subtle" })
+    list.push({ label: "Large", action: "magnify", value: "large", checked: root.magnification === "large" })
     list.push({ heading: "Position on screen" })
     list.push({ label: "Left", action: "position", value: "left", checked: root.edge === "left" })
     list.push({ label: "Bottom", action: "position", value: "bottom", checked: root.edge === "bottom" })
@@ -125,6 +140,14 @@ Item {
       font.family: Style.font.menuFamily
       font.pixelSize: Style.font.caption
     }
+  }
+
+  // The keyboard cursor's ring around an icon or the Overview tile.
+  component FocusRing: Rectangle {
+    color: "transparent"
+    radius: Math.round(width * 0.26)
+    border.width: Math.max(2, Style.space(2))
+    border.color: Color.accent
   }
 
   function reload() {
@@ -157,7 +180,8 @@ Item {
       : (root.edge === "right" ? { x: screenX + screenWidth - 1, y: screenY + screenHeight / 2 }
         : { x: screenX + screenWidth / 2, y: screenY + screenHeight - 1 })
     return JSON.stringify({
-      shown: root.shown, position: root.edge, apps: apps, overview: place(overviewButton),
+      shown: root.shown, position: root.edge, keyboard: root.keyboardActive, cursor: root.keyCursor,
+      menu: root.menuOpen, apps: apps, overview: place(overviewButton),
       edge: { x: Math.round(edgePoint.x), y: Math.round(edgePoint.y), width: 1, height: 1 }
     })
   }
@@ -188,30 +212,107 @@ Item {
     windows[(current + 1) % windows.length].activate()
   }
 
-  function openMenu(item, cell) {
+  function openMenu(item, cell, fromKeyboard) {
     root.menuItem = item
     var point = cell.mapToItem(dockVisual, cell.width / 2, cell.height / 2)
     root.menuCenter = root.vertical ? point.y : point.x
+    root.menuIndex = -1
     root.menuOpen = true
+    if (fromKeyboard) root.stepMenu(1)
   }
 
   function runMenu(entry) {
     var item = root.menuItem
     root.menuOpen = false
+    root.menuIndex = -1
     if (entry.action === "launch") {
       root.launch(item)
     } else if (entry.action === "pin" || entry.action === "unpin") {
-      Quickshell.execDetached([root.omahub, "dock", entry.action, item.id])
+      root.runOmahub(["dock", entry.action, item.id],
+        (entry.action === "pin" ? "Couldn't keep " : "Couldn't remove ") + item.name)
     } else if (entry.action === "quit") {
       item.windows.forEach(function(window) { window.close() })
     } else if (entry.action === "autohide") {
-      Quickshell.execDetached([root.omahub, "set", "dock/autohide", root.autohide ? "off" : "on"])
+      root.runOmahub(["set", "dock/autohide", root.autohide ? "off" : "on"], "Couldn't change automatic hiding")
     } else if (entry.action === "magnify") {
-      Quickshell.execDetached([root.omahub, "set", "dock/magnify", root.magnify ? "off" : "large"])
+      root.runOmahub(["set", "dock/magnify", entry.value], "Couldn't change magnification")
     } else if (entry.action === "position") {
-      Quickshell.execDetached([root.omahub, "set", "dock/position", entry.value])
+      root.runOmahub(["set", "dock/position", entry.value], "Couldn't move the dock")
     } else if (entry.action === "settings") {
       Quickshell.execDetached([root.omahub, "open", "dock"])
+    }
+  }
+
+  // Moves the menu's keyboard highlight to the next row that does something, wrapping around.
+  function stepMenu(delta) {
+    var entries = root.menuEntries
+    if (entries.length === 0) return
+    var index = root.menuIndex
+    for (var tries = 0; tries < entries.length; tries++) {
+      index = (index + delta + entries.length) % entries.length
+      if (!entries[index].separator && !entries[index].heading) {
+        root.menuIndex = index
+        return
+      }
+    }
+  }
+
+  // SUPER + D. The cursor starts on the app in front, or the first app.
+  function focusDock() {
+    if (!root.enabled) return "off"
+    // SUPER + D again gives the keyboard back.
+    if (root.keyboardActive) {
+      root.leaveKeyboard()
+      return "left"
+    }
+    var active = root.items.findIndex(function(item) {
+      return item.windows.some(function(window) { return window.activated })
+    })
+    root.keyCursor = active >= 0 ? active : (root.items.length > 0 ? 0 : -1)
+    root.menuOpen = false
+    root.keyboardActive = true
+    root.keyboardSince = Date.now()
+    root.dispatch('hl.dsp.submap("omahub-dock")')
+    Qt.callLater(function() { dockKeys.forceActiveFocus() })
+    return "ok"
+  }
+
+  function leaveKeyboard() {
+    if (root.keyboardActive) root.dispatch('hl.dsp.submap("reset")')
+    root.keyboardActive = false
+    root.menuOpen = false
+    root.menuIndex = -1
+  }
+
+  function dispatch(command) {
+    Quickshell.execDetached(["hyprctl", "dispatch", command])
+  }
+
+  // When the keyboard mode began, so the focus change it causes itself is not taken as leaving it.
+  property real keyboardSince: 0
+
+  function showNotice(text) {
+    root.notice = text
+    noticeTimer.restart()
+  }
+
+  // Changes from the dock's menu are checked, so one that fails says so above the dock. A second
+  // change while one is being checked runs unchecked.
+  function runOmahub(args, failure) {
+    if (dockCommand.running) {
+      Quickshell.execDetached([root.omahub].concat(args))
+      return
+    }
+    dockCommand.failure = failure
+    dockCommand.command = [root.omahub].concat(args)
+    dockCommand.running = true
+  }
+
+  Process {
+    id: dockCommand
+    property string failure: ""
+    onExited: function(exitCode) {
+      if (exitCode !== 0) root.showNotice(dockCommand.failure)
     }
   }
 
@@ -236,9 +337,15 @@ Item {
     root.covered = Model.covered(monitor, clients, root.edge, root.baseWidth + root.edgeGap * 2, root.baseHeight + root.edgeGap)
   }
 
-  onEnabledChanged: root.checkCover()
+  onEnabledChanged: {
+    if (!root.enabled) root.leaveKeyboard()
+    root.checkCover()
+  }
   onAutohideChanged: root.checkCover()
   onEdgeChanged: root.checkCover()
+  onItemsChanged: {
+    if (root.keyCursor >= root.items.length) root.keyCursor = root.items.length - 1
+  }
   Component.onCompleted: root.checkCover()
 
   FileView {
@@ -246,7 +353,12 @@ Item {
     path: root.stateFile
     watchChanges: true
     printErrors: false
-    onLoaded: root.config = Model.parseConfig(text())
+    // A file caught half written, or edited into something that is not settings, keeps the dock as
+    // it was until the file makes sense again.
+    onLoaded: {
+      var parsed = Model.parseConfig(text())
+      if (parsed !== null) root.config = parsed
+    }
     onFileChanged: reload()
     onLoadFailed: root.config = ({})
   }
@@ -272,6 +384,12 @@ Item {
            "workspace", "workspacev2", "focusedmon", "activespecial"].indexOf(name) !== -1) {
         coverDelay.restart()
       }
+      // A click on a window or a move to another desktop ends the dock's keyboard mode, like clicking away
+      // from the Dock on a Mac. The focus change the mode causes as it starts does not count.
+      if (root.keyboardActive && Date.now() - root.keyboardSince > 400
+          && ["activewindowv2", "workspacev2", "focusedmon"].indexOf(name) !== -1) {
+        root.leaveKeyboard()
+      }
     }
   }
 
@@ -294,10 +412,33 @@ Item {
     onTriggered: root.lingering = false
   }
 
+  Timer {
+    id: noticeTimer
+    interval: 3200
+    onTriggered: root.notice = ""
+  }
+
+  // A click outside the dock closes its menu, like Omarchy's own popups. Hyprland can drop a grab in
+  // the moment it starts, while the click that opened the menu is still settling, so a grab dropped
+  // that soon is taken again instead of closing the menu under the pointer.
+  property real grabStartedAt: 0
+  property bool grabArmed: true
+  readonly property bool grabWanted: root.menuOpen || root.keyboardActive
+  onGrabWantedChanged: if (root.grabWanted) root.grabStartedAt = Date.now()
+  // Opening or closing the menu reshapes the window's input region, which can end the grab too.
+  onMenuOpenChanged: root.grabStartedAt = Date.now()
+
   HyprlandFocusGrab {
-    active: root.menuOpen
+    active: root.grabWanted && root.grabArmed
     windows: [dockWindow]
-    onCleared: root.menuOpen = false
+    onCleared: {
+      if (Date.now() - root.grabStartedAt < 400 && root.grabWanted) {
+        root.grabArmed = false
+        Qt.callLater(function() { root.grabArmed = true })
+        return
+      }
+      root.leaveKeyboard()
+    }
   }
 
   PanelWindow {
@@ -315,10 +456,13 @@ Item {
     color: "transparent"
     WlrLayershell.namespace: "omahub-dock"
     WlrLayershell.layer: WlrLayer.Top
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+    // The dock takes the keyboard only while it is used from the keyboard, after SUPER + D. A menu opened
+    // with the mouse leaves focus alone, as Omarchy's popups do, since switching focus as the menu opens
+    // can end the grab that keeps it open. Typing otherwise goes to the window in front.
+    WlrLayershell.keyboardFocus: root.keyboardActive ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
     // A dock that stays on screen keeps its own room, so windows resize to make way for it, like the
     // bar. One that hides floats over them instead.
-    exclusionMode: root.enabled && !root.autohide && root.items.length > 0 ? ExclusionMode.Normal : ExclusionMode.Ignore
+    exclusionMode: root.enabled && !root.autohide ? ExclusionMode.Normal : ExclusionMode.Ignore
     exclusiveZone: root.baseHeight + root.edgeGap
 
     // The window's length along the edge the dock sits on.
@@ -332,6 +476,62 @@ Item {
     }
 
     Item {
+      id: dockKeys
+      anchors.fill: parent
+      focus: root.keyboardActive || root.menuOpen
+
+      Keys.onPressed: function(event) {
+        // Keys by name, not by the text they type, so they work with SUPER still held from SUPER + D.
+        var previous = event.key === Qt.Key_Left || event.key === Qt.Key_Up || event.key === Qt.Key_H || event.key === Qt.Key_K
+        var next = event.key === Qt.Key_Right || event.key === Qt.Key_Down || event.key === Qt.Key_L || event.key === Qt.Key_J
+        var enter = event.key === Qt.Key_Return || event.key === Qt.Key_Enter
+
+        if (event.key === Qt.Key_Escape) {
+          if (root.menuOpen && root.keyboardActive) {
+            root.menuOpen = false
+            root.menuIndex = -1
+          } else {
+            root.leaveKeyboard()
+          }
+        } else if (root.menuOpen) {
+          if (previous || (event.key === Qt.Key_Backtab)) {
+            root.stepMenu(-1)
+          } else if (next || event.key === Qt.Key_Tab) {
+            root.stepMenu(1)
+          } else if ((enter || event.key === Qt.Key_Space) && root.menuIndex >= 0) {
+            var entry = root.menuEntries[root.menuIndex]
+            root.runMenu(entry)
+            root.leaveKeyboard()
+          } else {
+            return
+          }
+        } else if (root.keyboardActive) {
+          if (previous) {
+            root.keyCursor = Math.max(-1, root.keyCursor - 1)
+          } else if (next) {
+            root.keyCursor = Math.min(root.items.length - 1, root.keyCursor + 1)
+          } else if (enter) {
+            if (root.keyCursor < 0) {
+              Quickshell.execDetached([root.omahub, "open", "overview"])
+            } else {
+              var cell = iconRepeater.itemAt(root.keyCursor)
+              if (cell) cell.open()
+            }
+            root.leaveKeyboard()
+          } else if (event.key === Qt.Key_Space || event.key === Qt.Key_Menu) {
+            var target = iconRepeater.itemAt(root.keyCursor)
+            if (target) root.openMenu(target.modelData, target, true)
+          } else {
+            return
+          }
+        } else {
+          return
+        }
+        event.accepted = true
+      }
+    }
+
+    Item {
       id: menuHit
       anchors.fill: parent
     }
@@ -340,7 +540,10 @@ Item {
       anchors.fill: menuHit
       enabled: root.menuOpen
       acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
-      onClicked: root.menuOpen = false
+      onClicked: {
+        root.menuOpen = false
+        root.menuIndex = -1
+      }
     }
 
     Item {
@@ -422,7 +625,9 @@ Item {
 
       BorderSurface {
         id: dockBackground
-        readonly property real length: (root.vertical ? iconRow.height : iconRow.width) + root.dockPadding * 2 + root.overviewButtonWidth
+        // With no apps kept or open, the shelf still holds the Overview tile.
+        readonly property real length: (root.items.length > 0 ? (root.vertical ? iconRow.height : iconRow.width) : -root.dividerWidth)
+          + root.dockPadding * 2 + root.overviewButtonWidth
         x: root.edge === "left" ? root.edgeGap
           : (root.edge === "right" ? parent.width - width - root.edgeGap : (parent.width - width) / 2)
         y: root.vertical ? (parent.height - height) / 2 : parent.height - height - root.edgeGap
@@ -436,6 +641,7 @@ Item {
       Item {
         id: overviewButton
         readonly property bool hovered: root.pointerX > -root.overviewButtonWidth && root.pointerX < -root.dividerWidth
+        readonly property bool keyed: root.keyboardActive && !root.menuOpen && root.keyCursor === -1
         // Icons start after the dots on the edge side: below them at the bottom, beside them on a side.
         x: dockBackground.x + root.dockPadding + (root.edge === "left" ? root.dotSpace : 0)
         y: dockBackground.y + root.dockPadding
@@ -450,7 +656,8 @@ Item {
           x: root.vertical ? (root.edge === "left" ? 0 : root.iconSize - width) : root.cellPadding + (root.iconSize - width) / 2
           y: root.vertical ? root.cellPadding + (root.iconSize - height) / 2 : root.iconSize - height
           radius: Math.round(width * 0.24)
-          color: Util.alpha(overviewButton.hovered ? Color.accent : Color.menu.text, overviewButton.hovered ? 0.22 : 0.1)
+          color: Util.alpha(overviewButton.hovered || overviewButton.keyed ? Color.accent : Color.menu.text,
+            overviewButton.hovered || overviewButton.keyed ? 0.22 : 0.1)
 
           Behavior on color {
             ColorAnimation { duration: 120 }
@@ -468,13 +675,22 @@ Item {
                 width: Math.round(overviewTile.width * 0.24)
                 height: width
                 radius: Math.round(width * 0.28)
-                color: overviewButton.hovered ? Color.accent : Util.alpha(Color.menu.text, 0.8)
+                color: overviewButton.hovered || overviewButton.keyed ? Color.accent : Util.alpha(Color.menu.text, 0.8)
               }
             }
           }
         }
 
+        FocusRing {
+          visible: overviewButton.keyed
+          x: overviewTile.x - Style.space(4)
+          y: overviewTile.y - Style.space(4)
+          width: overviewTile.width + Style.space(8)
+          height: overviewTile.height + Style.space(8)
+        }
+
         Rectangle {
+          visible: root.items.length > 0
           x: root.vertical ? overviewTile.x + (overviewTile.width - width) / 2 : root.cellWidth + root.dividerWidth / 2
           y: root.vertical ? root.cellWidth + root.dividerWidth / 2 : overviewTile.y + (overviewTile.height - height) / 2
           width: root.vertical ? Math.round(root.iconSize * 0.7) : Math.max(1, Style.space(1))
@@ -483,7 +699,7 @@ Item {
         }
 
         DockLabel {
-          visible: overviewButton.hovered && !root.menuOpen
+          visible: (overviewButton.hovered || overviewButton.keyed) && !root.menuOpen
           text: "Overview"
           x: root.edge === "left" ? overviewTile.x + overviewTile.width + root.labelGap
             : (root.edge === "right" ? overviewTile.x - width - root.labelGap : overviewTile.x + (overviewTile.width - width) / 2)
@@ -491,8 +707,10 @@ Item {
         }
 
         MouseArea {
-          width: root.vertical ? parent.width : root.cellWidth
-          height: root.vertical ? root.cellWidth : parent.height
+          x: root.edge === "left" ? -root.reachEdge : 0
+          y: root.edge === "bottom" ? 0 : 0
+          width: root.vertical ? parent.width + root.reachEdge : root.cellWidth
+          height: root.vertical ? root.cellWidth : parent.height + root.reachEdge
           cursorShape: Qt.PointingHandCursor
           onClicked: Quickshell.execDetached([root.omahub, "open", "overview"])
         }
@@ -518,6 +736,7 @@ Item {
             readonly property real scaleFactor: root.magnify && root.pointerX >= 0
               ? Model.magnification(cell.distance, root.magnifyRange, root.maxScale) : 1
             readonly property bool hovered: root.pointerX >= 0 && Math.abs(cell.distance) <= root.cellWidth / 2
+            readonly property bool keyed: root.keyboardActive && !root.menuOpen && root.keyCursor === cell.index
             readonly property int windowCount: cell.modelData.windows.length
             readonly property bool active: {
               for (var i = 0; i < cell.modelData.windows.length; i++) {
@@ -527,15 +746,41 @@ Item {
             }
             readonly property int dividerSpace: cell.modelData.divider ? root.dividerWidth : 0
             readonly property real length: cell.dividerSpace + root.iconSize * cell.scaleFactor + root.cellPadding * 2
+            // While an app is starting, the number of windows it had, so the icon bounces until one more
+            // appears. -1 when nothing is starting.
+            property int launchBaseline: -1
+            readonly property bool launching: cell.launchBaseline >= 0 && cell.windowCount <= cell.launchBaseline
 
             width: root.vertical ? root.iconSize : cell.length
             height: root.vertical ? cell.length : root.iconSize
+
+            onLaunchingChanged: if (!cell.launching) cell.launchBaseline = -1
+
+            function open() {
+              if (cell.windowCount === 0) cell.startLaunch()
+              root.openItem(cell.modelData)
+            }
+
+            function startLaunch() {
+              if (!cell.modelData.launchable) return
+              cell.launchBaseline = cell.windowCount
+            }
 
             Behavior on width {
               NumberAnimation { duration: 90; easing.type: Easing.OutCubic }
             }
             Behavior on height {
               NumberAnimation { duration: 90; easing.type: Easing.OutCubic }
+            }
+
+            // An app that opens no window within a few seconds says so, instead of bouncing forever.
+            Timer {
+              interval: 6000
+              running: cell.launching
+              onTriggered: {
+                cell.launchBaseline = -1
+                root.showNotice(cell.modelData.name + " didn't open a window")
+              }
             }
 
             Rectangle {
@@ -548,7 +793,7 @@ Item {
             }
 
             // The icon, and its tile when tiles are on. It grows away from the edge and lifts the
-            // same way when its app opens.
+            // same way while its app opens.
             Item {
               id: iconBox
               property real hop: 0
@@ -563,7 +808,7 @@ Item {
               }
 
               Rectangle {
-                visible: root.tiles
+                visible: root.tiles || iconImage.status !== Image.Ready
                 anchors.fill: parent
                 radius: Math.round(width * 0.23)
                 color: Util.alpha(Color.menu.text, 0.1)
@@ -572,6 +817,7 @@ Item {
               }
 
               Image {
+                id: iconImage
                 anchors.centerIn: parent
                 width: iconBox.width * (root.tiles ? 0.72 : 1)
                 height: width
@@ -584,11 +830,34 @@ Item {
                 mipmap: true
               }
 
+              // An app whose icon cannot be found shows its first letter on the tile, never a blank.
+              Text {
+                visible: iconImage.status !== Image.Ready
+                anchors.centerIn: parent
+                textFormat: Text.PlainText
+                text: String(cell.modelData.name || "?").charAt(0).toUpperCase()
+                color: Color.menu.text
+                font.family: Style.font.menuFamily
+                font.pixelSize: Math.round(iconBox.width * 0.46)
+                font.bold: true
+              }
+
               SequentialAnimation {
                 id: hopAnimation
+                loops: cell.launching ? Animation.Infinite : 1
+                alwaysRunToEnd: true
+                running: root.bounce && cell.launching
                 NumberAnimation { target: iconBox; property: "hop"; to: Style.space(14); duration: 160; easing.type: Easing.OutCubic }
                 NumberAnimation { target: iconBox; property: "hop"; to: 0; duration: 220; easing.type: Easing.InOutCubic }
               }
+            }
+
+            FocusRing {
+              visible: cell.keyed
+              x: iconBox.x - Style.space(4)
+              y: iconBox.y - Style.space(4)
+              width: iconBox.width + Style.space(8)
+              height: iconBox.height + Style.space(8)
             }
 
             Rectangle {
@@ -603,31 +872,42 @@ Item {
             }
 
             DockLabel {
-              visible: cell.hovered && !root.menuOpen
+              visible: (cell.hovered || cell.keyed) && !root.menuOpen
               text: cell.modelData.name
               x: root.edge === "left" ? iconBox.x + iconBox.width + root.labelGap
                 : (root.edge === "right" ? iconBox.x - width - root.labelGap : iconBox.x + (iconBox.width - width) / 2)
               y: root.vertical ? iconBox.y + (iconBox.height - height) / 2 : iconBox.y - height - root.labelGap
             }
 
+            // Clicks count from the screen edge out past the magnified icon, not just on the icon.
             MouseArea {
-              anchors.fill: parent
+              x: root.edge === "left" ? -root.reachEdge : (root.edge === "right" ? -root.reachAway : 0)
+              y: root.edge === "bottom" ? -root.reachAway : 0
+              width: root.vertical ? root.iconSize + root.reachAway + root.reachEdge : parent.width
+              height: root.vertical ? parent.height : root.iconSize + root.reachAway + root.reachEdge
               acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
               cursorShape: Qt.PointingHandCursor
               onClicked: function(mouse) {
                 if (mouse.button === Qt.RightButton) {
-                  root.openMenu(cell.modelData, cell)
+                  root.openMenu(cell.modelData, cell, false)
                 } else if (mouse.button === Qt.MiddleButton) {
-                  if (root.bounce) hopAnimation.restart()
+                  cell.startLaunch()
                   root.launch(cell.modelData)
                 } else {
-                  if (root.bounce && cell.windowCount === 0) hopAnimation.restart()
-                  root.openItem(cell.modelData)
+                  cell.open()
                 }
               }
             }
           }
         }
+      }
+
+      DockLabel {
+        visible: root.notice !== ""
+        text: root.notice
+        x: root.edge === "left" ? dockBackground.x + dockBackground.width + root.labelGap
+          : (root.edge === "right" ? dockBackground.x - width - root.labelGap : dockBackground.x + (dockBackground.width - width) / 2)
+        y: root.vertical ? dockBackground.y - height - root.labelGap : dockBackground.y - height - root.labelGap * 5
       }
     }
 
@@ -672,7 +952,9 @@ Item {
           delegate: Item {
             id: menuRow
             required property var modelData
+            required property int index
             readonly property bool actionable: !menuRow.modelData.separator && !menuRow.modelData.heading
+            readonly property bool highlighted: rowMouse.containsMouse || root.menuIndex === menuRow.index
             width: menuColumn.width
             height: menuRow.modelData.separator ? Style.space(9) : (menuRow.modelData.heading ? Style.space(24) : Style.space(30))
 
@@ -701,7 +983,7 @@ Item {
               visible: menuRow.actionable
               anchors.fill: parent
               radius: Style.cornerRadius
-              color: rowMouse.containsMouse ? Color.menu.selectedBackground : "transparent"
+              color: menuRow.highlighted ? Color.menu.selectedBackground : "transparent"
             }
 
             Text {
@@ -712,7 +994,7 @@ Item {
               elide: Text.ElideRight
               textFormat: Text.PlainText
               text: menuRow.modelData.label || ""
-              color: rowMouse.containsMouse ? Color.menu.selectedText : Color.menu.text
+              color: menuRow.highlighted ? Color.menu.selectedText : Color.menu.text
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.body
             }
@@ -724,8 +1006,8 @@ Item {
               anchors.rightMargin: Style.spacing.sm
               anchors.verticalCenter: parent.verticalCenter
               textFormat: Text.PlainText
-              text: "󰄬"
-              color: rowMouse.containsMouse ? Color.menu.selectedText : Color.accent
+              text: String.fromCodePoint(0xF012C)
+              color: menuRow.highlighted ? Color.menu.selectedText : Color.accent
               font.family: Style.font.family
               font.pixelSize: Style.font.body
             }
