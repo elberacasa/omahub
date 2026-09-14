@@ -87,7 +87,12 @@ Item {
       var thumb = thumbRepeater.itemAt(j)
       if (thumb) desktops.push(Object.assign({ id: thumb.modelData.id }, place(thumb.frame)))
     }
-    return JSON.stringify({ opened: root.opened, cards: cards, desktops: desktops, newDesktop: place(newTile) })
+    var selected = root.selectedWindow
+    return JSON.stringify({
+      opened: root.opened, cycling: root.cycling,
+      selected: selected ? { address: selected.address, workspace: selected.workspace, title: selected.title } : null,
+      cards: cards, desktops: desktops, newDesktop: place(newTile)
+    })
   }
 
   function dispatch(command) {
@@ -358,7 +363,8 @@ Item {
         return
       }
       root.rebuild()
-      if (!root.userMoved) root.selectCurrent()
+      // While switching, rebuild already keeps the step count, and the current window must not win.
+      if (!root.userMoved && !root.cycling) root.selectCurrent()
     }
   }
 

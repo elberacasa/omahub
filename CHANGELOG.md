@@ -48,3 +48,4 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 ### Fixed
 
 - The Mac layout no longer drops Omarchy's "move window silently to workspace". It now lives on SUPER + CTRL + ALT + number.
+- A slow SUPER + TAB always browses the window used before. It could snap back to the current window a moment after the overview opened.

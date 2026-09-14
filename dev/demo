@@ -59,8 +59,13 @@ restore() {
 }
 trap restore EXIT
 
+mkdir -p "$root/tmp/demos"
+guard_log="$root/tmp/demos/$name.stash-shown"
+guard=""
 if (( stage )); then
   demo_stash_windows
+  demo_guard_stash "$guard_log" &
+  guard=$!
 fi
 
 take=("$name" "$seconds" --quiet --fps "$fps" --run "bash $(realpath "$script")")
@@ -69,6 +74,15 @@ if [[ -n $workspace ]]; then
 fi
 "$root/dev/take" "${take[@]}"
 
-mkdir -p "$root/tmp/demos"
+if [[ -n $guard ]]; then
+  kill "$guard" 2>/dev/null || true
+  wait "$guard" 2>/dev/null || true
+  if [[ -s $guard_log ]]; then
+    rm -f "$root/tmp/takes/$name.mp4" "$root/tmp/demos/$name.png"
+    echo "the hidden desktop came into view during the take, so it was deleted. Record it again." >&2
+    exit 1
+  fi
+fi
+
 "$root/dev/frames" "$root/tmp/takes/$name.mp4" 0 "$seconds" --fps 2 --width 400 --cols 6 --out "$root/tmp/demos/$name.png" >/dev/null
 echo "review: tmp/demos/$name.png"

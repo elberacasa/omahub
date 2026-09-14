@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Moonshot</title>
+<style>
+  :root { --ground: #1a1b26; --panel: #24283b; --text: #c0caf5; --muted: #a9b1d6; --accent: #7aa2f7; --edge: #3b4261; }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--ground); color: var(--text); font: 16px/1.6 "JetBrainsMono Nerd Font", ui-monospace, monospace; padding: 72px 64px; }
+  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 72px; }
+  .brand { font-weight: 700; letter-spacing: 0.04em; }
+  nav { display: flex; gap: 28px; color: var(--muted); }
+  h1 { font-size: 56px; line-height: 1.1; max-width: 12ch; margin-bottom: 24px; }
+  p.lead { color: var(--muted); max-width: 46ch; margin-bottom: 40px; }
+  .actions { display: flex; gap: 16px; margin-bottom: 80px; }
+  .button { border: 1px solid var(--edge); padding: 12px 22px; }
+  .button.primary { background: var(--accent); color: var(--ground); border-color: var(--accent); font-weight: 700; }
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .card { background: var(--panel); border: 1px solid var(--edge); padding: 24px; }
+  .card h2 { font-size: 18px; margin-bottom: 8px; }
+  .card p { color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">moonshot</div>
+    <nav><span>Product</span><span>Pricing</span><span>Docs</span></nav>
+  </header>
+  <h1>Ship the idea you had this morning.</h1>
+  <p class="lead">A tiny demo app for recording Omahub. Nothing here is real, and nothing leaves your machine.</p>
+  <div class="actions"><span class="button primary">Start building</span><span class="button">Read the docs</span></div>
+  <div class="cards">
+    <div class="card"><h2>Fast</h2><p>From an empty folder to a running app before your coffee cools.</p></div>
+    <div class="card"><h2>Agent first</h2><p>Your coding agent opens right where the work is.</p></div>
+    <div class="card"><h2>Yours</h2><p>Plain files, in your projects folder, under git.</p></div>
+  </div>
+</body>
+</html>

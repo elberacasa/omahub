@@ -95,13 +95,40 @@ open_demo_window() {
 }
 
 DEMO_STASH_FILE="$DEMO_ROOT/tmp/demos/stash.tsv"
+DEMO_BAR_FILE="$DEMO_ROOT/tmp/demos/bar-display"
+DEMO_ACTIVATE_FILE="$DEMO_ROOT/tmp/demos/focus-on-activate"
+DEMO_STASH="omahub-stash"
+
+# The Agents widget on the bar, built in or cloned, when it currently shows subscription limits.
+demo_agents_widget_showing_limits() {
+  local widget
+  widget=$(omarchy plugin list --json 2>/dev/null \
+    | jq -r '.[] | select(.enabled and (.id == "omarchy.agents" or .clonedFrom == "omarchy.agents")) | .id' | head -1)
+  if [[ -n $widget ]] && jq -e --arg id "$widget" \
+      '[.bar.layout[]?[]? | objects | select(.id == $id)][0].barDisplay == "Limits"' "$HOME/.config/omarchy/shell.json" >/dev/null 2>&1; then
+    printf '%s\n' "$widget"
+  fi
+}
 
 # Move every real window to a hidden desktop so a public take shows only demo windows, remembering
-# each window's desktop. demo_restore_windows puts them all back.
+# each window's desktop, and show the Agents widget as its icon so subscription usage stays off
+# camera. demo_restore_windows puts all of it back.
 demo_stash_windows() {
-  local address workspace
+  local address workspace widget
   demo_restore_windows
   mkdir -p "$(dirname "$DEMO_STASH_FILE")"
+  widget=$(demo_agents_widget_showing_limits)
+  if [[ -n $widget ]]; then
+    printf '%s\n' "$widget" >"$DEMO_BAR_FILE"
+    omarchy bar set "$widget" barDisplay Icon >/dev/null
+  fi
+  # A stashed window asking for attention would bring the hidden desktop into view, so windows may
+  # not take focus by activating until the take is over.
+  hyprctl getoption misc:focus_on_activate -j | jq -r '.bool == true' >"$DEMO_ACTIVATE_FILE"
+  hyprctl eval 'hl.config({ misc = { focus_on_activate = false } })' >/dev/null
+  # Moving the focused window away hands focus to the next one, which can be a window already
+  # stashed, and focusing it brings the hidden desktop into view. Start from an empty desktop.
+  hyprctl dispatch 'hl.dsp.focus({ workspace = "empty" })' >/dev/null
   hyprctl clients -j | jq -r '.[] | select((.class | startswith("omahub-demo-")) | not) | select(.workspace.id > 0) | "\(.address)\t\(.workspace.id)"' >"$DEMO_STASH_FILE"
   while IFS=$'\t' read -r address workspace; do
     hyprctl dispatch "hl.dsp.window.move({ workspace = \"special:omahub-stash\", window = \"address:$address\", follow = false })" >/dev/null
@@ -110,6 +137,14 @@ demo_stash_windows() {
 
 demo_restore_windows() {
   local address workspace
+  if [[ -s $DEMO_BAR_FILE ]]; then
+    omarchy bar set "$(<"$DEMO_BAR_FILE")" barDisplay Limits >/dev/null
+    rm -f "$DEMO_BAR_FILE"
+  fi
+  if [[ -s $DEMO_ACTIVATE_FILE ]]; then
+    hyprctl eval "hl.config({ misc = { focus_on_activate = $(<"$DEMO_ACTIVATE_FILE") } })" >/dev/null
+    rm -f "$DEMO_ACTIVATE_FILE"
+  fi
   if [[ ! -s $DEMO_STASH_FILE ]]; then
     return 0
   fi
@@ -117,6 +152,66 @@ demo_restore_windows() {
     hyprctl dispatch "hl.dsp.window.move({ workspace = \"$workspace\", window = \"address:$address\", follow = false })" >/dev/null
   done <"$DEMO_STASH_FILE"
   rm -f "$DEMO_STASH_FILE"
+}
+
+# demo_guard_stash <log>: runs until killed. If the hidden desktop ever comes into view, hide it at
+# once and note the time, so the take can be thrown away instead of published.
+demo_guard_stash() {
+  local log="$1"
+  : >"$log"
+  local shown='any(.[]; .specialWorkspace.name == $name)'
+  while true; do
+    if hyprctl monitors -j | jq -e --arg name "special:$DEMO_STASH" "$shown" >/dev/null; then
+      date +%s.%N >>"$log"
+      hyprctl dispatch "hl.dsp.workspace.toggle_special(\"$DEMO_STASH\")" >/dev/null
+      # Toggling again while it slides away would show it again, so wait for it to go.
+      for _ in $(seq 20); do
+        hyprctl monitors -j | jq -e --arg name "special:$DEMO_STASH" "$shown" >/dev/null || break
+        sleep 0.05
+      done
+    fi
+    sleep 0.05
+  done
+}
+
+demo_wait_for() {
+  local app="$1"
+  for _ in $(seq 80); do
+    if hyprctl clients -j | jq -e --arg app "$app" 'any(.[]; .class == $app)' >/dev/null; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  return 1
+}
+
+# Showcase windows for public takes, with nothing personal on screen: no shell prompt, which would
+# show a user and host name, and a browser in a throwaway profile.
+open_showcase_terminal() {
+  local name="$1" workspace="$2" command="$3" app="omahub-demo-$1"
+  hyprctl eval "hl.exec_cmd('foot --app-id=$app --title=$name sh -c \"$command; sleep infinity\"', { workspace = '$workspace silent' })" >/dev/null
+  demo_wait_for "$app"
+}
+
+open_showcase_page() {
+  local workspace="$1" profile="$DEMO_ROOT/tmp/demo-browser"
+  mkdir -p "$profile"
+  hyprctl eval "hl.exec_cmd('chromium --user-data-dir=$profile --no-first-run --no-default-browser-check --class=omahub-demo-page --app=file://$DEMO_ROOT/dev/demos/pages/moonshot.html', { workspace = '$workspace silent' })" >/dev/null
+  for _ in $(seq 80); do
+    if hyprctl clients -j | jq -e 'any(.[]; .title == "Moonshot")' >/dev/null; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  return 1
+}
+
+# Close everything a showcase opened, including the demo browser, which does not take its class.
+close_showcase_windows() {
+  local address
+  for address in $(hyprctl clients -j | jq -r '.[] | select(.title == "Moonshot" or (.class | startswith("omahub-demo-"))) | .address'); do
+    hyprctl dispatch "hl.dsp.window.close({ window = \"address:$address\" })" >/dev/null
+  done
 }
 
 close_demo_windows() {

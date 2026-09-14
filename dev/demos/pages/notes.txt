@@ -1,0 +1,6 @@
+
+  notes
+
+  - ship the overview
+  - record the dock
+  - tell your agent
