@@ -73,9 +73,11 @@ else
   # An agent run by a runtime is named by what it runs, like node .../@google/gemini-cli/dist/index.js.
   mkdir -p "$TEST_ROOT/bin/@google/gemini-cli/dist"
   printf '#!/bin/bash\nexec sleep 30\n' >"$TEST_ROOT/bin/@google/gemini-cli/dist/index.js"
-  printf '#!/bin/bash\nsleep 30\n' >"$TEST_ROOT/bin/node"
-  chmod +x "$TEST_ROOT/bin/node" "$TEST_ROOT/bin/@google/gemini-cli/dist/index.js"
-  start_terminal "$project" "$TEST_ROOT/bin/node $TEST_ROOT/bin/@google/gemini-cli/dist/index.js"
+  # The runtime sits off PATH, so it never stands in for the real node the model checks below run on.
+  mkdir -p "$TEST_ROOT/bin/runtime"
+  printf '#!/bin/bash\nsleep 30\n' >"$TEST_ROOT/bin/runtime/node"
+  chmod +x "$TEST_ROOT/bin/runtime/node" "$TEST_ROOT/bin/@google/gemini-cli/dist/index.js"
+  start_terminal "$project" "$TEST_ROOT/bin/runtime/node $TEST_ROOT/bin/@google/gemini-cli/dist/index.js"
   assert_eq "an agent started through a runtime is named by what it runs" \
     "$("$context" "0x1=$terminal" | jq -r '.[0].sessions[0].command')" "gemini"
   stop_all
