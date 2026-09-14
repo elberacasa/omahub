@@ -82,7 +82,7 @@ Look for pops, flicker, jumps, and states that skip.
 dev/demo dev/demos/overview-drag.sh 12   # review tmp/demos/overview-drag.png and its .log
 ```
 
-Demo scripts source `dev/demo-lib.sh` for `move`, `click`, `drag`, `key`, `summon`, `layout`, and throwaway windows. Omahub reports where its pieces are on screen with `omarchy-shell shell call io.github.elberacasa.omahub overviewLayout ""` and `dockLayout`, so scripts never guess pixels. Never send SUPER combinations with wtype: its keys reach Hyprland as other keys. Drive what a keybind does through `summon` instead.
+Demo scripts source `dev/demo-lib.sh` for `move`, `click`, `drag`, `key`, `summon`, `layout`, and throwaway windows. Takes meant for the README or a post use `dev/demo <script> <seconds> --stage`, which moves every real window to a hidden desktop first and brings each one back to its desktop afterwards. Omahub reports where its pieces are on screen with `omarchy-shell shell call io.github.elberacasa.omahub overviewLayout ""` and `dockLayout`, so scripts never guess pixels. Never send SUPER combinations with wtype: its keys reach Hyprland as other keys. Drive what a keybind does through `summon` instead.
 
 ## Commits and releases
 

@@ -4,22 +4,27 @@
 # then every frame is tiled for review. Afterwards demo windows close and the pointer and
 # workspace go back to where they were.
 #
-#   dev/demo <script> [seconds] [--workspace <n>] [--fps <n>]
+#   dev/demo <script> [seconds] [--stage] [--workspace <n>] [--fps <n>]
+#
+# --stage moves every real window to a hidden desktop first and brings each one back afterwards,
+# so a take meant for the README or a post shows only the demo's own windows.
 #
 # Scripts live in dev/demos/ and source dev/demo-lib.sh. The take lands in tmp/takes/<name>.mp4
 # and the review tile in tmp/demos/<name>.png.
 
 set -euo pipefail
 
-usage="usage: dev/demo <script> [seconds] [--workspace <n>] [--fps <n>]"
+usage="usage: dev/demo <script> [seconds] [--stage] [--workspace <n>] [--fps <n>]"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 script=""
 seconds=12
 workspace=""
 fps=60
+stage=0
 
 while (( $# )); do
   case "$1" in
+    --stage) stage=1; shift ;;
     --workspace) workspace="$2"; shift 2 ;;
     --fps) fps="$2"; shift 2 ;;
     -h | --help) echo "$usage"; exit 0 ;;
@@ -48,10 +53,15 @@ workspace_before=$(hyprctl activeworkspace -j | jq -r .id)
 
 restore() {
   close_demo_windows || true
+  demo_restore_windows || true
   pointer move $pointer_before 1 >/dev/null 2>&1 || true
   hyprctl dispatch "hl.dsp.focus({ workspace = \"$workspace_before\" })" >/dev/null 2>&1 || true
 }
 trap restore EXIT
+
+if (( stage )); then
+  demo_stash_windows
+fi
 
 take=("$name" "$seconds" --quiet --fps "$fps" --run "bash $(realpath "$script")")
 if [[ -n $workspace ]]; then

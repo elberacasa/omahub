@@ -94,6 +94,31 @@ open_demo_window() {
   return 1
 }
 
+DEMO_STASH_FILE="$DEMO_ROOT/tmp/demos/stash.tsv"
+
+# Move every real window to a hidden desktop so a public take shows only demo windows, remembering
+# each window's desktop. demo_restore_windows puts them all back.
+demo_stash_windows() {
+  local address workspace
+  demo_restore_windows
+  mkdir -p "$(dirname "$DEMO_STASH_FILE")"
+  hyprctl clients -j | jq -r '.[] | select((.class | startswith("omahub-demo-")) | not) | select(.workspace.id > 0) | "\(.address)\t\(.workspace.id)"' >"$DEMO_STASH_FILE"
+  while IFS=$'\t' read -r address workspace; do
+    hyprctl dispatch "hl.dsp.window.move({ workspace = \"special:omahub-stash\", window = \"address:$address\", follow = false })" >/dev/null
+  done <"$DEMO_STASH_FILE"
+}
+
+demo_restore_windows() {
+  local address workspace
+  if [[ ! -s $DEMO_STASH_FILE ]]; then
+    return 0
+  fi
+  while IFS=$'\t' read -r address workspace; do
+    hyprctl dispatch "hl.dsp.window.move({ workspace = \"$workspace\", window = \"address:$address\", follow = false })" >/dev/null
+  done <"$DEMO_STASH_FILE"
+  rm -f "$DEMO_STASH_FILE"
+}
+
 close_demo_windows() {
   local address
   for address in $(hyprctl clients -j | jq -r '.[] | select(.class | startswith("omahub-demo-")) | .address'); do
