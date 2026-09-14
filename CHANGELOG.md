@@ -4,6 +4,16 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 
 ## Unreleased
 
+### Fixed
+
+- Switches and choices in the hub change the moment you pick them. If a change fails or takes too long, the row goes back to how it was and says why.
+- A setting that could not be read says so, instead of looking switched off.
+- New project keeps the name you typed until the project exists, and asks for a name when there is none.
+- An unrecognized keyboard no longer reads "All 0 recommended settings are on".
+- `omahub open` lands on a setting even when the hub had not loaded it yet.
+- A click between two choices, or inside a name field, no longer changes the setting.
+- The same change is never sent twice, and changes waiting their turn look it.
+
 ## 0.1.0 - 2026-09-13
 
 The first release: the Mac layer for Omarchy, one plugin with a hub for every setting. Nothing changes until you turn it on, and `omahub uninstall` puts everything back.

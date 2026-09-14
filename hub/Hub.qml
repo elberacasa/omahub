@@ -34,7 +34,14 @@ Item {
   property string query: ""
   property bool searching: false
   property string busyId: ""
+  property string busyValue: ""
+  property bool setTimedOut: false
   property var queue: []
+  readonly property var queuedIds: root.queue.map(function(item) { return item[0] })
+  // How each changed row looked before its first change still on its way, to put it back if a change fails.
+  property var rollbacks: ({})
+  // Settings whose last read failed or timed out. They keep what they last showed, marked as unread.
+  property var readErrors: ({})
 
   readonly property string omahub: Qt.resolvedUrl("../bin/omahub").toString().replace("file://", "")
   readonly property string welcomeMarker: Quickshell.env("HOME") + "/.local/state/omahub/welcomed"
@@ -82,6 +89,16 @@ Item {
   Component.onCompleted: {
     root.refresh()
     firstRun.running = true
+  }
+
+  // Typing again clears a prompt's "Type a name first".
+  onPromptTextChanged: root.clearError(root.promptId)
+
+  function clearError(id) {
+    if (id === "" || root.errors[id] === undefined) return
+    var nextErrors = Object.assign({}, root.errors)
+    delete nextErrors[id]
+    root.errors = nextErrors
   }
 
   function open(payloadJson) {
@@ -162,48 +179,120 @@ Item {
       Qt.callLater(root.readStates)
       return
     }
-    root.states = Object.assign({}, root.states, root.pendingStates)
+    // A setting whose read failed or timed out keeps what it last showed, marked as unread, instead of
+    // looking switched off.
+    var nextStates = Object.assign({}, root.states)
+    var failed = {}
+    root.catalog.forEach(function(setting) {
+      var state = root.pendingStates[setting.id]
+      if (state) nextStates[setting.id] = state
+      else if (setting.kind !== "action") failed[setting.id] = true
+    })
+    root.states = nextStates
     root.options = Object.assign({}, root.options, root.pendingOptions)
+    root.readErrors = failed
     root.statesReady = true
   }
 
+  // Changes run one at a time. The row shows its new state at once, and a change that matches the
+  // last one already on its way for that setting is not sent again.
   function setValue(id, value) {
+    var last = root.busyId === id ? root.busyValue : null
+    root.queue.forEach(function(item) { if (item[0] === id) last = item[1] })
+    if (last === value) return
+
+    root.applyOptimistic(id, value)
     if (root.busyId !== "") {
       root.queue = root.queue.concat([[id, value]])
       return
     }
-    var nextErrors = Object.assign({}, root.errors)
-    delete nextErrors[id]
-    root.errors = nextErrors
+    root.runSet(id, value)
+  }
+
+  function runSet(id, value) {
+    root.clearError(id)
     root.busyId = id
+    root.busyValue = value
+    root.setTimedOut = false
     setProcess.command = [root.omahub, "set", id, value]
     setProcess.running = true
+  }
+
+  function applyOptimistic(id, value) {
+    var next = Model.optimistic(root.settingById(id), root.states[id] || null, root.options[id] || null, value)
+    if (!next) return
+    if (root.rollbacks[id] === undefined) {
+      var nextRollbacks = Object.assign({}, root.rollbacks)
+      nextRollbacks[id] = { state: root.states[id] || null, options: root.options[id] || null }
+      root.rollbacks = nextRollbacks
+    }
+    var nextStates = Object.assign({}, root.states)
+    nextStates[id] = next.state
+    root.states = nextStates
+    if (next.options) {
+      var nextOptions = Object.assign({}, root.options)
+      nextOptions[id] = next.options
+      root.options = nextOptions
+    }
+  }
+
+  function restoreRollback(id) {
+    var saved = root.rollbacks[id]
+    if (saved === undefined) return
+    var nextStates = Object.assign({}, root.states)
+    nextStates[id] = saved.state
+    root.states = nextStates
+    var nextOptions = Object.assign({}, root.options)
+    nextOptions[id] = saved.options
+    root.options = nextOptions
+    root.forgetRollback(id)
+  }
+
+  function forgetRollback(id) {
+    if (root.rollbacks[id] === undefined) return
+    var nextRollbacks = Object.assign({}, root.rollbacks)
+    delete nextRollbacks[id]
+    root.rollbacks = nextRollbacks
   }
 
   function finishSet(exitCode) {
     var id = root.busyId
     if (id === "") return
+    var setting = root.settingById(id)
+    var stillQueued = root.queuedIds.indexOf(id) >= 0
 
-    if (exitCode === 0) {
-      var state = Model.parseJson(setOutput.text)
+    if (exitCode === 0 && !root.setTimedOut) {
+      // A later change to the same setting is already showing, so this answer would only flicker.
+      var state = stillQueued ? null : Model.parseJson(setOutput.text)
       if (state) {
         var nextStates = Object.assign({}, root.states)
         nextStates[id] = state
         root.states = nextStates
+        if (setting && setting.kind === "choice" && root.options[id]) {
+          var nextOptions = Object.assign({}, root.options)
+          nextOptions[id] = Model.markCurrent(root.options[id], state.value)
+          root.options = nextOptions
+        }
       }
-      var finished = root.settingById(id)
-      if (finished && finished.closes) root.close()
+      if (!stillQueued) root.forgetRollback(id)
+      if (root.promptId === id) root.cancelPrompt()
+      if (setting && setting.closes) root.close()
     } else {
+      // Put the row back the way it was, drop the changes queued behind it, and say what went wrong.
+      root.restoreRollback(id)
+      root.queue = root.queue.filter(function(item) { return item[0] !== id })
       var nextErrors = Object.assign({}, root.errors)
-      nextErrors[id] = Model.errorText(setErrors.text)
+      nextErrors[id] = root.setTimedOut ? "This took too long, so Omahub stopped waiting. Try again" : Model.errorText(setErrors.text)
       root.errors = nextErrors
     }
 
     root.busyId = ""
+    root.busyValue = ""
+    root.setTimedOut = false
     if (root.queue.length > 0) {
       var next = root.queue[0]
       root.queue = root.queue.slice(1)
-      root.setValue(next[0], next[1])
+      root.runSet(next[0], next[1])
     } else {
       root.readStates()
     }
@@ -246,11 +335,16 @@ Item {
     root.promptText = ""
   }
 
+  // The typed text stays until the action succeeds, so a failure never loses it.
   function submitPrompt() {
-    var text = root.promptText.trim()
-    if (text === "") return
     var id = root.promptId
-    root.cancelPrompt()
+    var text = root.promptText.trim()
+    if (text === "") {
+      var nextErrors = Object.assign({}, root.errors)
+      nextErrors[id] = "Type a name first"
+      root.errors = nextErrors
+      return
+    }
     root.setValue(id, text)
   }
 
@@ -268,13 +362,14 @@ Item {
     return null
   }
 
-  // `omahub open <setting>` lands on that row, and starts its prompt when it has one.
+  // `omahub open <setting>` lands on that row, and starts its prompt when it has one. A setting the
+  // catalog has not loaded yet stays wanted until it has, since loading the catalog tries again.
   function applyPendingSetting() {
     if (!root.pendingSetting || root.catalog.length === 0) return
     var id = root.pendingSetting
-    root.pendingSetting = ""
     for (var i = 0; i < root.rows.length; i++) {
       if (root.rows[i].id !== id) continue
+      root.pendingSetting = ""
       if (root.rows[i].prompt) root.beginPrompt(i)
       else root.cursor = i
       revealTimer.restart()
@@ -414,6 +509,23 @@ Item {
     onExited: function(exitCode) {
       Qt.callLater(function() { root.finishSet(exitCode) })
     }
+  }
+
+  // A change or a read that never answers must not freeze the hub. Keyboard changes reload Hyprland
+  // and take about a second, so the limits leave plenty of room.
+  Timer {
+    interval: 20000
+    running: setProcess.running
+    onTriggered: {
+      root.setTimedOut = true
+      setProcess.running = false
+    }
+  }
+
+  Timer {
+    interval: 15000
+    running: stateProcess.running
+    onTriggered: stateProcess.running = false
   }
 
   PointerMoveGate {
@@ -917,7 +1029,9 @@ Item {
                 settingState: root.states[modelData.id] || null
                 options: root.options[modelData.id] || []
                 busy: root.busyId === modelData.id
-                error: root.errors[modelData.id] || ""
+                pending: root.queuedIds.indexOf(modelData.id) >= 0
+                error: root.errors[modelData.id]
+                  || (root.readErrors[modelData.id] ? "Couldn't read this setting. Close and open Omahub to try again" : "")
                 hasCursor: index === root.cursor
                 promptActive: root.promptId === modelData.id
                 promptText: root.promptId === modelData.id ? root.promptText : ""

@@ -72,8 +72,37 @@ function parseStateLine(line) {
 
 function errorText(stderr) {
   const lines = String(stderr || "").trim().split("\n").filter(line => line.length > 0)
-  const last = lines.length ? lines[lines.length - 1] : "Something went wrong."
-  return last.replace(/^omahub: /, "")
+  const last = lines.length ? lines[lines.length - 1] : "Omahub didn't respond. Try again"
+  const message = last.replace(/^omahub: /, "")
+  // Commands write their messages mid-sentence, after "omahub: ". On their own row they start a sentence.
+  return message.charAt(0).toUpperCase() + message.slice(1)
+}
+
+// Choices with the given value marked current, compared as text since values arrive as either.
+function markCurrent(options, value) {
+  if (!Array.isArray(options)) return options
+  return options.map(option => Object.assign({}, option, { current: String(option.value) === String(value) }))
+}
+
+// What a switch or a choice will show once a change goes through, so the row can show it at once.
+// Everything else in the state stays, such as the keyboard's recommendations. Other kinds wait for
+// the real answer, so this returns null for them.
+function optimistic(setting, state, options, value) {
+  if (!setting) return null
+  if (setting.kind === "toggle") {
+    if (value !== "on" && value !== "off") return null
+    const on = value === "on"
+    return { state: Object.assign({}, state || {}, { value: on, label: on ? "On" : "Off" }), options: null }
+  }
+  if (setting.kind === "choice" && Array.isArray(options)) {
+    const chosen = options.find(option => String(option.value) === String(value))
+    if (!chosen) return null
+    return {
+      state: Object.assign({}, state || {}, { value: chosen.value, label: chosen.label }),
+      options: markCurrent(options, chosen.value)
+    }
+  }
+  return null
 }
 
 // Beyond the keyboard, the welcome offers the few choices that change a first day the most.
@@ -104,18 +133,25 @@ function keyboardSummary(states) {
 
   const recommended = Array.isArray(size.recommended) ? size.recommended : []
   const on = recommended.filter(id => states[id] && states[id].value === true).length
+  const recognized = size.value !== null && recommended.length > 0
 
   let detail
   if (size.value === null) detail = "Not recognized yet. Pick its size below and Omahub will recommend keys for it."
   else if (size.source === "chosen") detail = size.label + " keyboard, chosen by you"
   else detail = size.label + " keyboard, detected"
 
+  // With nothing recommended yet, there is no progress to report, only the next step.
+  let progress = "Pick a size to get recommendations"
+  if (recognized) {
+    progress = on === recommended.length
+      ? "All " + recommended.length + " recommended settings are on"
+      : on + " of " + recommended.length + " recommended settings are on"
+  }
+
   return {
     name: size.keyboard || "Your keyboard",
     detail: detail,
-    progress: on === recommended.length
-      ? "All " + recommended.length + " recommended settings are on"
-      : on + " of " + recommended.length + " recommended settings are on",
-    complete: on === recommended.length
+    progress: progress,
+    complete: recognized && on === recommended.length
   }
 }

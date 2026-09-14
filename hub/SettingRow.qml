@@ -11,6 +11,8 @@ Rectangle {
   property var settingState: null
   property var options: []
   property bool busy: false
+  // Waiting behind another change.
+  property bool pending: false
   property string error: ""
   property bool hasCursor: false
   property bool promptActive: false
@@ -131,6 +133,16 @@ Rectangle {
         : valueLabel.implicitWidth
       height: Math.max(toggle.implicitHeight, choices.implicitHeight, valueLabel.implicitHeight, actionControl.implicitHeight)
       anchors.verticalCenter: parent.verticalCenter
+      opacity: row.pending ? 0.55 : 1
+
+      Behavior on opacity { NumberAnimation { duration: 140 } }
+
+      // Clicks between chips or on the prompt field land here, so a near miss never changes the
+      // setting or runs the action.
+      MouseArea {
+        anchors.fill: parent
+        visible: row.hasChips || row.setting.kind === "action"
+      }
 
       ToggleSwitch {
         id: toggle
