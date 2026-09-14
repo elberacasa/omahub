@@ -277,6 +277,11 @@ Item {
     root.close()
   }
 
+  function goToDesktop(id) {
+    root.dispatch('hl.dsp.focus({ workspace = "' + id + '" })')
+    root.close()
+  }
+
   function goToDesktopNumber(number) {
     var index = root.desktops.findIndex(function(item) { return item.id === number })
     if (index >= 0) {
@@ -613,15 +618,12 @@ Item {
                 font.bold: thumb.selected
               }
 
+              // A click goes to the desktop at once, like clicking a window. h and l still browse
+              // desktops without leaving.
               MouseArea {
                 anchors.fill: thumbFrame
                 cursorShape: Qt.PointingHandCursor
-                onClicked: root.selectDesktop(thumb.index)
-                onDoubleClicked: {
-                  root.selectDesktop(thumb.index)
-                  root.dispatch('hl.dsp.focus({ workspace = "' + thumb.modelData.id + '" })')
-                  root.close()
-                }
+                onClicked: root.goToDesktop(thumb.modelData.id)
               }
             }
           }

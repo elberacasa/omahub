@@ -27,13 +27,17 @@ Item {
     DesktopEntries.applications.values || [], ToplevelManager.toplevels.values || [])
   readonly property var layout: Model.layout(root.items, root.cellWidth, root.dividerWidth)
 
-  readonly property int iconSize: Style.space(46)
+  readonly property int iconSize: Style.space(50)
   readonly property int cellPadding: Style.space(5)
   readonly property int cellWidth: root.iconSize + root.cellPadding * 2
   readonly property int dividerWidth: Style.space(17)
-  readonly property int dockPadding: Style.space(8)
-  readonly property int dotSpace: Style.space(8)
+  readonly property int dockPadding: Style.space(9)
+  readonly property int dotSpace: Style.space(7)
   readonly property int baseHeight: root.iconSize + root.dockPadding * 2 + root.dotSpace
+  // A soft shelf: rounded in proportion to its height, edged with a hairline in the theme's text
+  // color rather than a heavy border, so the icons carry the dock.
+  readonly property int shelfRadius: Math.round(root.baseHeight * 0.32)
+  readonly property color hairline: Util.alpha(Color.menu.text, 0.14)
   readonly property int edgeGap: Style.gapsOut
   readonly property real maxScale: root.magnify ? 1.5 : 1
   readonly property real magnifyRange: root.cellWidth * 2.5
@@ -81,6 +85,27 @@ Item {
     list.push({ label: "Magnification", action: "magnify", checked: root.magnify })
     list.push({ label: "Dock settings…", action: "settings" })
     return list
+  }
+
+  // The name above a hovered icon: a small pill, like the one on the Mac.
+  component DockLabel: Rectangle {
+    property string text: ""
+    width: labelText.implicitWidth + Style.spacing.lg * 2
+    height: labelText.implicitHeight + Style.spacing.xs * 2
+    radius: height / 2
+    color: Util.alpha(Color.menu.background, 0.92)
+    border.width: Math.max(1, Style.space(1))
+    border.color: root.hairline
+
+    Text {
+      id: labelText
+      anchors.centerIn: parent
+      textFormat: Text.PlainText
+      text: parent.text
+      color: Color.menu.text
+      font.family: Style.font.menuFamily
+      font.pixelSize: Style.font.caption
+    }
   }
 
   function reload() {
@@ -249,7 +274,10 @@ Item {
     WlrLayershell.namespace: "omahub-dock"
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-    exclusionMode: ExclusionMode.Ignore
+    // A dock that stays on screen keeps its own room, so windows resize to sit above it, like the
+    // bar. One that hides floats over them instead.
+    exclusionMode: root.enabled && !root.autohide && root.items.length > 0 ? ExclusionMode.Normal : ExclusionMode.Ignore
+    exclusiveZone: root.baseHeight + root.edgeGap
 
     // Input lands only where the dock is: its band while shown and a thin strip at the edge while
     // hidden. While the menu is open the whole dock window takes clicks, so one outside the menu
@@ -344,9 +372,9 @@ Item {
         anchors.bottomMargin: root.edgeGap
         width: iconRow.width + root.dockPadding * 2 + root.overviewButtonWidth
         height: root.baseHeight
-        radius: Style.cornerRadius
-        color: Util.alpha(Color.menu.background, 0.94)
-        borderSpec: Border.surfaceSpec("menu", "border", Color.menu.border, Math.max(1, Style.space(2)))
+        radius: root.shelfRadius
+        color: Util.alpha(Color.menu.background, 0.8)
+        borderSpec: Border.flat(root.hairline, Math.max(1, Style.space(1)))
       }
 
       Item {
@@ -359,50 +387,52 @@ Item {
         width: root.overviewButtonWidth
         height: root.iconSize
 
-        Text {
-          anchors.centerIn: parent
-          anchors.horizontalCenterOffset: -root.dividerWidth / 2
-          textFormat: Text.PlainText
-          text: "󰖯"
-          color: overviewButton.hovered ? Color.accent : Color.menu.text
-          opacity: overviewButton.hovered ? 1 : 0.8
-          font.family: Style.font.family
-          font.pixelSize: Math.round(root.iconSize * 0.62)
+        // A tile of four squares, drawn from theme colors, so it sits among the app icons in any theme.
+        Rectangle {
+          id: overviewTile
+          x: root.cellPadding + (root.iconSize - width) / 2
+          anchors.bottom: parent.bottom
+          width: Math.round(root.iconSize * 0.88)
+          height: width
+          radius: Math.round(width * 0.24)
+          color: Util.alpha(overviewButton.hovered ? Color.accent : Color.menu.text, overviewButton.hovered ? 0.22 : 0.1)
 
           Behavior on color {
             ColorAnimation { duration: 120 }
+          }
+
+          Grid {
+            anchors.centerIn: parent
+            columns: 2
+            spacing: Math.round(overviewTile.width * 0.1)
+
+            Repeater {
+              model: 4
+
+              Rectangle {
+                width: Math.round(overviewTile.width * 0.24)
+                height: width
+                radius: Math.round(width * 0.28)
+                color: overviewButton.hovered ? Color.accent : Util.alpha(Color.menu.text, 0.8)
+              }
+            }
           }
         }
 
         Rectangle {
           x: root.cellWidth + root.dividerWidth / 2
-          anchors.bottom: parent.bottom
+          anchors.verticalCenter: overviewTile.verticalCenter
           width: Math.max(1, Style.space(1))
-          height: root.iconSize
-          color: Util.alpha(Color.menu.text, 0.18)
+          height: Math.round(root.iconSize * 0.7)
+          color: root.hairline
         }
 
-        Rectangle {
+        DockLabel {
           visible: overviewButton.hovered && !root.menuOpen
-          x: (root.cellWidth - width) / 2
+          anchors.horizontalCenter: overviewTile.horizontalCenter
           anchors.bottom: parent.top
-          anchors.bottomMargin: Style.space(8)
-          width: overviewLabel.implicitWidth + Style.spacing.md * 2
-          height: overviewLabel.implicitHeight + Style.spacing.xs * 2
-          radius: Style.cornerRadius
-          color: Color.menu.background
-          border.width: Math.max(1, Style.space(1))
-          border.color: Util.alpha(Color.menu.text, 0.18)
-
-          Text {
-            id: overviewLabel
-            anchors.centerIn: parent
-            textFormat: Text.PlainText
-            text: "Overview"
-            color: Color.menu.text
-            font.family: Style.font.menuFamily
-            font.pixelSize: Style.font.caption
-          }
+          anchors.bottomMargin: Style.space(10)
+          text: "Overview"
         }
 
         MouseArea {
@@ -453,9 +483,10 @@ Item {
               visible: cell.modelData.divider
               x: root.dividerWidth / 2
               anchors.bottom: parent.bottom
+              anchors.bottomMargin: Math.round(root.iconSize * 0.15)
               width: Math.max(1, Style.space(1))
-              height: root.iconSize
-              color: Util.alpha(Color.menu.text, 0.18)
+              height: Math.round(root.iconSize * 0.7)
+              color: root.hairline
             }
 
             Image {
@@ -466,8 +497,9 @@ Item {
               anchors.bottomMargin: icon.hop
               width: root.iconSize * cell.scaleFactor
               height: width
-              sourceSize.width: root.iconSize * 2
-              sourceSize.height: root.iconSize * 2
+              // Rendered for the largest magnified size, so icons stay crisp under the pointer.
+              sourceSize.width: Math.ceil(root.iconSize * root.maxScale * 2)
+              sourceSize.height: Math.ceil(root.iconSize * root.maxScale * 2)
               source: root.iconSource(cell.modelData.icon)
               fillMode: Image.PreserveAspectFit
               smooth: true
@@ -487,35 +519,20 @@ Item {
 
             Rectangle {
               visible: cell.windowCount > 0
-              width: Style.space(5)
+              width: Style.space(4)
               height: width
               radius: width / 2
               anchors.horizontalCenter: icon.horizontalCenter
               y: cell.height + (root.dotSpace - height) / 2
-              color: cell.active ? Color.accent : Util.alpha(Color.menu.text, 0.7)
+              color: cell.active ? Color.accent : Util.alpha(Color.menu.text, 0.55)
             }
 
-            Rectangle {
+            DockLabel {
               visible: cell.hovered && !root.menuOpen
               anchors.horizontalCenter: icon.horizontalCenter
               anchors.bottom: icon.top
-              anchors.bottomMargin: Style.space(8)
-              width: nameText.implicitWidth + Style.spacing.md * 2
-              height: nameText.implicitHeight + Style.spacing.xs * 2
-              radius: Style.cornerRadius
-              color: Color.menu.background
-              border.width: Math.max(1, Style.space(1))
-              border.color: Util.alpha(Color.menu.text, 0.18)
-
-              Text {
-                id: nameText
-                anchors.centerIn: parent
-                textFormat: Text.PlainText
-                text: cell.modelData.name
-                color: Color.menu.text
-                font.family: Style.font.menuFamily
-                font.pixelSize: Style.font.caption
-              }
+              anchors.bottomMargin: Style.space(10)
+              text: cell.modelData.name
             }
 
             MouseArea {
