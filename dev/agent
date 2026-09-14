@@ -42,7 +42,9 @@ HELD="$AGENT_DIR/held-super"
 KEYBOARD_DIR="$AGENT_DIR/keyboard"
 KEYBOARD_BIN="$ROOT/tmp/bin/omahub-keyboard"
 TEST_PREFIX="omahub-demo-"
-BACKUP_PATHS=("$HOME/.local/state/omahub" "$HOME/.config/omahub" "$HOME/.config/hypr/bindings.lua")
+# Everything a check can change: Omahub's state and settings, the Hyprland bindings its keyboard
+# layers edit, and Omarchy's shell settings, which record whether a plugin is enabled.
+BACKUP_PATHS=("$HOME/.local/state/omahub" "$HOME/.config/omahub" "$HOME/.config/hypr/bindings.lua" "$HOME/.config/omarchy/shell.json")
 
 source "$ROOT/dev/demo-lib.sh"
 
@@ -497,6 +499,7 @@ key_name() {
     BACKSPACE) echo BackSpace ;;
     PRINT) echo Print ;;
     MENU) echo Menu ;;
+    / | SLASH) echo slash ;;
     # A letter names its key, which types lowercase. SHIFT+n types N.
     [A-Z]) echo "${1,,}" ;;
     *) echo "$1" ;;
