@@ -80,6 +80,7 @@ const tiles = Model.desktops([ws(3), ws(1), ws(2), ws(-98), ws(4, "HDMI-1")], [t
 check("the dock shows desktops with windows and the one in front, in order", tiles.map(t => t.id).join(",") === "1,2,3")
 check("the desktop in front is marked even when empty", tiles[1].active && tiles[1].windows.length === 0 && !tiles[0].active)
 check("a desktop lists its windows most recent first", tiles[0].windows.map(w => w.appId).join(",") === "cursor,foot")
+check("a window keeps its process, so its terminals can be read", Model.desktops([ws(1)], [{ lastIpcObject: { address: "0xe", class: "foot", workspace: { id: 1 }, pid: 4242 } }], "DP-1", 1)[0].windows[0].pid === 4242)
 check("special desktops and other screens stay out", !tiles.some(t => t.id === -98 || t.id === 4))
 check("a point past the apps and the gap is over the first desktop", Model.desktopAt(215, 200, 10, 60, 3) === 0)
 check("a point over the gap is over no desktop", Model.desktopAt(205, 200, 10, 60, 3) === -1)

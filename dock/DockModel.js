@@ -104,7 +104,8 @@ function desktops(workspaces, toplevels, monitorName, activeId) {
       appId: String(data.class || ""),
       title: String((toplevel && toplevel.title) || data.title || ""),
       workspace: toplevel && toplevel.workspace ? toplevel.workspace.id : (data.workspace ? data.workspace.id : 0),
-      focus: data.focusHistoryID !== undefined ? Number(data.focusHistoryID) : 1000
+      focus: data.focusHistoryID !== undefined ? Number(data.focusHistoryID) : 1000,
+      pid: Number(data.pid) || 0
     }
   }).filter(window => window.appId !== "")
   const result = []

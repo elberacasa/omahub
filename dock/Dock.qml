@@ -104,6 +104,12 @@ Item {
   // Names people gave desktops, shared with the overview.
   readonly property string desktopsFile: Quickshell.env("HOME") + "/.local/state/omahub/desktops.json"
   property var desktopNames: ({})
+  // What runs in each window's terminals, so a desktop of terminals is named by its project or tool, not
+  // "Foot". Read a moment after windows change and as the pointer reaches the dock, never on a loop.
+  readonly property string contextScript: Qt.resolvedUrl("../desktops/context.sh").toString().replace("file://", "")
+  property var terminalInfo: ({})
+  onDesktopTilesChanged: if (root.showDesktops) contextDelay.restart()
+  onPointerInsideChanged: if (root.pointerInside && root.showDesktops) contextDelay.restart()
   readonly property var appIndex: Desktops.appIndex(DesktopEntries.applications.values || [])
 
   // The size chosen in settings, made smaller when the apps and desktops would not fit along the edge.
@@ -358,7 +364,7 @@ Item {
   function desktopTitle(tile) {
     var contexts = {}
     var windows = tile.windows.map(function(window) {
-      contexts[window.address] = Desktops.windowContext(window, null)
+      contexts[window.address] = Desktops.windowContext(window, root.terminalInfo[window.address] || null)
       var entry = root.entryFor(window.appId)
       return { address: window.address, appId: window.appId, appName: entry && entry.name ? String(entry.name) : window.appId, focus: window.focus }
     })
@@ -704,6 +710,43 @@ Item {
     }
     onFileChanged: reload()
     onLoadFailed: root.desktopNames = ({})
+  }
+
+  Timer {
+    id: contextDelay
+    interval: 500
+    onTriggered: {
+      if (contextReader.running) {
+        contextDelay.restart()
+        return
+      }
+      var pairs = []
+      root.desktopTiles.forEach(function(tile) {
+        tile.windows.forEach(function(window) {
+          if (window.pid > 0) pairs.push(window.address + "=" + window.pid)
+        })
+      })
+      if (pairs.length === 0) {
+        root.terminalInfo = ({})
+        return
+      }
+      contextReader.command = [root.contextScript].concat(pairs)
+      contextReader.running = true
+    }
+  }
+
+  Process {
+    id: contextReader
+    stdout: StdioCollector {
+      onStreamFinished: {
+        var list
+        try { list = JSON.parse(text) } catch (e) { return }
+        if (!Array.isArray(list)) return
+        var next = {}
+        list.forEach(function(item) { next[item.address] = item })
+        root.terminalInfo = next
+      }
+    }
   }
 
   Timer {

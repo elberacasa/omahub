@@ -158,4 +158,16 @@ check "and goes there" ".desktop == $away" 1
 pkill -f -- "--app-id=[o]mahub-demo-d" || true
 rm -f "$entry"
 
+section "A desktop of terminals is named by what runs in them, not by the terminal app"
+project="$LIVE_ROOT/tmp/live-dock-project"
+rm -rf "$project"
+mkdir -p "$project/.git"
+echo "ref: refs/heads/main" >"$project/.git/HEAD"
+spare=$(( $(hyprctl workspaces -j | jq '[.[] | select(.id > 0) | .id] | max') + 1 ))
+hyprctl eval "hl.exec_cmd('foot --app-id=omahub-demo-t --title=Test-T --working-directory=$project sh -c \"sleep infinity\"', { workspace = '$spare silent' })" >/dev/null
+check "test terminal t opens on its own desktop" "any(.windows[]; .class == \"omahub-demo-t\" and .desktop == $spare)" 5
+check "its tile reads the project the terminal works in" ".omahub.dock.desktops[] | select(.id == $spare) | .title == \"live-dock-project\"" 4
+hyprctl clients -j | jq -r '.[] | select(.class == "omahub-demo-t") | .pid' | xargs -r kill 2>/dev/null || true
+rm -rf "$project"
+
 finish_live
