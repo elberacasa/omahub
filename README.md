@@ -9,7 +9,7 @@
 <p align="center">The Mac layer for Omarchy. One key for everything you want to change.</p>
 
 <p align="center">
-  <img alt="SUPER + A opens Omahub. Go to Projects, type a name, press Enter, and the agent opens in the new project" src="assets/omahub-idea-to-agent.gif" width="720">
+  <img alt="The overview names each desktop by its project and branch, with Claude at work on one. p lists the projects, typing finds tidewater, and Enter opens it on a desktop of its own with Cursor and Claude" src="assets/omahub-launch.gif" width="720">
 </p>
 
 # Omahub
@@ -25,9 +25,9 @@ Every setting in Omahub is a small, readable file. People change them from the h
 | The hub | SUPER + A opens it. Search every setting, move with j and k, change it with Space. Every row shows the real state of your system. The first time it loads, a welcome offers the settings recommended for your keyboard |
 | Keyboard | Detects your keyboard and recommends keys for it: Mac screenshots, Vim focus, agent keys, and mouse buttons. No Omarchy action loses its key |
 | Agents | Turn on "Let agents use Omahub" and any coding agent can read and change these settings through the `omahub` command. Pick which subscriptions, such as Claude and Codex, show in the bar's Agents panel, and put their limits on the bar when your Agents widget offers it, choosing for each plan which of its limits shows |
-| Overview | SUPER + TAB flips to your last window with a tap, and held, walks every window on every desktop with live previews. Move with h, j, k, and l, type to find any window, drag windows between desktops, click any desktop to go there, and let go of SUPER to jump |
-| Dock | Your kept and open apps on the edge of the screen. Pick its size, magnification, and position on the left, bottom, or right, put every icon on the same rounded tile, and choose the open app dots and whether open apps join it. It slides away when a window reaches it or stays on screen with windows sized around it, and a right-click keeps an app or changes how it behaves |
-| Projects | Type a name and Omahub creates the project, starts git, and opens your agent there. Pick your default agent, editor, and projects folder, and add more agents and editors from Omarchy's own menu |
+| Overview | SUPER + TAB flips to your last window with a tap, and held, walks every window on every desktop with live previews. Each desktop is named by its project and branch, shows the agent at work on it, and takes a name of your own with r. Move with h, j, k, and l, type to find any window, send a window to another desktop with Shift and a number, and let go of SUPER to jump |
+| Dock | Your kept and open apps on the edge of the screen, and if you like, your desktops at its end: click one to go there, or drop an app on one to open it there. Pick its size, magnification, and position on the left, bottom, or right, put every icon on the same rounded tile, and add apps from a searchable list. It slides away when a window reaches it or stays on screen with windows sized around it |
+| Projects | Press p in the overview to open any project on a desktop of its own with your editor and agent, or jump to the desktop it is already open on. Type a new name and Omahub creates the project, starts git, and opens your agent there. Pick your default agent, editor, and projects folder |
 | Screenshots | Turn on the thumbnail and every screenshot slides into the corner. Click to edit, drag into any app, drag right to dismiss, right-click to save it anywhere. Pick the screenshot folder in the same section |
 
 ## See it
@@ -38,6 +38,10 @@ Every setting in Omahub is a small, readable file. People change them from the h
 
 <p align="center">
   <img alt="The dock slides up at the bottom edge, icons magnify under the pointer, a right-click shows its options, and it slides away again" src="assets/omahub-dock.gif" width="720">
+</p>
+
+<p align="center">
+  <img alt="Desktops at the end of the dock, each named by its project. A click goes to lumen-docs, where Claude is at work, and btop dropped on X's desktop opens there" src="assets/omahub-dock-desktops.gif" width="720">
 </p>
 
 ## Building now
@@ -151,6 +155,14 @@ dev/demo dev/demos/overview-drag.sh 12
 ```
 
 `dev/demo` drives a virtual pointer and the keyboard from a script in `dev/demos/` while it records, then tiles the frames, closes its throwaway windows, and puts the pointer back. The pointer client builds itself on first use from `dev/pointer/`, with no extra packages and no root.
+
+Film real apps on generic projects without showing your own windows:
+
+```bash
+dev/studio up             # generic projects in Cursor, btop, and a signed out X, your windows hidden
+dev/studio record launch  # run dev/demos/studio-launch.sh and record it
+dev/studio down           # close everything it opened and put your desktop back
+```
 
 ## Contributing
 
