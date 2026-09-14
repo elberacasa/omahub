@@ -167,7 +167,11 @@ omarchy plugin remove io.github.elberacasa.omahub
 
 ## Requirements
 
-Omarchy 4.0 or newer. The development tools also use `ffmpeg` and `gpu-screen-recorder`, which ship with Omarchy.
+Omarchy 4.0 or newer. Everything Omahub runs ships with Omarchy: `hyprctl`, `jq`, `uwsm`, `gum`, `wl-clipboard`, Nautilus, and Omarchy's own commands. The dictation key uses `voxtype` only when it is installed.
+
+Omahub runs inside Omarchy's shell like every plugin, with your user's permissions. It never uses root, installs nothing, and starts no services. It changes `~/.config/hypr/bindings.lua` only when you turn on a keyboard setting, inside one marked block that `omahub uninstall` removes.
+
+The development tools in `dev/` also use `ffmpeg`, `gpu-screen-recorder`, `grim`, `tesseract`, and `wayland-scanner`, which ship with Omarchy, and `gcc` from `base-devel` to build the live checks' virtual keyboard and pointer.
 
 ## License
 
