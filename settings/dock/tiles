@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# omahub:title=Icon tiles
+# omahub:summary=Every icon sits on the same rounded tile, like the Mac, so icons from different apps look alike
+# omahub:section=dock
+# omahub:order=38
+# omahub:kind=toggle
+# omahub:icon=󰀻
+# omahub:keywords=dock icon tiles tile rounded square uniform consistent mac
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/dock.sh"
+
+omahub_dock_toggle_setting tiles false dock/tiles "$@"

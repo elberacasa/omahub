@@ -7,9 +7,12 @@ import qs.Commons
 import qs.Ui
 import "DockModel.js" as Model
 
-// The dock: pinned apps, then open apps that are not pinned, at the bottom of the focused screen.
+// The dock: pinned apps, then open apps that are not pinned, on one edge of the focused screen.
 // Its settings live in ~/.local/state/omahub/dock.json, which the hub, the terminal, and agents
 // change through `omahub`, so every change shows here at once.
+//
+// The layout is written once for any edge: "along" runs with the edge the dock sits on, and "across"
+// runs in from it. Icons grow away from the edge, and dots sit on the edge side, as on the Mac.
 Item {
   id: root
 
@@ -24,6 +27,9 @@ Item {
     : (root.config.magnify === "subtle" ? "subtle" : "large")
   readonly property bool magnify: root.magnification !== "off"
   readonly property string size: ["small", "medium", "large"].indexOf(root.config.size) >= 0 ? root.config.size : "medium"
+  readonly property string edge: ["left", "right"].indexOf(root.config.position) >= 0 ? root.config.position : "bottom"
+  readonly property bool vertical: root.edge !== "bottom"
+  readonly property bool tiles: root.config.tiles === true
   readonly property bool indicators: root.config.indicators !== false
   readonly property bool showOpen: root.config.recents !== false
   readonly property bool bounce: root.config.bounce !== false
@@ -39,9 +45,10 @@ Item {
   readonly property int dividerWidth: Style.space(17)
   readonly property int dockPadding: Style.space(9)
   readonly property int dotSpace: Style.space(7)
+  // How far the shelf reaches in from its edge.
   readonly property int baseHeight: root.iconSize + root.dockPadding * 2 + root.dotSpace
-  // A soft shelf: rounded in proportion to its height, edged with a hairline in the theme's text
-  // color rather than a heavy border, so the icons carry the dock.
+  // A soft shelf: rounded in proportion to its depth, edged with a hairline in the theme's text color
+  // rather than a heavy border, so the icons carry the dock.
   readonly property int shelfRadius: Math.round(root.baseHeight * 0.32)
   readonly property color hairline: Util.alpha(Color.menu.text, 0.14)
   readonly property int edgeGap: Style.gapsOut
@@ -49,13 +56,15 @@ Item {
   readonly property real magnifyRange: root.cellWidth * 2.5
   // The overview button leads the dock, set off from the apps by a divider.
   readonly property int overviewButtonWidth: root.cellWidth + root.dividerWidth
+  // How long the shelf runs along its edge, before magnification.
   readonly property int baseWidth: root.layout.width + root.dockPadding * 2 + root.overviewButtonWidth
-  // Room above the dock for magnified icons and the app name.
+  // Room in from the edge for magnified icons and the app name.
   readonly property int bandHeight: Math.ceil(root.iconSize * root.maxScale) + root.dockPadding * 2
     + root.dotSpace + root.edgeGap + Style.space(40)
   readonly property int menuSpace: Style.space(300)
+  readonly property int labelGap: Style.space(10)
 
-  // The pointer's position in the unscaled layout, or -1 when it is away from the dock.
+  // The pointer's position along the dock in the unscaled layout, or -1 when it is away.
   property real pointerX: -1
   property bool pointerInside: false
   property bool lingering: false
@@ -88,11 +97,16 @@ Item {
     list.push({ separator: true })
     list.push({ label: "Automatically hide", action: "autohide", checked: root.autohide })
     list.push({ label: "Magnification", action: "magnify", checked: root.magnify })
+    list.push({ heading: "Position on screen" })
+    list.push({ label: "Left", action: "position", value: "left", checked: root.edge === "left" })
+    list.push({ label: "Bottom", action: "position", value: "bottom", checked: root.edge === "bottom" })
+    list.push({ label: "Right", action: "position", value: "right", checked: root.edge === "right" })
+    list.push({ separator: true })
     list.push({ label: "Dock settings…", action: "settings" })
     return list
   }
 
-  // The name above a hovered icon: a small pill, like the one on the Mac.
+  // The name next to a hovered icon: a small pill, like the one on the Mac.
   component DockLabel: Rectangle {
     property string text: ""
     width: labelText.implicitWidth + Style.spacing.lg * 2
@@ -118,16 +132,19 @@ Item {
   }
 
   // Where the dock's pieces are on screen, in the compositor's coordinates, for demo scripts and
-  // agents that drive it with a pointer. The bottom edge is where a hidden dock wakes up.
+  // agents that drive it with a pointer. The edge point is where a hidden dock wakes up.
   function layoutJson() {
     var screen = root.focusedScreen
     var screenX = screen ? screen.x : 0
     var screenY = screen ? screen.y : 0
+    var screenWidth = screen ? screen.width : dockWindow.width
     var screenHeight = screen ? screen.height : dockWindow.height
+    var originX = root.edge === "right" ? screenX + screenWidth - dockWindow.width : screenX
+    var originY = root.edge === "bottom" ? screenY + screenHeight - dockWindow.height : screenY
     function place(item) {
       var point = item.mapToItem(null, 0, 0)
       return {
-        x: Math.round(screenX + point.x), y: Math.round(screenY + screenHeight - dockWindow.height + point.y),
+        x: Math.round(originX + point.x), y: Math.round(originY + point.y),
         width: Math.round(item.width), height: Math.round(item.height)
       }
     }
@@ -136,9 +153,12 @@ Item {
       var cell = iconRepeater.itemAt(i)
       if (cell) apps.push(Object.assign({ id: cell.modelData.id, name: cell.modelData.name, windows: cell.modelData.windows.length }, place(cell)))
     }
+    var edgePoint = root.edge === "left" ? { x: screenX, y: screenY + screenHeight / 2 }
+      : (root.edge === "right" ? { x: screenX + screenWidth - 1, y: screenY + screenHeight / 2 }
+        : { x: screenX + screenWidth / 2, y: screenY + screenHeight - 1 })
     return JSON.stringify({
-      shown: root.shown, apps: apps, overview: place(overviewButton),
-      edge: { x: Math.round(screenX + (screen ? screen.width : 0) / 2), y: Math.round(screenY + screenHeight - 1), width: 1, height: 1 }
+      shown: root.shown, position: root.edge, apps: apps, overview: place(overviewButton),
+      edge: { x: Math.round(edgePoint.x), y: Math.round(edgePoint.y), width: 1, height: 1 }
     })
   }
 
@@ -170,7 +190,8 @@ Item {
 
   function openMenu(item, cell) {
     root.menuItem = item
-    root.menuCenter = cell.mapToItem(dockVisual, cell.width / 2, 0).x
+    var point = cell.mapToItem(dockVisual, cell.width / 2, cell.height / 2)
+    root.menuCenter = root.vertical ? point.y : point.x
     root.menuOpen = true
   }
 
@@ -187,6 +208,8 @@ Item {
       Quickshell.execDetached([root.omahub, "set", "dock/autohide", root.autohide ? "off" : "on"])
     } else if (entry.action === "magnify") {
       Quickshell.execDetached([root.omahub, "set", "dock/magnify", root.magnify ? "off" : "large"])
+    } else if (entry.action === "position") {
+      Quickshell.execDetached([root.omahub, "set", "dock/position", entry.value])
     } else if (entry.action === "settings") {
       Quickshell.execDetached([root.omahub, "open", "dock"])
     }
@@ -210,11 +233,12 @@ Item {
   function readCover() {
     var monitor = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.lastIpcObject : null
     var clients = (Hyprland.toplevels.values || []).map(function(toplevel) { return toplevel.lastIpcObject })
-    root.covered = Model.covered(monitor, clients, root.baseWidth + root.edgeGap * 2, root.baseHeight + root.edgeGap)
+    root.covered = Model.covered(monitor, clients, root.edge, root.baseWidth + root.edgeGap * 2, root.baseHeight + root.edgeGap)
   }
 
   onEnabledChanged: root.checkCover()
   onAutohideChanged: root.checkCover()
+  onEdgeChanged: root.checkCover()
   Component.onCompleted: root.checkCover()
 
   FileView {
@@ -280,16 +304,25 @@ Item {
     id: dockWindow
     visible: root.enabled && root.focusedScreen !== null
     screen: root.focusedScreen
-    anchors { bottom: true; left: true; right: true }
+    anchors {
+      left: root.edge !== "right"
+      right: root.edge !== "left"
+      top: root.vertical
+      bottom: true
+    }
+    implicitWidth: root.bandHeight + root.menuSpace
     implicitHeight: root.bandHeight + root.menuSpace
     color: "transparent"
     WlrLayershell.namespace: "omahub-dock"
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-    // A dock that stays on screen keeps its own room, so windows resize to sit above it, like the
+    // A dock that stays on screen keeps its own room, so windows resize to make way for it, like the
     // bar. One that hides floats over them instead.
     exclusionMode: root.enabled && !root.autohide && root.items.length > 0 ? ExclusionMode.Normal : ExclusionMode.Ignore
     exclusiveZone: root.baseHeight + root.edgeGap
+
+    // The window's length along the edge the dock sits on.
+    readonly property real alongLength: root.vertical ? dockWindow.height : dockWindow.width
 
     // Input lands only where the dock is: its band while shown and a thin strip at the edge while
     // hidden. While the menu is open the whole dock window takes clicks, so one outside the menu
@@ -312,18 +345,20 @@ Item {
 
     Item {
       id: edgeHit
-      anchors.left: parent.left
-      anchors.right: parent.right
-      anchors.bottom: parent.bottom
-      height: Math.max(2, Style.space(3))
+      readonly property int thickness: Math.max(2, Style.space(3))
+      x: root.edge === "right" ? dockWindow.width - edgeHit.thickness : 0
+      y: root.edge === "bottom" ? dockWindow.height - edgeHit.thickness : 0
+      width: root.vertical ? edgeHit.thickness : dockWindow.width
+      height: root.vertical ? dockWindow.height : edgeHit.thickness
     }
 
     Item {
       id: dockHit
-      anchors.horizontalCenter: parent.horizontalCenter
-      anchors.bottom: parent.bottom
-      width: root.baseWidth + root.cellWidth * 2
-      height: root.bandHeight
+      readonly property real length: root.baseWidth + root.cellWidth * 2
+      x: root.edge === "left" ? 0 : (root.edge === "right" ? dockWindow.width - root.bandHeight : (dockWindow.width - dockHit.length) / 2)
+      y: root.vertical ? (dockWindow.height - dockHit.length) / 2 : dockWindow.height - root.bandHeight
+      width: root.vertical ? root.bandHeight : dockHit.length
+      height: root.vertical ? dockHit.length : root.bandHeight
     }
 
     MouseArea {
@@ -355,8 +390,9 @@ Item {
       }
       onPositionChanged: function(mouse) {
         root.pointerInside = true
-        var origin = (dockWindow.width - root.baseWidth) / 2 + root.dockPadding + root.overviewButtonWidth
-        root.pointerX = dockHit.x + mouse.x - origin
+        var along = root.vertical ? dockHit.y + mouse.y : dockHit.x + mouse.x
+        var origin = (dockWindow.alongLength - root.baseWidth) / 2 + root.dockPadding + root.overviewButtonWidth
+        root.pointerX = along - origin
       }
     }
 
@@ -365,13 +401,20 @@ Item {
       anchors.fill: parent
       opacity: root.shown ? 1 : 0
 
+      readonly property real away: root.shown ? 0 : root.baseHeight + root.edgeGap
+
       Behavior on opacity {
         NumberAnimation { duration: root.shown ? 180 : 140; easing.type: root.shown ? Easing.OutCubic : Easing.InCubic }
       }
 
+      // A hidden dock waits just past its edge and slides in from there.
       transform: Translate {
-        y: root.shown ? 0 : root.baseHeight + root.edgeGap
+        x: root.edge === "left" ? -dockVisual.away : (root.edge === "right" ? dockVisual.away : 0)
+        y: root.edge === "bottom" ? dockVisual.away : 0
 
+        Behavior on x {
+          NumberAnimation { duration: root.shown ? 240 : 170; easing.type: root.shown ? Easing.OutCubic : Easing.InCubic }
+        }
         Behavior on y {
           NumberAnimation { duration: root.shown ? 240 : 170; easing.type: root.shown ? Easing.OutCubic : Easing.InCubic }
         }
@@ -379,11 +422,12 @@ Item {
 
       BorderSurface {
         id: dockBackground
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: root.edgeGap
-        width: iconRow.width + root.dockPadding * 2 + root.overviewButtonWidth
-        height: root.baseHeight
+        readonly property real length: (root.vertical ? iconRow.height : iconRow.width) + root.dockPadding * 2 + root.overviewButtonWidth
+        x: root.edge === "left" ? root.edgeGap
+          : (root.edge === "right" ? parent.width - width - root.edgeGap : (parent.width - width) / 2)
+        y: root.vertical ? (parent.height - height) / 2 : parent.height - height - root.edgeGap
+        width: root.vertical ? root.baseHeight : dockBackground.length
+        height: root.vertical ? dockBackground.length : root.baseHeight
         radius: root.shelfRadius
         color: Util.alpha(Color.menu.background, 0.8)
         borderSpec: Border.flat(root.hairline, Math.max(1, Style.space(1)))
@@ -392,20 +436,19 @@ Item {
       Item {
         id: overviewButton
         readonly property bool hovered: root.pointerX > -root.overviewButtonWidth && root.pointerX < -root.dividerWidth
-        anchors.left: dockBackground.left
-        anchors.leftMargin: root.dockPadding
-        anchors.bottom: dockBackground.bottom
-        anchors.bottomMargin: root.dockPadding + root.dotSpace
-        width: root.overviewButtonWidth
-        height: root.iconSize
+        // Icons start after the dots on the edge side: below them at the bottom, beside them on a side.
+        x: dockBackground.x + root.dockPadding + (root.edge === "left" ? root.dotSpace : 0)
+        y: dockBackground.y + root.dockPadding
+        width: root.vertical ? root.iconSize : root.overviewButtonWidth
+        height: root.vertical ? root.overviewButtonWidth : root.iconSize
 
         // A tile of four squares, drawn from theme colors, so it sits among the app icons in any theme.
         Rectangle {
           id: overviewTile
-          x: root.cellPadding + (root.iconSize - width) / 2
-          anchors.bottom: parent.bottom
           width: Math.round(root.iconSize * 0.88)
           height: width
+          x: root.vertical ? (root.edge === "left" ? 0 : root.iconSize - width) : root.cellPadding + (root.iconSize - width) / 2
+          y: root.vertical ? root.cellPadding + (root.iconSize - height) / 2 : root.iconSize - height
           radius: Math.round(width * 0.24)
           color: Util.alpha(overviewButton.hovered ? Color.accent : Color.menu.text, overviewButton.hovered ? 0.22 : 0.1)
 
@@ -432,35 +475,35 @@ Item {
         }
 
         Rectangle {
-          x: root.cellWidth + root.dividerWidth / 2
-          anchors.verticalCenter: overviewTile.verticalCenter
-          width: Math.max(1, Style.space(1))
-          height: Math.round(root.iconSize * 0.7)
+          x: root.vertical ? overviewTile.x + (overviewTile.width - width) / 2 : root.cellWidth + root.dividerWidth / 2
+          y: root.vertical ? root.cellWidth + root.dividerWidth / 2 : overviewTile.y + (overviewTile.height - height) / 2
+          width: root.vertical ? Math.round(root.iconSize * 0.7) : Math.max(1, Style.space(1))
+          height: root.vertical ? Math.max(1, Style.space(1)) : Math.round(root.iconSize * 0.7)
           color: root.hairline
         }
 
         DockLabel {
           visible: overviewButton.hovered && !root.menuOpen
-          anchors.horizontalCenter: overviewTile.horizontalCenter
-          anchors.bottom: parent.top
-          anchors.bottomMargin: Style.space(10)
           text: "Overview"
+          x: root.edge === "left" ? overviewTile.x + overviewTile.width + root.labelGap
+            : (root.edge === "right" ? overviewTile.x - width - root.labelGap : overviewTile.x + (overviewTile.width - width) / 2)
+          y: root.vertical ? overviewTile.y + (overviewTile.height - height) / 2 : overviewTile.y - height - root.labelGap
         }
 
         MouseArea {
-          width: root.cellWidth
-          height: parent.height
+          width: root.vertical ? parent.width : root.cellWidth
+          height: root.vertical ? root.cellWidth : parent.height
           cursorShape: Qt.PointingHandCursor
           onClicked: Quickshell.execDetached([root.omahub, "open", "overview"])
         }
       }
 
-      Row {
+      Grid {
         id: iconRow
-        anchors.right: dockBackground.right
-        anchors.rightMargin: root.dockPadding
-        anchors.bottom: dockBackground.bottom
-        anchors.bottomMargin: root.dockPadding + root.dotSpace
+        columns: root.vertical ? 1 : Math.max(1, iconRepeater.count)
+        x: root.vertical ? dockBackground.x + root.dockPadding + (root.edge === "left" ? root.dotSpace : 0)
+          : dockBackground.x + dockBackground.width - root.dockPadding - width
+        y: root.vertical ? dockBackground.y + dockBackground.height - root.dockPadding - height : dockBackground.y + root.dockPadding
 
         Repeater {
           id: iconRepeater
@@ -483,49 +526,68 @@ Item {
               return false
             }
             readonly property int dividerSpace: cell.modelData.divider ? root.dividerWidth : 0
+            readonly property real length: cell.dividerSpace + root.iconSize * cell.scaleFactor + root.cellPadding * 2
 
-            width: cell.dividerSpace + root.iconSize * cell.scaleFactor + root.cellPadding * 2
-            height: root.iconSize
+            width: root.vertical ? root.iconSize : cell.length
+            height: root.vertical ? cell.length : root.iconSize
 
             Behavior on width {
+              NumberAnimation { duration: 90; easing.type: Easing.OutCubic }
+            }
+            Behavior on height {
               NumberAnimation { duration: 90; easing.type: Easing.OutCubic }
             }
 
             Rectangle {
               visible: cell.modelData.divider
-              x: root.dividerWidth / 2
-              anchors.bottom: parent.bottom
-              anchors.bottomMargin: Math.round(root.iconSize * 0.15)
-              width: Math.max(1, Style.space(1))
-              height: Math.round(root.iconSize * 0.7)
+              x: root.vertical ? Math.round(root.iconSize * 0.15) : root.dividerWidth / 2
+              y: root.vertical ? root.dividerWidth / 2 : Math.round(root.iconSize * 0.15)
+              width: root.vertical ? Math.round(root.iconSize * 0.7) : Math.max(1, Style.space(1))
+              height: root.vertical ? Math.max(1, Style.space(1)) : Math.round(root.iconSize * 0.7)
               color: root.hairline
             }
 
-            Image {
-              id: icon
+            // The icon, and its tile when tiles are on. It grows away from the edge and lifts the
+            // same way when its app opens.
+            Item {
+              id: iconBox
               property real hop: 0
-              x: cell.dividerSpace + root.cellPadding
-              anchors.bottom: parent.bottom
-              anchors.bottomMargin: icon.hop
               width: root.iconSize * cell.scaleFactor
               height: width
-              // Rendered for the largest magnified size, so icons stay crisp under the pointer.
-              sourceSize.width: Math.ceil(root.iconSize * root.maxScale * 2)
-              sourceSize.height: Math.ceil(root.iconSize * root.maxScale * 2)
-              source: root.iconSource(cell.modelData.icon)
-              fillMode: Image.PreserveAspectFit
-              smooth: true
-              mipmap: true
+              x: root.edge === "left" ? iconBox.hop
+                : (root.edge === "right" ? root.iconSize - width - iconBox.hop : cell.dividerSpace + root.cellPadding)
+              y: root.vertical ? cell.dividerSpace + root.cellPadding : root.iconSize - height - iconBox.hop
 
               Behavior on width {
                 NumberAnimation { duration: 90; easing.type: Easing.OutCubic }
               }
 
-              // Launching lifts the icon once, the dock's version of a bounce.
+              Rectangle {
+                visible: root.tiles
+                anchors.fill: parent
+                radius: Math.round(width * 0.23)
+                color: Util.alpha(Color.menu.text, 0.1)
+                border.width: Math.max(1, Style.space(1))
+                border.color: root.hairline
+              }
+
+              Image {
+                anchors.centerIn: parent
+                width: iconBox.width * (root.tiles ? 0.72 : 1)
+                height: width
+                // Rendered for the largest magnified size, so icons stay crisp under the pointer.
+                sourceSize.width: Math.ceil(root.iconSize * root.maxScale * 2)
+                sourceSize.height: Math.ceil(root.iconSize * root.maxScale * 2)
+                source: root.iconSource(cell.modelData.icon)
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+                mipmap: true
+              }
+
               SequentialAnimation {
                 id: hopAnimation
-                NumberAnimation { target: icon; property: "hop"; to: Style.space(14); duration: 160; easing.type: Easing.OutCubic }
-                NumberAnimation { target: icon; property: "hop"; to: 0; duration: 220; easing.type: Easing.InOutCubic }
+                NumberAnimation { target: iconBox; property: "hop"; to: Style.space(14); duration: 160; easing.type: Easing.OutCubic }
+                NumberAnimation { target: iconBox; property: "hop"; to: 0; duration: 220; easing.type: Easing.InOutCubic }
               }
             }
 
@@ -534,17 +596,18 @@ Item {
               width: Style.space(4)
               height: width
               radius: width / 2
-              anchors.horizontalCenter: icon.horizontalCenter
-              y: cell.height + (root.dotSpace - height) / 2
+              x: root.edge === "left" ? -root.dotSpace + (root.dotSpace - width) / 2
+                : (root.edge === "right" ? root.iconSize + (root.dotSpace - width) / 2 : iconBox.x + (iconBox.width - width) / 2)
+              y: root.vertical ? iconBox.y + (iconBox.height - height) / 2 : root.iconSize + (root.dotSpace - height) / 2
               color: cell.active ? Color.accent : Util.alpha(Color.menu.text, 0.55)
             }
 
             DockLabel {
               visible: cell.hovered && !root.menuOpen
-              anchors.horizontalCenter: icon.horizontalCenter
-              anchors.bottom: icon.top
-              anchors.bottomMargin: Style.space(10)
               text: cell.modelData.name
+              x: root.edge === "left" ? iconBox.x + iconBox.width + root.labelGap
+                : (root.edge === "right" ? iconBox.x - width - root.labelGap : iconBox.x + (iconBox.width - width) / 2)
+              y: root.vertical ? iconBox.y + (iconBox.height - height) / 2 : iconBox.y - height - root.labelGap
             }
 
             MouseArea {
@@ -568,13 +631,17 @@ Item {
       }
     }
 
+    // The menu opens beside the dock: above it at the bottom, next to it on a side.
     BorderSurface {
       id: menuCard
       visible: root.menuOpen
       width: Style.space(230)
       height: menuColumn.implicitHeight + Style.spacing.sm * 2
-      x: Math.max(Style.gapsOut, Math.min(dockWindow.width - width - Style.gapsOut, root.menuCenter - width / 2))
-      y: dockWindow.height - root.baseHeight - root.edgeGap - height - Style.space(10)
+      x: root.edge === "left" ? root.edgeGap + root.baseHeight + root.labelGap
+        : (root.edge === "right" ? dockWindow.width - root.edgeGap - root.baseHeight - width - root.labelGap
+          : Math.max(Style.gapsOut, Math.min(dockWindow.width - width - Style.gapsOut, root.menuCenter - width / 2)))
+      y: root.vertical ? Math.max(Style.gapsOut, Math.min(dockWindow.height - height - Style.gapsOut, root.menuCenter - height / 2))
+        : dockWindow.height - root.baseHeight - root.edgeGap - height - root.labelGap
       radius: Style.cornerRadius
       color: Color.menu.background
       borderSpec: Border.surfaceSpec("menu", "border", Color.menu.border, Math.max(1, Style.space(2)))
@@ -605,8 +672,9 @@ Item {
           delegate: Item {
             id: menuRow
             required property var modelData
+            readonly property bool actionable: !menuRow.modelData.separator && !menuRow.modelData.heading
             width: menuColumn.width
-            height: menuRow.modelData.separator ? Style.space(9) : Style.space(30)
+            height: menuRow.modelData.separator ? Style.space(9) : (menuRow.modelData.heading ? Style.space(24) : Style.space(30))
 
             Rectangle {
               visible: !!menuRow.modelData.separator
@@ -616,15 +684,28 @@ Item {
               color: Util.alpha(Color.menu.text, 0.12)
             }
 
+            Text {
+              visible: !!menuRow.modelData.heading
+              anchors.bottom: parent.bottom
+              anchors.bottomMargin: Style.spacing.xs
+              x: Style.spacing.sm
+              textFormat: Text.PlainText
+              text: menuRow.modelData.heading || ""
+              color: Color.menu.text
+              opacity: 0.6
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.caption
+            }
+
             Rectangle {
-              visible: !menuRow.modelData.separator
+              visible: menuRow.actionable
               anchors.fill: parent
               radius: Style.cornerRadius
               color: rowMouse.containsMouse ? Color.menu.selectedBackground : "transparent"
             }
 
             Text {
-              visible: !menuRow.modelData.separator
+              visible: menuRow.actionable
               anchors.verticalCenter: parent.verticalCenter
               x: Style.spacing.sm
               width: parent.width - Style.spacing.sm * 2 - checkMark.width
@@ -652,7 +733,7 @@ Item {
             MouseArea {
               id: rowMouse
               anchors.fill: parent
-              enabled: !menuRow.modelData.separator
+              enabled: menuRow.actionable
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
               onClicked: root.runMenu(menuRow.modelData)

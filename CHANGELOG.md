@@ -33,6 +33,8 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - The dock looks at home next to the Mac's: a soft rounded shelf with a hairline edge, larger icons that stay sharp when magnified, an Overview tile, and names in small pills. With `dock/autohide` off it stays on screen and windows are sized to sit above it.
 - Clicking a desktop in the overview goes there at once.
 - Dock settings that a Mac user knows, in the hub's Dock section: Size, Magnification with Off, Subtle, and Large, open app dots, showing open apps that are not kept, and the bounce when an app opens. A magnification switch saved before keeps working.
+- The dock can sit on the left, bottom, or right, from `dock/position` or its right-click menu, like the Mac's Position on screen. On a side it stands upright, grows its icons away from the edge, shows names beside them, and when it stays on screen, windows make room on that side.
+- `dock/tiles` puts every dock icon on the same rounded tile, so icons from different apps look like one set.
 - `omahub uninstall` resets every setting and removes Omahub's data, then shows the command that removes the plugin. It asks first, or takes `--yes`.
 
 ### Performance

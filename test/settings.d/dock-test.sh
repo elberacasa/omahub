@@ -68,6 +68,24 @@ jq '.magnify = true' "$dock_file" >"$dock_file.tmp" && mv "$dock_file.tmp" "$doc
 assert_eq "a switch saved on before reads as Large" "$(omahub get dock/magnify | jq -r .value)" "large"
 omahub reset dock/magnify >/dev/null
 
+assert_eq "the dock starts at the bottom" "$(omahub get dock/position | jq -r .value)" "bottom"
+assert_eq "position offers the Mac's three edges" "$(omahub options dock/position | jq -c 'map(.value)')" '["left","bottom","right"]'
+assert_eq "the dock can sit on the left" "$(omahub set dock/position left | jq -r .label)" "Left"
+assert_eq "the dock file keeps the position" "$(jq -r .position "$dock_file")" "left"
+if omahub set dock/position top 2>/dev/null; then
+  fail "an edge the dock does not use fails"
+else
+  pass "an edge the dock does not use fails"
+fi
+omahub reset dock/position >/dev/null
+
+assert_eq "icon tiles start off" "$(omahub get dock/tiles | jq -r .value)" "false"
+assert_eq "icon tiles turn on" "$(omahub set dock/tiles on | jq -r .value)" "true"
+omahub reset dock/tiles >/dev/null
+assert_eq "the hub lists dock settings in the Mac's order" \
+  "$(omahub settings --json | jq -c '[.[] | select(.section == "dock" and (.hidden | not))] | sort_by(.order) | map(.id | ltrimstr("dock/"))')" \
+  '["show","size","magnify","position","tiles","autohide","indicators","recents","bounce"]'
+
 for setting in indicators recents bounce; do
   assert_eq "dock/$setting starts on" "$(omahub get "dock/$setting" | jq -r .value)" "true"
   assert_eq "dock/$setting turns off" "$(omahub set "dock/$setting" off | jq -r .value)" "false"

@@ -16,26 +16,31 @@ const Model = new Function(source + "\nreturn { covered, items }")()
 const checks = []
 const check = (name, ok) => checks.push({ name, ok: !!ok })
 
-// A 1920 by 1080 screen and a dock band 700 wide and 90 tall, centered at the bottom.
+// A 1920 by 1080 screen and a dock band 700 long and 90 deep, centered on its edge.
 const monitor = { x: 0, y: 0, width: 1920, height: 1080, scale: 1, activeWorkspace: { id: 1 }, specialWorkspace: { id: 0 } }
 const client = (ws, x, y, w, h, extra) => Object.assign({ mapped: true, hidden: false, workspace: { id: ws }, at: [x, y], size: [w, h] }, extra)
 
-check("an empty desktop leaves the dock clear", !Model.covered(monitor, [], 700, 90))
-check("a full-height tiled window covers it", Model.covered(monitor, [client(1, 10, 40, 1900, 1030)], 700, 90))
-check("a window that stops above the band leaves it clear", !Model.covered(monitor, [client(1, 10, 40, 1900, 940)], 700, 90))
-check("a window beside the band leaves it clear", !Model.covered(monitor, [client(1, 0, 600, 500, 470)], 700, 90))
-check("windows on other desktops do not count", !Model.covered(monitor, [client(2, 10, 40, 1900, 1030)], 700, 90))
+check("an empty desktop leaves the dock clear", !Model.covered(monitor, [], "bottom", 700, 90))
+check("a full-height tiled window covers it", Model.covered(monitor, [client(1, 10, 40, 1900, 1030)], "bottom", 700, 90))
+check("a window that stops above the band leaves it clear", !Model.covered(monitor, [client(1, 10, 40, 1900, 940)], "bottom", 700, 90))
+check("a window beside the band leaves it clear", !Model.covered(monitor, [client(1, 0, 600, 500, 470)], "bottom", 700, 90))
+check("windows on other desktops do not count", !Model.covered(monitor, [client(2, 10, 40, 1900, 1030)], "bottom", 700, 90))
 check("hidden and unmapped windows do not count",
-  !Model.covered(monitor, [client(1, 10, 40, 1900, 1030, { hidden: true }), client(1, 10, 40, 1900, 1030, { mapped: false })], 700, 90))
+  !Model.covered(monitor, [client(1, 10, 40, 1900, 1030, { hidden: true }), client(1, 10, 40, 1900, 1030, { mapped: false })], "bottom", 700, 90))
 check("an open special workspace counts",
-  Model.covered(Object.assign({}, monitor, { specialWorkspace: { id: -98 } }), [client(-98, 100, 100, 1700, 950)], 700, 90))
+  Model.covered(Object.assign({}, monitor, { specialWorkspace: { id: -98 } }), [client(-98, 100, 100, 1700, 950)], "bottom", 700, 90))
 check("a scaled monitor measures in logical pixels",
-  Model.covered(Object.assign({}, monitor, { width: 3840, height: 2160, scale: 2 }), [client(1, 10, 40, 1900, 1030)], 700, 90))
-check("a window without geometry yet does not count", !Model.covered(monitor, [{ mapped: true, workspace: { id: 1 } }], 700, 90))
+  Model.covered(Object.assign({}, monitor, { width: 3840, height: 2160, scale: 2 }), [client(1, 10, 40, 1900, 1030)], "bottom", 700, 90))
+check("a window without geometry yet does not count", !Model.covered(monitor, [{ mapped: true, workspace: { id: 1 } }], "bottom", 700, 90))
 const listLike = values => Object.assign(Object.create(null), values, { length: values.length })
 check("positions and sizes read from list wrappers",
-  Model.covered(monitor, listLike([client(1, 10, 40, 1900, 1030, { at: listLike([10, 40]), size: listLike([1900, 1030]) })]), 700, 90))
-check("no monitor record means clear", !Model.covered(null, [client(1, 10, 40, 1900, 1030)], 700, 90))
+  Model.covered(monitor, listLike([client(1, 10, 40, 1900, 1030, { at: listLike([10, 40]), size: listLike([1900, 1030]) })]), "bottom", 700, 90))
+check("no monitor record means clear", !Model.covered(null, [client(1, 10, 40, 1900, 1030)], "bottom", 700, 90))
+
+check("a left dock is covered by a window along the left edge", Model.covered(monitor, [client(1, 0, 40, 960, 1030)], "left", 700, 90))
+check("a left dock stays clear of a window on the right half", !Model.covered(monitor, [client(1, 970, 40, 940, 1030)], "left", 700, 90))
+check("a right dock is covered by a window along the right edge", Model.covered(monitor, [client(1, 970, 40, 940, 1030)], "right", 700, 90))
+check("a side band is centered along the edge", !Model.covered(monitor, [client(1, 0, 0, 1920, 150)], "left", 700, 90))
 
 const entries = [{ id: "foot", name: "Foot" }, { id: "obsidian", name: "Obsidian" }]
 const open = [{ appId: "foot" }, { appId: "obsidian" }]

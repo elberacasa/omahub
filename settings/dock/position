@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# omahub:title=Position on screen
+# omahub:summary=Which edge of the screen the dock sits on
+# omahub:section=dock
+# omahub:order=35
+# omahub:kind=choice
+# omahub:icon=󱂩
+# omahub:keywords=dock position edge left right bottom side vertical screen
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/dock.sh"
+
+omahub_dock_choice_setting position bottom "left=Left bottom=Bottom right=Right" dock/position "$@"

@@ -110,14 +110,26 @@ function listValue(value) {
   return out
 }
 
+// The band a dock uses on one edge of the monitor, in logical pixels: `length` along the edge,
+// centered, and `depth` in from it.
+function band(monitor, edge, length, depth) {
+  const width = monitor.width / monitor.scale
+  const height = monitor.height / monitor.scale
+  if (edge === "left" || edge === "right") {
+    const top = monitor.y + (height - length) / 2
+    const left = edge === "left" ? monitor.x : monitor.x + width - depth
+    return { left: left, right: left + depth, top: top, bottom: top + length }
+  }
+  const left = monitor.x + (width - length) / 2
+  return { left: left, right: left + length, top: monitor.y + height - depth, bottom: monitor.y + height }
+}
+
 // True when a window on the monitor's visible desktop, or on its open special workspace, reaches
-// into the band the dock uses at the bottom of the screen. `monitor` and `clients` are Hyprland's
-// own records, the ones `hyprctl monitors -j` and `hyprctl clients -j` print.
-function covered(monitor, clients, width, height) {
+// into the band the dock uses on its edge. `monitor` and `clients` are Hyprland's own records, the
+// ones `hyprctl monitors -j` and `hyprctl clients -j` print.
+function covered(monitor, clients, edge, length, depth) {
   if (!monitor || !(monitor.scale > 0)) return false
-  const left = monitor.x + (monitor.width / monitor.scale - width) / 2
-  const right = left + width
-  const top = monitor.y + monitor.height / monitor.scale - height
+  const area = band(monitor, edge, length, depth)
   const active = monitor.activeWorkspace ? monitor.activeWorkspace.id : null
   const special = monitor.specialWorkspace ? monitor.specialWorkspace.id || 0 : 0
   return listValue(clients).some(client => {
@@ -127,7 +139,7 @@ function covered(monitor, clients, width, height) {
     const at = listValue(client.at)
     const size = listValue(client.size)
     if (at.length < 2 || size.length < 2) return false
-    return at[0] < right && at[0] + size[0] > left && at[1] + size[1] > top
+    return at[0] < area.right && at[0] + size[0] > area.left && at[1] < area.bottom && at[1] + size[1] > area.top
   })
 }
 
