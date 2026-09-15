@@ -291,7 +291,27 @@ uninstall() {
   echo "  omarchy plugin remove $OMAHUB_PLUGIN_ID"
 }
 
+# Hooks in Claude Code and Codex call `omahub signal` when an agent waits on you. It reads the hook's JSON
+# from standard input and notes the wait beside the agent's session record, keyed by that record's path.
+# It prints nothing and always succeeds, so it can never change what the agent does.
+agent_signal() {
+  local input transcript event key dir
+  input=$(cat)
+  transcript=$(jq -r '.transcript_path // empty' <<<"$input" 2>/dev/null) || return 0
+  event=$(jq -r '.hook_event_name // empty' <<<"$input" 2>/dev/null) || return 0
+  [[ -n $transcript && -n $event ]] || return 0
+  key=$(printf '%s' "$transcript" | sha1sum | cut -c1-16)
+  dir="$OMAHUB_STATE_DIR/signals"
+  mkdir -p "$dir"
+  jq -nc --arg event "$event" --argjson at "$EPOCHSECONDS" '{event: $event, at: $at}' >"$dir/$key.json.tmp" \
+    && mv "$dir/$key.json.tmp" "$dir/$key.json"
+}
+
 case "${1:-help}" in
+  signal)
+    agent_signal >/dev/null 2>&1 || true
+    exit 0
+    ;;
   settings)
     shift
     list_settings "$@"

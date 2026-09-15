@@ -1,0 +1,32 @@
+#!/bin/bash
+
+# omahub:title=Waiting agents
+# omahub:summary=Adds a hook to Claude Code's settings, so the dock shows when Claude waits for your answer. Off removes only that hook
+# omahub:section=agents
+# omahub:kind=toggle
+# omahub:icon=󰀦
+# omahub:requires=claude
+# omahub:keywords=agents claude hook waiting permission approval your turn dock pet notification
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/hooks.sh"
+
+case "${1:-}" in
+  get) ;;
+  set)
+    case "${2:-}" in
+      on | true) omahub_claude_hook_on ;;
+      off | false) omahub_claude_hook_off ;;
+      *) omahub_fail "'${2:-}' is not on or off. Use: omahub set agents/waiting on|off" ;;
+    esac
+    ;;
+  reset) omahub_claude_hook_off ;;
+  *) omahub_fail "usage: omahub get|set|reset agents/waiting" ;;
+esac
+
+if omahub_claude_hook_has; then
+  omahub_state true "On"
+else
+  omahub_state false "Off"
+fi

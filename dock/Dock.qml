@@ -108,6 +108,8 @@ Item {
   // Agents between the apps and the desktops, when that setting is on: one tile for each agent session.
   readonly property var agentSessions: root.showAgents
     ? Desktops.sessions(Model.windowList(Hyprland.toplevels.values || []), root.terminalInfo) : []
+  // An agent waiting for your answer brings a hidden dock out until you answer.
+  readonly property bool agentCalling: root.agentSessions.some(function(session) { return session.activity.agentWaiting })
   readonly property int agentsGap: root.agentSessions.length > 0 && root.items.length > 0 ? root.dividerWidth : 0
   readonly property int agentsLength: root.agentSessions.length > 0 ? root.agentsGap + root.agentSessions.length * root.cellWidth : 0
   // The agent tile under the pointer, measured from where the tiles are drawn.
@@ -228,7 +230,7 @@ Item {
   property string notice: ""
 
   readonly property bool shown: root.enabled
-    && (!root.autohide || !root.covered || root.pointerInside || root.lingering || root.menuOpen
+    && (!root.autohide || !root.covered || root.pointerInside || root.lingering || root.menuOpen || root.agentCalling
       || root.keyboardActive || root.pickerOpen || root.dragIndex >= 0 || root.notice !== "")
 
   readonly property var focusedScreen: {

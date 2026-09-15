@@ -79,7 +79,7 @@ agent_name() {
 # changed, model the one the agent last answered with, since when its latest turn began, in epoch seconds,
 # and message the first line of what it last said, kept short.
 agent_state() {
-  local command="$1" pid="$2" folder="$3" log="" file started said model since message
+  local command="$1" pid="$2" folder="$3" log="" file started said model since message signal event at
   case "$command" in
     claude)
       log=$(ls -t "$HOME/.claude/projects/${folder//[^a-zA-Z0-9]/-}"/*.jsonl 2>/dev/null | head -n 1)
@@ -122,6 +122,15 @@ agent_state() {
       | @tsv')
   fi
   [[ -n $said ]] || return 1
+  # With Omahub's hook added, an agent that asks for your answer says so. The wait holds until its record
+  # changes again, as it does once you answer. The hook runs a moment after the ask, and may note itself
+  # in the record, so a change within a few seconds of the signal still counts as waiting.
+  signal="$HOME/.local/state/omahub/signals/$(printf '%s' "$log" | sha1sum | cut -c1-16).json"
+  if [[ -f $signal ]] && read -r event at < <(jq -r '"\(.event // "") \(.at // 0)"' "$signal" 2>/dev/null); then
+    if [[ $event == "Notification" || $event == "PermissionRequest" ]] && (( at + 3 >= $(stat -c %Y "$log") )); then
+      said="waiting"$'\t'"${said#*$'\t'}"
+    fi
+  fi
   if [[ $command == "claude" ]]; then
     IFS=$'\t' read -r model since message < <(tail -n 160 "$log" | jq -Rrn '
       [inputs | fromjson? // empty | select(.isSidechain != true)] as $all
