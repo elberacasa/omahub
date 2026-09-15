@@ -7,13 +7,13 @@
 # Give it every window. Every terminal under a window's process counts, however deep: a terminal
 # window's own, the terminals inside an editor such as Cursor, and a terminal inside Neovim. For each
 # one it reports facts read from the system, never guesses: the command in front, recognizing an agent
-# started through a runtime or a version manager by what it runs, that command's process, and the git
-# project and branch of its folder.
+# started through a runtime or a version manager by what it runs, that command's process, the git
+# project and branch of its folder, and for an agent that keeps a session record, what it is doing.
 #
-# Prints a JSON array, [{address, sessions: [{terminal, command, pid, project, branch}]}], leaving out
-# windows without terminals. Folders and projects are names only, never paths, so nothing it prints shows
-# where they live. It reads the process table once and then only /proc and .git files, so it is cheap
-# enough to run every second.
+# Prints a JSON array, [{address, sessions: [{terminal, command, pid, project, branch, state, tool}]}],
+# leaving out windows without terminals. Folders and projects are names only, never paths, so nothing it
+# prints shows where they live. It reads the process table once and then only /proc, .git files, and the
+# ends of agents' session records, so it is cheap enough to run every second.
 
 set -uo pipefail
 
@@ -71,6 +71,58 @@ agent_name() {
   done
   return 1
 }
+
+# What an agent is doing, from its own session record for the folder it works in: "working" and the tool
+# it is running, or "done" once its turn ends. Only Claude Code and Codex keep records Omahub can read. A
+# record older than the agent's process belongs to an earlier session, so it says nothing. Prints
+# state<TAB>tool.
+agent_state() {
+  local command="$1" pid="$2" folder="$3" log="" file started
+  case "$command" in
+    claude)
+      log=$(ls -t "$HOME/.claude/projects/${folder//[^a-zA-Z0-9]/-}"/*.jsonl 2>/dev/null | head -n 1)
+      ;;
+    codex)
+      while read -r file; do
+        if [[ $(head -n 1 "$file" | jq -r '.payload.cwd // empty' 2>/dev/null) == "$folder" ]]; then
+          log=$file
+          break
+        fi
+      done < <(find "$HOME/.codex/sessions" -name '*.jsonl' -mmin -4320 -printf '%T@ %p\n' 2>/dev/null | sort -rn | cut -d' ' -f2-)
+      ;;
+  esac
+  [[ -n $log && -f $log ]] || return 1
+  started=$(( $(awk '/^btime/ { print $2 }' /proc/stat) + $(awk '{ print $22 }' "/proc/$pid/stat" 2>/dev/null || echo 0) / $(getconf CLK_TCK) ))
+  (( $(stat -c %Y "$log") >= started )) || return 1
+
+  if [[ $command == "claude" ]]; then
+    tail -n 80 "$log" | jq -Rrn '[inputs | fromjson? // empty | select(.isSidechain != true)
+        | select(.type == "assistant" or .type == "user" or (.type == "system" and .subtype == "turn_duration"))]
+      | last // empty
+      | if .type == "system" then ["done", ""]
+        elif .type == "assistant" then
+          (if .message.stop_reason == "end_turn" then ["done", ""]
+           else ["working", ([.message.content[]? | select(.type == "tool_use") | .name] | last // "")] end)
+        elif (.message.content | tostring | test("\\[Request interrupted")) then ["done", ""]
+        else ["working", ""] end
+      | @tsv'
+  else
+    # Codex records tool output inline, so lines can be large: only the last few event lines are parsed.
+    tail -n 400 "$log" \
+      | grep -E '"payload":\{"type":"(task_started|task_complete|turn_aborted|custom_tool_call|function_call|custom_tool_call_output|function_call_output)"' \
+      | tail -n 3 | jq -Rrn '[inputs | fromjson? // empty | .payload? // empty | objects
+        | select(.type == "task_started" or .type == "task_complete" or .type == "turn_aborted"
+          or .type == "custom_tool_call" or .type == "function_call" or .type == "custom_tool_call_output" or .type == "function_call_output")]
+      | last // empty
+      | if .type == "task_complete" or .type == "turn_aborted" then ["done", ""]
+        elif .type == "custom_tool_call" or .type == "function_call" then ["working", (.name // "")]
+        else ["working", ""] end
+      | @tsv'
+  fi
+}
+
+# What each agent's record said this run, by agent and folder.
+declare -A states
 
 # Every process: pid, parent, group, the terminal's foreground group, terminal, name.
 snapshot=$(ps -eo pid=,ppid=,pgid=,tpgid=,tty=,comm= 2>/dev/null)
@@ -131,7 +183,20 @@ for pair in "$@"; do
       project=${found%%$'\t'*}
       branch=${found#*$'\t'}
     fi
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$address" "$terminal" "$command" "${process:-0}" "$project" "$branch"
+    state=""
+    tool=""
+    if [[ ($command == "claude" || $command == "codex") && -n $process && -n $folder ]]; then
+      # Agents working in one folder write one record, so it is read once.
+      key="$command:$folder"
+      [[ -n ${states[$key]+set} ]] || states[$key]=$(agent_state "$command" "$process" "$folder")
+      found=${states[$key]}
+      if [[ -n $found ]]; then
+        state=${found%%$'\t'*}
+        tool=${found#*$'\t'}
+      fi
+    fi
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$address" "$terminal" "$command" "${process:-0}" "$project" "$branch" "$state" "$tool"
   done
-done | jq -Rcn '[inputs | split("\t") | {address: .[0], terminal: .[1], command: .[2], pid: (.[3] | tonumber), project: .[4], branch: .[5]}]
+done | jq -Rcn '[inputs | split("\t") | {address: .[0], terminal: .[1], command: .[2], pid: (.[3] | tonumber), project: .[4], branch: .[5],
+    state: (.[6] // ""), tool: (.[7] // "")}]
   | group_by(.address) | map({address: .[0].address, sessions: map(del(.address))})'

@@ -86,6 +86,40 @@ else
   chmod +x "$TEST_ROOT/bin/claude"
   start_terminal "$project" "$TEST_ROOT/bin/claude"
   assert_eq "an agent is named by its own name" "$("$context" "0x2=$terminal" | jq -r '.[0].sessions[0].command')" "claude"
+
+  # What an agent is doing comes from its own session record for the folder it works in.
+  home="$TEST_ROOT/home"
+  folder=$(cd "$project" && pwd -P)
+  claude_log="$home/.claude/projects/${folder//[^a-zA-Z0-9]/-}/session.jsonl"
+  mkdir -p "${claude_log%/*}"
+  printf '%s\n' '{"type":"user","message":{"role":"user","content":"Fix the dock"}}' \
+    '{"type":"assistant","message":{"stop_reason":"tool_use","content":[{"type":"tool_use","name":"Bash"}]}}' >"$claude_log"
+  output=$(HOME="$home" "$context" "0x2=$terminal")
+  assert_eq "a Claude session running a tool is working" "$(jq -r "$session.state" <<<"$output")" "working"
+  assert_eq "and names the tool" "$(jq -r "$session.tool" <<<"$output")" "Bash"
+  printf '%s\n' '{"type":"assistant","message":{"stop_reason":"end_turn","content":[{"type":"text"}]}}' \
+    '{"type":"system","subtype":"turn_duration"}' >>"$claude_log"
+  assert_eq "and done once its turn ends" "$(HOME="$home" "$context" "0x2=$terminal" | jq -r "$session.state")" "done"
+  printf '%s\n' '{"type":"assistant","isSidechain":true,"message":{"stop_reason":"tool_use","content":[{"type":"tool_use","name":"Read"}]}}' >>"$claude_log"
+  assert_eq "a subagent's steps leave the turn done" "$(HOME="$home" "$context" "0x2=$terminal" | jq -r "$session.state")" "done"
+  touch -d '1 hour ago' "$claude_log"
+  assert_eq "a record older than the agent's process says nothing" "$(HOME="$home" "$context" "0x2=$terminal" | jq -r "$session.state")" ""
+  assert_eq "an agent without a record says nothing" "$(HOME="$TEST_ROOT/nobody" "$context" "0x2=$terminal" | jq -r "$session.state")" ""
+  stop_all
+
+  printf '#!/bin/bash\nsleep 30\n' >"$TEST_ROOT/bin/codex"
+  chmod +x "$TEST_ROOT/bin/codex"
+  start_terminal "$project" "$TEST_ROOT/bin/codex"
+  codex_log="$home/.codex/sessions/2026/09/15/rollout-test.jsonl"
+  mkdir -p "${codex_log%/*}"
+  printf '%s\n' "{\"type\":\"session_meta\",\"payload\":{\"cwd\":\"$folder\"}}" \
+    '{"type":"event_msg","payload":{"type":"task_started"}}' \
+    '{"type":"response_item","payload":{"type":"custom_tool_call","name":"apply_patch"}}' >"$codex_log"
+  output=$(HOME="$home" "$context" "0x4=$terminal")
+  assert_eq "a Codex session calling a tool is working" "$(jq -r "$session.state" <<<"$output")" "working"
+  assert_eq "and names the tool" "$(jq -r "$session.tool" <<<"$output")" "apply_patch"
+  printf '%s\n' '{"type":"event_msg","payload":{"type":"task_complete"}}' >>"$codex_log"
+  assert_eq "and done once its task completes" "$(HOME="$home" "$context" "0x4=$terminal" | jq -r "$session.state")" "done"
   stop_all
 
   outside=$(mktemp -d)
@@ -112,7 +146,7 @@ fi
 results=$(node - "$OMAHUB_PATH/desktops/DesktopsModel.js" <<'EOF'
 const fs = require("fs")
 const source = fs.readFileSync(process.argv[2], "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { projectFromTitle, windowContext, summary, appIndex, entryFor, agentLabel }")()
+const Model = new Function(source + "\nreturn { projectFromTitle, windowContext, summary, appIndex, entryFor, agentLabel, activityState, activityLabel }")()
 const checks = []
 const check = (name, ok) => checks.push({ name, ok: !!ok })
 
@@ -138,6 +172,15 @@ check("an agent in a terminal inside Neovim is found and wins over the editor", 
 check("an agent is never working or waiting unless it said so", !omahubWindow.agentWorking && !omahubWindow.agentWaiting)
 const reported = Model.windowContext({ appId: "foot" }, { sessions: [{ command: "claude", project: "lumen", state: "waiting" }] })
 check("an agent that reports waiting shows waiting", reported.agentWaiting && !reported.agentWorking)
+const busy = Model.windowContext({ appId: "foot" }, { sessions: [{ command: "claude", project: "lumen", state: "working", tool: "mcp__browser__navigate" }] })
+check("an agent running a tool shows working, with the tool's short name", busy.agentWorking && !busy.agentDone && busy.agentTool === "navigate")
+const finished = Model.windowContext({ appId: "foot" }, { sessions: [{ command: "codex", project: "lumen", state: "done" }] })
+check("an agent whose turn ended shows done", finished.agentDone && !finished.agentWorking)
+check("the state that most needs a look wins", Model.activityState({ agent: "claude", agentWorking: true, attention: true }) === "attention"
+  && Model.activityState({ agent: "claude", agentWorking: true }) === "working" && Model.activityState(null) === "")
+check("labels say what the agent is doing", Model.activityLabel({ agent: "claude", agentWorking: true, agentTool: "Bash" }) === "Claude is running Bash"
+  && Model.activityLabel({ agent: "codex", agentDone: true }) === "Codex is done" && Model.activityLabel({ agent: "claude" }) === "Claude"
+  && Model.activityLabel(null) === "")
 check("an editor app without terminals is an editor", Model.windowContext({ appId: "cursor", title: "a - orbit-api - Cursor" }).kind === "editor")
 check("a branch only comes with a project read from git", Model.windowContext({ appId: "cursor", title: "a - x - Cursor" }).branch === "")
 check("agents go by their own names", Model.agentLabel("claude") === "Claude" && Model.agentLabel("cursor-agent") === "Cursor Agent")
@@ -158,6 +201,10 @@ check("a desktop is named after its project", desktop.title === "orbit-api" && !
 check("with the branch git reports", desktop.branch === "feature/search")
 check("apps come in the order they were last used, once each", desktop.apps.map(app => app.appId).join(",") === "foot,cursor,chromium")
 check("the agent running on it shows", desktop.activity.agent === "claude")
+const mixed = Model.summary({ id: 3, windows: [{ address: "x", appId: "foot" }, { address: "y", appId: "foot" }] },
+  { x: { agent: "codex", agentDone: true }, y: { agent: "claude", agentWorking: true, agentTool: "Edit" } }, "")
+check("a desktop with one agent working and one done reads as working, after the working one",
+  mixed.activity.agentWorking && !mixed.activity.agentDone && mixed.activity.agent === "claude" && mixed.activity.agentTool === "Edit")
 check("media playing shows", desktop.activity.media)
 check("a name given by the person wins", Model.summary({ id: 2, windows: windows }, contexts, "Launch week").title === "Launch week")
 

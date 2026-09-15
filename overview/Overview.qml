@@ -1272,17 +1272,8 @@ Item {
               readonly property Item details: labelDetails
               readonly property var summary: root.summaries[thumb.modelData.id] || null
               readonly property bool renaming: root.renamingDesktop === thumb.modelData.id
-              // What most needs a look on this desktop, from facts only: a window asking for attention,
-              // an agent's own report that it waits or works, the agent running there, or media playing.
-              readonly property string activity: {
-                var activity = thumb.summary ? thumb.summary.activity : null
-                if (!activity) return ""
-                if (activity.attention) return "attention"
-                if (activity.agentWaiting) return "waiting"
-                if (activity.agentWorking) return "working"
-                if (activity.agent) return "agent"
-                return activity.media ? "media" : ""
-              }
+              // What most needs a look on this desktop, from facts only.
+              readonly property string activity: Desktops.activityState(thumb.summary ? thumb.summary.activity : null)
               readonly property bool calling: thumb.activity === "attention" || thumb.activity === "waiting"
 
               width: root.thumbWidth
@@ -1434,7 +1425,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     textFormat: Text.PlainText
                     text: thumb.activity === "agent" ? Desktops.agentLabel(thumb.summary.activity.agent)
-                      : (({ attention: "Needs you", waiting: "Your turn", working: "Working", media: "Playing" })[thumb.activity] || "")
+                      : (({ attention: "Needs you", waiting: "Your turn", working: "Working", done: "Done", media: "Playing" })[thumb.activity] || "")
                     color: Color.menu.text
                     font.family: Style.font.menuFamily
                     font.pixelSize: Style.font.caption

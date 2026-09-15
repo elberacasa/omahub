@@ -105,11 +105,21 @@ Item {
   readonly property string desktopsFile: Quickshell.env("HOME") + "/.local/state/omahub/desktops.json"
   property var desktopNames: ({})
   // What runs in each window's terminals, so a desktop of terminals is named by its project or tool, not
-  // "Foot". Read a moment after windows change and as the pointer reaches the dock, never on a loop.
+  // "Foot", and every agent shows what it is doing. Read a moment after windows change, as the pointer
+  // reaches the dock, and every two seconds while it shows, since agents change without any window changing.
   readonly property string contextScript: Qt.resolvedUrl("../desktops/context.sh").toString().replace("file://", "")
   property var terminalInfo: ({})
-  onDesktopTilesChanged: if (root.showDesktops) contextDelay.restart()
-  onPointerInsideChanged: if (root.pointerInside && root.showDesktops) contextDelay.restart()
+  onDesktopTilesChanged: contextDelay.restart()
+  onPointerInsideChanged: if (root.pointerInside) contextDelay.restart()
+  // Each window's context by Hyprland address: its project, and what its agents are doing.
+  readonly property var windowContexts: {
+    var info = root.terminalInfo
+    var map = {}
+    Model.windowList(Hyprland.toplevels.values || []).forEach(function(window) {
+      map[window.address] = Desktops.windowContext(window, info[window.address] || null)
+    })
+    return map
+  }
   readonly property var appIndex: Desktops.appIndex(DesktopEntries.applications.values || [])
 
   // The size chosen in settings, made smaller when the apps and desktops would not fit along the edge.
@@ -268,6 +278,44 @@ Item {
     border.color: Color.accent
   }
 
+  // What an agent is doing, on the corner of its icon or desktop away from the edge: breathing while it
+  // works, still once its turn is done, in the urgent color while it waits on you, and dim while it only runs.
+  component AgentDot: Rectangle {
+    id: dot
+    property string activity: ""
+    // The last state shown, so the dot keeps its color while it shrinks away.
+    property string held: ""
+    readonly property bool calling: dot.held === "waiting" || dot.held === "attention"
+    onActivityChanged: if (dot.activity !== "") dot.held = dot.activity
+    Component.onCompleted: dot.held = dot.activity
+    z: 3
+    width: Math.max(Style.space(8), Math.round(root.iconSize * 0.24))
+    height: width
+    radius: width / 2
+    x: root.edge === "right" ? -Math.round(width * 0.3) : parent.width - Math.round(width * 0.7)
+    y: -Math.round(height * 0.3)
+    visible: scale > 0
+    scale: dot.activity !== "" ? 1 : 0
+    color: dot.calling ? Color.urgent : (dot.held === "agent" ? Util.alpha(Color.menu.text, 0.6) : Color.accent)
+    border.width: Math.max(1, Style.space(2))
+    border.color: Color.menu.background
+
+    Behavior on scale {
+      NumberAnimation { duration: dot.activity !== "" ? 220 : 160; easing.type: dot.activity !== "" ? Easing.OutCubic : Easing.InCubic }
+    }
+    Behavior on color {
+      ColorAnimation { duration: 180 }
+    }
+
+    SequentialAnimation on opacity {
+      running: dot.activity === "working"
+      loops: Animation.Infinite
+      NumberAnimation { to: 0.35; duration: 750; easing.type: Easing.InOutSine }
+      NumberAnimation { to: 1; duration: 750; easing.type: Easing.InOutSine }
+      onRunningChanged: if (!running) dot.opacity = 1
+    }
+  }
+
   function reload() {
     stateView.reload()
   }
@@ -295,12 +343,13 @@ Item {
     var apps = []
     for (var i = 0; i < iconRepeater.count; i++) {
       var cell = iconRepeater.itemAt(i)
-      if (cell) apps.push(Object.assign({ id: cell.modelData.id, name: cell.modelData.name, windows: cell.modelData.windows.length }, place(cell)))
+      if (cell) apps.push(Object.assign({ id: cell.modelData.id, name: cell.modelData.name, windows: cell.modelData.windows.length,
+        agent: cell.agentState }, place(cell)))
     }
     var desktops = []
     for (var d = 0; d < desktopRepeater.count; d++) {
       var tile = desktopRepeater.itemAt(d)
-      if (tile) desktops.push(Object.assign({ id: tile.modelData.id, title: tile.title, active: tile.modelData.active,
+      if (tile) desktops.push(Object.assign({ id: tile.modelData.id, title: tile.title, active: tile.modelData.active, agent: tile.agentState,
         windows: tile.modelData.windows.length }, place(tile)))
     }
     var edgePoint = root.edge === "left" ? { x: screenX, y: screenY + screenHeight / 2 }
@@ -365,16 +414,58 @@ Item {
     return Desktops.entryFor(appId, root.appIndex) || DesktopEntries.heuristicLookup(String(appId))
   }
 
-  // A desktop's name as the overview gives it: the name someone chose, the project its editor has open,
-  // or its most recent app. Empty for an empty desktop.
-  function desktopTitle(tile) {
-    var contexts = {}
+  // A desktop as the overview reads it: its title is the name someone chose, the project its editor has
+  // open, or its most recent app, empty for an empty desktop, and its activity is what its agents are doing.
+  function desktopSummary(tile) {
     var windows = tile.windows.map(function(window) {
-      contexts[window.address] = Desktops.windowContext(window, root.terminalInfo[window.address] || null)
       var entry = root.entryFor(window.appId)
       return { address: window.address, appId: window.appId, appName: entry && entry.name ? String(entry.name) : window.appId, focus: window.focus }
     })
-    return Desktops.summary({ id: tile.id, windows: windows }, contexts, root.desktopNames[String(tile.id)] || "").title
+    return Desktops.summary({ id: tile.id, windows: windows }, root.windowContexts, root.desktopNames[String(tile.id)] || "")
+  }
+
+  // What the agents in an app's windows are doing, or null when none of its windows were read.
+  function itemActivity(item) {
+    var windows = []
+    ;(item.windows || []).forEach(function(toplevel) {
+      var address = root.addressFor(toplevel)
+      if (address !== "" && root.windowContexts[address]) windows.push({ address: address, appId: item.id })
+    })
+    return windows.length > 0 ? Desktops.summary({ windows: windows }, root.windowContexts, "").activity : null
+  }
+
+  // A name with what its agent is doing, for the label beside an icon or a desktop.
+  function withAgent(name, activity) {
+    var said = Desktops.activityLabel(activity)
+    return said === "" ? name : name + " · " + said
+  }
+
+  function refreshContexts() {
+    if (contextReader.running) {
+      contextDelay.restart()
+      return
+    }
+    // The windows of one process share its terminals, so each process is read once and what it runs is
+    // given to every window it owns.
+    var owner = {}
+    var sharers = {}
+    var pairs = []
+    Model.windowList(Hyprland.toplevels.values || []).forEach(function(window) {
+      if (window.pid <= 0) return
+      if (owner[window.pid] === undefined) {
+        owner[window.pid] = window.address
+        sharers[window.address] = []
+        pairs.push(window.address + "=" + window.pid)
+      }
+      sharers[owner[window.pid]].push(window.address)
+    })
+    if (pairs.length === 0) {
+      root.terminalInfo = ({})
+      return
+    }
+    contextReader.sharers = sharers
+    contextReader.command = [root.contextScript].concat(pairs)
+    contextReader.running = true
   }
 
   // Click opens an app, or brings its windows forward one at a time. From a click, the pointer stays on
@@ -721,35 +812,28 @@ Item {
   Timer {
     id: contextDelay
     interval: 500
-    onTriggered: {
-      if (contextReader.running) {
-        contextDelay.restart()
-        return
-      }
-      var pairs = []
-      root.desktopTiles.forEach(function(tile) {
-        tile.windows.forEach(function(window) {
-          if (window.pid > 0) pairs.push(window.address + "=" + window.pid)
-        })
-      })
-      if (pairs.length === 0) {
-        root.terminalInfo = ({})
-        return
-      }
-      contextReader.command = [root.contextScript].concat(pairs)
-      contextReader.running = true
-    }
+    onTriggered: root.refreshContexts()
+  }
+
+  Timer {
+    interval: 2000
+    repeat: true
+    running: root.shown
+    onTriggered: root.refreshContexts()
   }
 
   Process {
     id: contextReader
+    property var sharers: ({})
     stdout: StdioCollector {
       onStreamFinished: {
         var list
         try { list = JSON.parse(text) } catch (e) { return }
         if (!Array.isArray(list)) return
         var next = {}
-        list.forEach(function(item) { next[item.address] = item })
+        list.forEach(function(item) {
+          ;(contextReader.sharers[item.address] || [item.address]).forEach(function(address) { next[address] = item })
+        })
         root.terminalInfo = next
       }
     }
@@ -1183,6 +1267,8 @@ Item {
             readonly property real scaleFactor: root.magnify && root.pointerX >= 0 && root.dragIndex < 0 && !root.pointerPastApps
               ? Model.magnification(cell.distance, root.magnifyRange, root.maxScale) : 1
             readonly property bool dragged: root.dragIndex === cell.index
+            readonly property var agentActivity: root.itemActivity(cell.modelData)
+            readonly property string agentState: Desktops.activityState(cell.agentActivity)
             // While another icon is dragged, this one steps aside to open its landing place, or to close
             // the gap it left.
             readonly property real shift: {
@@ -1336,6 +1422,10 @@ Item {
                 NumberAnimation { target: iconBox; property: "hop"; to: Style.space(14); duration: 160; easing.type: Easing.OutCubic }
                 NumberAnimation { target: iconBox; property: "hop"; to: 0; duration: 220; easing.type: Easing.InOutCubic }
               }
+
+              AgentDot {
+                activity: cell.agentState
+              }
             }
 
             FocusRing {
@@ -1360,7 +1450,7 @@ Item {
             DockLabel {
               visible: cell.dragged ? root.dragRemoving
                 : (cell.hovered || cell.keyed) && !root.menuOpen && !root.pickerOpen && root.dragIndex < 0
-              text: cell.dragged ? "Remove" : cell.modelData.name
+              text: cell.dragged ? "Remove" : root.withAgent(cell.modelData.name, cell.agentActivity)
               x: root.edge === "left" ? iconBox.x + iconBox.width + root.labelGap
                 : (root.edge === "right" ? iconBox.x - width - root.labelGap : iconBox.x + (iconBox.width - width) / 2)
               y: root.vertical ? iconBox.y + (iconBox.height - height) / 2 : iconBox.y - height - root.labelGap
@@ -1454,7 +1544,9 @@ Item {
             readonly property bool dropping: root.dragDesktop === desk.index
             readonly property bool keyed: root.keyboardActive && !root.menuOpen && root.keyCursor === root.items.length + desk.index
             readonly property bool lit: desk.hovered || desk.dropping || desk.keyed
-            readonly property string title: root.desktopTitle(desk.modelData)
+            readonly property var summary: root.desktopSummary(desk.modelData)
+            readonly property string title: desk.summary.title
+            readonly property string agentState: Desktops.activityState(desk.summary.activity)
             readonly property var entry: desk.modelData.windows.length > 0 ? root.entryFor(desk.modelData.windows[0].appId) : null
             readonly property real offset: root.desktopsGap + desk.index * root.cellWidth
 
@@ -1511,6 +1603,10 @@ Item {
                   : Math.round(parent.height * 0.42)
                 font.bold: true
               }
+
+              AgentDot {
+                activity: desk.agentState
+              }
             }
 
             FocusRing {
@@ -1523,7 +1619,8 @@ Item {
 
             DockLabel {
               visible: (desk.dropping || ((desk.hovered || desk.keyed) && root.dragIndex < 0)) && !root.menuOpen && !root.pickerOpen
-              text: desk.dropping ? "Open on desktop " + desk.modelData.id : (desk.title || "Desktop " + desk.modelData.id)
+              text: desk.dropping ? "Open on desktop " + desk.modelData.id
+                : root.withAgent(desk.title || "Desktop " + desk.modelData.id, desk.summary.activity)
               x: root.edge === "left" ? deskTile.x + deskTile.width + root.labelGap
                 : (root.edge === "right" ? deskTile.x - width - root.labelGap : deskTile.x + (deskTile.width - width) / 2)
               y: root.vertical ? deskTile.y + (deskTile.height - height) / 2 : deskTile.y - height - root.labelGap

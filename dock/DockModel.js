@@ -97,17 +97,7 @@ function items(pins, entries, toplevels, showOpen) {
 // empty, in number order. Their windows come most recently used first. `workspaces` and `toplevels` are
 // Hyprland's.
 function desktops(workspaces, toplevels, monitorName, activeId) {
-  const windows = listValue(toplevels).map(toplevel => {
-    const data = (toplevel && toplevel.lastIpcObject) || {}
-    return {
-      address: String(data.address || (toplevel && toplevel.address) || ""),
-      appId: String(data.class || ""),
-      title: String((toplevel && toplevel.title) || data.title || ""),
-      workspace: toplevel && toplevel.workspace ? toplevel.workspace.id : (data.workspace ? data.workspace.id : 0),
-      focus: data.focusHistoryID !== undefined ? Number(data.focusHistoryID) : 1000,
-      pid: Number(data.pid) || 0
-    }
-  }).filter(window => window.appId !== "")
+  const windows = windowList(toplevels)
   const result = []
   for (const workspace of listValue(workspaces)) {
     if (!workspace || workspace.id <= 0) continue
@@ -183,6 +173,22 @@ function reorder(pins, id, slot) {
   const rest = pins.filter(pin => key(pin) !== key(id))
   const at = Math.max(0, Math.min(rest.length, slot))
   return rest.slice(0, at).concat([id], rest.slice(at))
+}
+
+// Hyprland's windows as the dock reads them: address, app, title, desktop, how recently each was used, and
+// its process. `toplevels` are Hyprland's.
+function windowList(toplevels) {
+  return listValue(toplevels).map(toplevel => {
+    const data = (toplevel && toplevel.lastIpcObject) || {}
+    return {
+      address: String(data.address || (toplevel && toplevel.address) || ""),
+      appId: String(data.class || ""),
+      title: String((toplevel && toplevel.title) || data.title || ""),
+      workspace: toplevel && toplevel.workspace ? toplevel.workspace.id : (data.workspace ? data.workspace.id : 0),
+      focus: data.focusHistoryID !== undefined ? Number(data.focusHistoryID) : 1000,
+      pid: Number(data.pid) || 0
+    }
+  }).filter(window => window.appId !== "")
 }
 
 // Where each icon's center sits in the unscaled dock, so magnification never chases its own layout.

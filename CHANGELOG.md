@@ -6,6 +6,7 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 
 ### Added
 
+- The dock shows what your agents are doing. A dot on a terminal, editor, or desktop breathes while Claude Code or Codex works and holds still once its turn is done, read from the agent's own session record, and hovering says which tool it is running. The overview's badge shows Done too.
 - The overview always shows desktops 1 to 5, each numbered with the key that reaches it, so an empty desktop is one key or one drop away. The New tile appears once they are all in use.
 - A window moved with Shift + a number moves the moment the key is pressed and flies into its desktop's thumbnail, and u or Undo puts it back. The other windows slide into the room it leaves.
 - Holding SUPER from SUPER + TAB is one gesture: pick a desktop with a number, a window with h j k l, the arrows, or the pointer, and letting go of SUPER goes there. Moving windows while holding it keeps the overview open to keep organizing.

@@ -90,9 +90,38 @@ function agentLabel(command) {
   return names[lower(command)] || String(command || "")
 }
 
+// A tool by its own short name: an MCP tool such as mcp__browser__navigate is "navigate".
+function toolLabel(tool) {
+  return String(tool || "").split("__").pop()
+}
+
+// What most needs a look, from facts only: a window asking for attention, an agent waiting on you, working,
+// or done, the agent running there, or media playing. Empty when nothing does.
+function activityState(activity) {
+  if (!activity) return ""
+  if (activity.attention) return "attention"
+  if (activity.agentWaiting) return "waiting"
+  if (activity.agentWorking) return "working"
+  if (activity.agentDone) return "done"
+  if (activity.agent) return "agent"
+  return activity.media ? "media" : ""
+}
+
+// The same, said in a few words for a label: "Claude is running Bash", "Codex is done".
+function activityLabel(activity) {
+  const state = activityState(activity)
+  const name = activity ? agentLabel(activity.agent) : ""
+  if (state === "attention") return "Needs you"
+  if (state === "media") return "Playing"
+  if (state === "waiting") return name + " is waiting on you"
+  if (state === "working") return activity.agentTool ? name + " is running " + activity.agentTool : name + " is working"
+  if (state === "done") return name + " is done"
+  return state === "agent" ? name : ""
+}
+
 // What one window is running, from facts only. `info` is the window's entry from context.sh. A session's
-// `state` is "working" or "waiting" only when the agent itself reported it; without that, an agent shows
-// as present, never as working or waiting. An app that shows several windows from one process, such as an
+// `state` is "working", "waiting", or "done" only when the agent's own record says so; without that, an
+// agent shows as present and nothing more. An app that shows several windows from one process, such as an
 // editor, owns the terminals in the project its title names, so each of its windows shows its own agents.
 function windowContext(window, info) {
   const titleProject = projectFromTitle(window.appId, window.title)
@@ -107,15 +136,19 @@ function windowContext(window, info) {
   const source = primary && primary.session.project ? primary.session : withProject
   const project = (source && source.project) || titleProject || ""
   const editorApp = EDITORS.indexOf(lower(window.appId)) >= 0
-  const agent = kinds.find(item => item.kind === "agent") || null
+  const agents = kinds.filter(item => item.kind === "agent")
+  const working = agents.find(item => item.session.state === "working") || null
+  const agent = working || agents[0] || null
   return {
     project: project,
     branch: source && source.project === project ? source.branch || "" : "",
     command: primary ? lower(primary.session.command) : "",
     kind: primary && primary.kind ? primary.kind : (editorApp ? "editor" : ""),
     agent: agent ? lower(agent.session.command) : "",
-    agentWorking: kinds.some(item => item.kind === "agent" && item.session.state === "working"),
-    agentWaiting: kinds.some(item => item.kind === "agent" && item.session.state === "waiting")
+    agentWorking: working !== null,
+    agentWaiting: agents.some(item => item.session.state === "waiting"),
+    agentDone: working === null && agents.some(item => item.session.state === "done"),
+    agentTool: working ? toolLabel(working.session.tool) : ""
   }
 }
 
@@ -127,7 +160,7 @@ function summary(desktop, contexts, name, knownBranches) {
   const scores = {}
   const branches = {}
   const apps = []
-  const activity = { agent: "", agentWorking: false, agentWaiting: false, media: false, attention: false }
+  const activity = { agent: "", agentWorking: false, agentWaiting: false, agentDone: false, agentTool: "", media: false, attention: false }
 
   windows.forEach((window, rank) => {
     const context = contexts[window.address] || {}
@@ -137,16 +170,24 @@ function summary(desktop, contexts, name, knownBranches) {
       scores[context.project] = (scores[context.project] || 0) + weight
       if (context.branch && !branches[context.project]) branches[context.project] = context.branch
     }
-    if (context.agent && !activity.agent) activity.agent = context.agent
-    if (context.agentWorking) activity.agentWorking = true
+    // A working agent names the desktop's activity over one that is only present or done.
+    if (context.agent && (!activity.agent || (context.agentWorking && !activity.agentWorking))) activity.agent = context.agent
+    if (context.agentWorking && !activity.agentWorking) {
+      activity.agentWorking = true
+      activity.agentTool = context.agentTool || ""
+    }
     if (context.agentWaiting) activity.agentWaiting = true
+    if (context.agentDone) activity.agentDone = true
     if (window.media) activity.media = true
     if (window.attention) activity.attention = true
     const app = { appId: window.appId, name: window.appName || window.appId }
     if (!apps.some(item => item.appId === app.appId)) apps.push(app)
   })
-  // A waiting agent only matters while no agent on the desktop is still working.
-  if (activity.agentWorking) activity.agentWaiting = false
+  // A waiting or finished agent only matters while no agent on the desktop is still working.
+  if (activity.agentWorking) {
+    activity.agentWaiting = false
+    activity.agentDone = false
+  }
 
   let project = ""
   Object.keys(scores).forEach(candidate => {
