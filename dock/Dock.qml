@@ -1170,7 +1170,9 @@ Item {
     interval: 80
     onTriggered: {
       root.checkCover()
-      if (root.showDesktops) Hyprland.refreshToplevels()
+      // A new window's app and process only arrive with a refresh, and agent tiles need both as much as
+      // desktop tiles do. Without it, a terminal opened with autohide and desktops off never shows its agent.
+      if (root.showDesktops || root.showAgents) Hyprland.refreshToplevels()
     }
   }
 
