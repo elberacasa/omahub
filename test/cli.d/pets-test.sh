@@ -13,31 +13,43 @@ fi
 results=$(node - "$OMAHUB_PATH/dock/Pets.js" <<'SCRIPT'
 const fs = require("fs")
 const source = fs.readFileSync(process.argv[2], "utf8").replace(/^\.pragma library\s*/, "")
-const Pets = new Function(source + "\nreturn { frame, frameCount }")()
+const Pets = new Function(source + "\nreturn { frame, frameCount, petFor, PETS }")()
 const checks = []
 const check = (name, ok) => checks.push({ name, ok: !!ok })
 
-const families = ["anthropic", "openai", "other", "moonshot"]
+const pets = Pets.PETS
 const states = ["agent", "working", "done", "idle", "waiting", "attention", "media", ""]
 const frames = []
-families.forEach(family => states.forEach(state => {
-  for (let step = 0; step < Pets.frameCount(state); step++) frames.push(Pets.frame(family, state, step))
+pets.forEach(pet => states.forEach(state => {
+  for (let step = 0; step < Pets.frameCount(state); step++) frames.push(Pets.frame(pet, state, step))
 }))
 const text = rows => rows.join("\n")
 
+check("the gallery has seven pets", pets.join(",") === "blob,cat,gem,bunny,fox,owl,robot")
 check("every frame is 16 pixels square", frames.every(rows => rows.length === 16 && rows.every(row => row.length === 16)))
 check("every pixel is one the dock colors", frames.every(rows => rows.every(row => /^[.#aeupkz]+$/.test(row))))
-check("Anthropic, OpenAI, and everyone else each have their own pet",
-  new Set(["anthropic", "openai", "other"].map(family => text(Pets.frame(family, "agent", 0)))).size === 3)
-check("a company without its own pet gets the shared one", text(Pets.frame("moonshot", "done", 0)) === text(Pets.frame("other", "done", 0)))
-check("every pet wears its company's mark", families.every(family => text(Pets.frame(family, "agent", 0)).includes("a")))
-check("a working pet taps at its keyboard", text(Pets.frame("anthropic", "working", 0)) !== text(Pets.frame("anthropic", "working", 1))
-  && text(Pets.frame("anthropic", "working", 0)).includes("k"))
+check("every pet looks different", new Set(pets.map(pet => text(Pets.frame(pet, "agent", 0)))).size === pets.length)
+check("every pet wears its mark", pets.every(pet => text(Pets.frame(pet, "agent", 0)).includes("a")))
+check("paws, eyes, and mouths land on every pet's body", pets.every(pet =>
+  ["agent", "working", "done", "idle", "waiting"].every(state => (text(Pets.frame(pet, state, 0)).match(/e/g) || []).length >= 2)))
+check("sleep drifts behind a pet, never over it", pets.every(pet => {
+  const awake = Pets.frame(pet, "idle", 1)
+  const asleep = Pets.frame(pet, "idle", 0)
+  return asleep.every((row, r) => row.split("").every((pixel, c) => pixel !== "z" || awake[r][c] === "."))
+}))
+check("a working pet taps at its keyboard", pets.every(pet => text(Pets.frame(pet, "working", 0)) !== text(Pets.frame(pet, "working", 1))
+  && text(Pets.frame(pet, "working", 0)).includes("k")))
 check("a pet whose turn is done holds still", Pets.frameCount("done") === 1 && Pets.frameCount("agent") === 1)
-check("done, idle, and working pets look different", new Set(["done", "idle", "working"].map(state => text(Pets.frame("openai", state, 1)))).size === 3)
-check("an idle pet sleeps, its z coming and going", text(Pets.frame("anthropic", "idle", 0)).includes("z") && !text(Pets.frame("anthropic", "idle", 1)).includes("z"))
-check("a pet calling you turns its mark urgent", ["waiting", "attention"].every(state =>
-  text(Pets.frame("openai", state, 0)).includes("u") && !text(Pets.frame("openai", state, 0)).includes("a")))
+check("a pet calling you turns its mark urgent", pets.every(pet => ["waiting", "attention"].every(state =>
+  text(Pets.frame(pet, state, 0)).includes("u") && !text(Pets.frame(pet, state, 0)).includes("a"))))
+
+check("every company starts with its own pet", Pets.petFor("anthropic") === "blob" && Pets.petFor("openai") === "cat"
+  && Pets.petFor("google") === "gem" && Pets.petFor("moonshot") === "bunny" && Pets.petFor("other") === "robot")
+check("a pet chosen for a company wins", Pets.petFor("anthropic", "", { "pet-anthropic": "fox" }) === "fox")
+check("a choice that is not a pet is ignored", Pets.petFor("openai", "", { "pet-openai": "dragon" }) === "cat")
+check("a company without a pet of its own takes the one chosen for everyone else",
+  Pets.petFor("deepseek", "", { "pet-other": "owl" }) === "owl" && Pets.petFor("deepseek", "", {}) === "robot")
+check("the gallery names a pet directly", Pets.petFor("anthropic", "gem", { "pet-anthropic": "fox" }) === "gem")
 
 console.log(JSON.stringify(checks))
 SCRIPT

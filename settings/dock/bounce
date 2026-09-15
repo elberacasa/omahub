@@ -3,7 +3,7 @@
 # omahub:title=Animate opening apps
 # omahub:summary=An icon lifts once when its app starts
 # omahub:section=dock
-# omahub:order=70
+# omahub:order=80
 # omahub:kind=toggle
 # omahub:icon=󱓞
 # omahub:keywords=dock bounce animate animation opening launch lift

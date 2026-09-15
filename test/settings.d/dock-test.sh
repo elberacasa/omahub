@@ -117,8 +117,20 @@ else
 fi
 assert_eq "and changes nothing" "$(omahub get dock/agent-card | jq -r .label)" "Nothing"
 omahub reset dock/agent-card >/dev/null
+assert_eq "other agents start with the robot" "$(omahub get dock/pet-other | jq -r .value)" "robot"
+assert_eq "their pet can be any in the gallery" "$(omahub set dock/pet-other owl | jq -r .label)" "Owl"
+assert_eq "and is saved for the dock under its company" "$(jq -r '.["pet-other"]' "$HOME/.local/state/omahub/dock.json")" "owl"
+assert_eq "the gallery lists every pet, drawn as pets" \
+  "$(omahub options dock/pet-other | jq -r 'map(.value) | join(",")'),$(omahub settings --json | jq -r '.[] | select(.id == "dock/pet-other") | .preview')" \
+  "blob,cat,gem,bunny,fox,owl,robot,pet"
+if omahub set dock/pet-other dragon >/dev/null 2>&1; then
+  fail "a pet that is not in the gallery is refused"
+else
+  pass "a pet that is not in the gallery is refused"
+fi
+omahub reset dock/pet-other >/dev/null
 assert_eq "the hub lists dock settings in the Mac's order" \
-  "$(omahub settings --json | jq -c '[.[] | select(.section == "dock" and (.hidden | not))] | sort_by(.order) | map(.id | ltrimstr("dock/"))')" \
+  "$(omahub settings --json | jq -c '[.[] | select(.section == "dock" and (.hidden | not) and (.id | startswith("dock/pet-") | not))] | sort_by(.order) | map(.id | ltrimstr("dock/"))')" \
   '["show","size","magnify","position","tiles","autohide","indicators","recents","desktops","agents","agent-card","bounce"]'
 
 for setting in indicators recents bounce; do

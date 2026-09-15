@@ -1,6 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
+import "../dock"
 
 // One setting in the hub. Toggles reuse Omarchy's switch, choices show their options as chips, a
 // setting that holds several choices at once shows each as a chip of its own, and other kinds show
@@ -190,7 +191,7 @@ Rectangle {
         Behavior on opacity { NumberAnimation { duration: 140 } }
 
         Repeater {
-          model: row.hasChips ? row.chipOptions : []
+          model: row.hasChips && row.setting.preview !== "pet" ? row.chipOptions : []
 
           delegate: Button {
             required property var modelData
@@ -208,6 +209,69 @@ Rectangle {
             // The chip the keyboard is on wears a ring, apart from whether it is on.
             Rectangle {
               visible: row.chipCursor === index
+              anchors.fill: parent
+              anchors.margins: -Style.space(3)
+              color: "transparent"
+              radius: Style.cornerRadius + Style.space(3)
+              border.width: Math.max(1, Style.space(2))
+              border.color: Color.accent
+            }
+          }
+        }
+
+        // A choice of pets shows each as the pet itself, happy when it is the one chosen.
+        Repeater {
+          model: row.hasChips && row.setting.preview === "pet" ? row.chipOptions : []
+
+          delegate: Rectangle {
+            id: petChip
+            required property var modelData
+            required property int index
+            readonly property bool chosen: petChip.modelData.current === true
+
+            width: petColumn.implicitWidth + Style.spacing.md * 2
+            height: petColumn.implicitHeight + Style.spacing.sm * 2
+            radius: Style.cornerRadius
+            color: petChip.chosen ? Util.alpha(row.ink, 0.14) : (petMouse.containsMouse ? Util.alpha(row.ink, 0.07) : "transparent")
+            border.width: Math.max(1, Style.space(1))
+            border.color: Util.alpha(row.ink, petChip.chosen ? 0.55 : 0.22)
+
+            Behavior on color { ColorAnimation { duration: 120 } }
+
+            Column {
+              id: petColumn
+              anchors.centerIn: parent
+              spacing: Style.spacing.xxs
+
+              AgentPet {
+                anchors.horizontalCenter: parent.horizontalCenter
+                look: petChip.modelData.value
+                mood: petChip.chosen ? "done" : "agent"
+                still: true
+                pixelSize: Math.max(1, Style.space(2))
+              }
+
+              Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                textFormat: Text.PlainText
+                text: petChip.modelData.label
+                color: row.ink
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.caption
+                font.bold: petChip.chosen
+              }
+            }
+
+            MouseArea {
+              id: petMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: row.chose(petChip.modelData.value)
+            }
+
+            Rectangle {
+              visible: row.chipCursor === petChip.index
               anchors.fill: parent
               anchors.margins: -Style.space(3)
               color: "transparent"

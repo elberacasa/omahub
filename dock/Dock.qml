@@ -1718,6 +1718,7 @@ Item {
 
               AgentPet {
                 family: agentTile.modelData.family
+                choices: root.config
                 mood: agentTile.agentState
                 still: root.stillPets
                 pixelSize: Math.max(1, Math.floor(root.iconSize * 0.8 / 16))

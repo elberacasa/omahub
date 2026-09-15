@@ -58,6 +58,7 @@ Only executable files are read. `chmod +x` a new setting.
 | `prompt` | no | For an `action`: the hub asks for a value inline, with this placeholder, then runs `set <value>` |
 | `closes` | no | `true` closes the hub after `set` succeeds, for actions that open a window |
 | `more` | no | For a `choice`: an Omarchy menu route opened from a More… chip, such as `setup.default.agent` |
+| `preview` | no | For a `choice`: `pet` draws each choice as the dock pet it names, above its label |
 
 ## Verbs
 

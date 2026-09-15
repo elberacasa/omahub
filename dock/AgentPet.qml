@@ -9,19 +9,23 @@ import "Pets.js" as Pets
 Item {
   id: pet
 
-  // The company behind the agent's model, such as anthropic, and the dock's activity state for the agent.
-  // An empty mood hides the pet.
+  // Which pet: `look` names one directly, as in the hub's gallery; otherwise the company behind the agent's
+  // model, such as anthropic, picks it, with the dock's settings as `choices`. `mood` is the dock's activity
+  // state for the agent, and an empty mood hides the pet.
+  property string look: ""
   property string family: ""
+  property var choices: ({})
   property string mood: ""
   property bool still: false
   property real pixelSize: 2
   property int step: 0
   // The pet last shown, so it keeps its look while it shrinks away.
-  property string heldFamily: ""
+  property string heldPet: ""
   property string heldMood: ""
 
   readonly property bool active: pet.mood !== ""
-  readonly property var rows: Pets.frame(pet.heldFamily, pet.heldMood, pet.still ? 0 : pet.step)
+  readonly property string petId: Pets.petFor(pet.family, pet.look, pet.choices)
+  readonly property var rows: Pets.frame(pet.heldPet, pet.heldMood, pet.still ? 0 : pet.step)
   readonly property int columns: pet.rows[0].length
   readonly property color body: pet.heldMood === "working" ? Color.accent
     : (pet.heldMood === "waiting" || pet.heldMood === "attention" ? Color.urgent
@@ -41,12 +45,12 @@ Item {
     // Only a turn that ends while the dock watches earns a hop, never a pet that appears already done.
     if (pet.mood === "done" && pet.heldMood === "working" && !pet.still) hop.restart()
     pet.heldMood = pet.mood
-    pet.heldFamily = pet.family
+    pet.heldPet = pet.petId
   }
-  onFamilyChanged: if (pet.mood !== "") pet.heldFamily = pet.family
+  onPetIdChanged: if (pet.mood !== "") pet.heldPet = pet.petId
   Component.onCompleted: {
     pet.heldMood = pet.mood
-    pet.heldFamily = pet.family
+    pet.heldPet = pet.petId
   }
 
   function colorFor(pixel) {

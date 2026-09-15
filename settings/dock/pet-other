@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# omahub:title=Other agents' pet
+# omahub:summary=The pet for agents whose model has no pet of its own yet
+# omahub:section=dock
+# omahub:order=72
+# omahub:kind=choice
+# omahub:preview=pet
+# omahub:icon=󰏩
+# omahub:keywords=dock agents pets pet gallery other unknown blob cat gem bunny fox owl robot
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/dock.sh"
+
+omahub_dock_choice_setting pet-other robot "blob=Blob cat=Cat gem=Gem bunny=Bunny fox=Fox owl=Owl robot=Robot" dock/pet-other "$@"

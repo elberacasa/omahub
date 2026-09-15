@@ -1,0 +1,17 @@
+#!/bin/bash
+
+# omahub:title=Gemini's pet
+# omahub:summary=The pet every Gemini model gets on its agent tile
+# omahub:section=dock
+# omahub:order=70
+# omahub:kind=choice
+# omahub:preview=pet
+# omahub:icon=󰏩
+# omahub:keywords=dock agents pets pet gallery gemini google blob cat gem bunny fox owl robot
+# omahub:requires=gemini
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/dock.sh"
+
+omahub_dock_choice_setting pet-google gem "blob=Blob cat=Cat gem=Gem bunny=Bunny fox=Fox owl=Owl robot=Robot" dock/pet-gemini "$@"
