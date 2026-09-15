@@ -60,6 +60,21 @@ Item {
   // The Add apps panel: every installed app, with the kept ones checked. Choices show before they are saved.
   property bool pickerOpen: false
   property string pickerQuery: ""
+  // The quick answer panel for an agent tile: which session it is for, what is typed, and how the last try went.
+  property bool replyOpen: false
+  property string replyId: ""
+  property string replyText: ""
+  property string replyNotice: ""
+  property bool replyFailed: false
+  property bool replyBusy: false
+  property real replyCenter: 0
+  readonly property var replySession: {
+    if (!root.replyOpen) return null
+    for (var i = 0; i < root.agentSessions.length; i++) {
+      if (root.agentSessions[i].id === root.replyId) return root.agentSessions[i]
+    }
+    return null
+  }
   property int pickerIndex: 0
   property var pickerPending: ({})
   readonly property var pickerRows: root.pickerOpen
@@ -125,7 +140,7 @@ Item {
   property bool peeking: false
   // The agent whose card is open, by session id, or "" when none is.
   readonly property string openCard: {
-    if (root.dragIndex >= 0 || root.menuOpen || root.pickerOpen) return ""
+    if (root.dragIndex >= 0 || root.menuOpen || root.pickerOpen || root.replyOpen) return ""
     var hovered = root.agentSessions[root.hoveredAgent]
     if (hovered) return hovered.id
     var keyed = root.keyboardActive ? root.agentSessions[root.keyCursor - root.items.length] : null
@@ -257,7 +272,7 @@ Item {
 
   readonly property bool shown: root.enabled
     && (!root.autohide || !root.covered || root.pointerInside || root.lingering || root.menuOpen || root.agentCalling || root.peeking
-      || root.keyboardActive || root.pickerOpen || root.dragIndex >= 0 || root.notice !== "")
+      || root.keyboardActive || root.pickerOpen || root.replyOpen || root.dragIndex >= 0 || root.notice !== "")
 
   readonly property var focusedScreen: {
     var name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : ""
@@ -433,6 +448,21 @@ Item {
         }
       }
 
+      // What an agent asks you to allow, and how to answer without leaving your desktop.
+      Text {
+        visible: !!(card.session && card.session.asking)
+        width: parent.width
+        wrapMode: Text.WordWrap
+        maximumLineCount: 2
+        elide: Text.ElideRight
+        textFormat: Text.PlainText
+        text: card.session && card.session.asking
+          ? "Wants to run " + card.session.asking.tool + (card.session.asking.detail ? ": " + card.session.asking.detail : "") : ""
+        color: Color.urgent
+        font.family: Style.font.menuFamily
+        font.pixelSize: Style.font.bodySmall
+      }
+
       Text {
         id: cardModel
         visible: card.showStep
@@ -442,6 +472,17 @@ Item {
         text: Desktops.agentLabel(card.session.agent) + (card.session.model ? " · " + card.session.model : "")
         color: Color.menu.text
         opacity: 0.55
+        font.family: Style.font.menuFamily
+        font.pixelSize: Style.font.caption
+      }
+
+      Text {
+        visible: !!(card.session && (card.session.asking || card.session.thread))
+        width: parent.width
+        textFormat: Text.PlainText
+        text: card.session && card.session.asking ? "Right-click to answer" : "Right-click to reply"
+        color: Color.menu.text
+        opacity: 0.5
         font.family: Style.font.menuFamily
         font.pixelSize: Style.font.caption
       }
@@ -511,7 +552,10 @@ Item {
         : { x: screenX + screenWidth / 2, y: screenY + screenHeight - 1 })
     return JSON.stringify({
       shown: root.shown, position: root.edge, keyboard: root.keyboardActive, cursor: root.keyCursor,
-      menu: root.menuOpen, apps: apps, agents: agents, desktops: desktops, peeking: root.peeking, card: root.openCard, overview: place(overviewButton), pressed: root.iconPressed,
+      menu: root.menuOpen, apps: apps, agents: agents, desktops: desktops, peeking: root.peeking, card: root.openCard,
+      reply: root.replyOpen && root.replySession ? { id: root.replyId, asking: !!root.replySession.asking,
+        typing: !root.replySession.asking && root.replySession.thread !== "", text: root.replyText, notice: root.replyNotice,
+        failed: root.replyFailed, busy: root.replyBusy } : null, overview: place(overviewButton), pressed: root.iconPressed,
       screen: { x: screenX, y: screenY, width: screenWidth, height: screenHeight },
       usable: { x: screenX + root.reserved[0], y: screenY + root.reserved[1],
         width: screenWidth - root.reserved[0] - root.reserved[2], height: screenHeight - root.reserved[1] - root.reserved[3] },
@@ -862,6 +906,49 @@ Item {
     root.pickerQuery = ""
   }
 
+  // Opens the quick answer panel above an agent's tile, closing any menu or panel already open.
+  function openReply(session, tile) {
+    if (!session) return
+    root.menuOpen = false
+    root.menuIndex = -1
+    root.closePicker()
+    root.replyId = session.id
+    root.replyText = ""
+    root.replyNotice = ""
+    root.replyFailed = false
+    root.replyBusy = false
+    var point = tile.mapToItem(dockVisual, tile.width / 2, tile.height / 2)
+    root.replyCenter = root.vertical ? point.y : point.x
+    root.replyOpen = true
+    Qt.callLater(function() { dockKeys.forceActiveFocus() })
+  }
+
+  function closeReply() {
+    root.replyOpen = false
+    root.replyText = ""
+    root.replyNotice = ""
+  }
+
+  // Allow or deny what Claude asks. The panel closes once the answer is on its way to Claude.
+  function answerAgent(decision) {
+    var session = root.replySession
+    if (!session || !session.asking || root.replyBusy) return
+    root.replyBusy = true
+    replyProcess.closeOnSuccess = true
+    replyProcess.command = [root.omahub, "answer", session.key, decision]
+    replyProcess.running = true
+  }
+
+  // Sends the typed message to a Codex session, which reads it when its current turn ends.
+  function sendReply() {
+    var session = root.replySession
+    if (!session || session.thread === "" || root.replyText.trim() === "" || root.replyBusy) return
+    root.replyBusy = true
+    replyProcess.closeOnSuccess = false
+    replyProcess.command = [root.omahub, "reply", session.thread, root.replyText]
+    replyProcess.running = true
+  }
+
   function setPickerQuery(text) {
     root.pickerQuery = text
     root.pickerIndex = 0
@@ -1094,6 +1181,29 @@ Item {
     onTriggered: root.checkCover()
   }
 
+  Process {
+    id: replyProcess
+    property bool closeOnSuccess: false
+    stderr: StdioCollector {
+      id: replyErrors
+    }
+    onExited: function(exitCode) {
+      root.replyBusy = false
+      if (exitCode === 0) {
+        root.replyFailed = false
+        if (replyProcess.closeOnSuccess) {
+          root.closeReply()
+        } else {
+          root.replyText = ""
+          root.replyNotice = "Sent. Codex reads it when its turn ends"
+        }
+      } else {
+        root.replyFailed = true
+        root.replyNotice = String(replyErrors.text || "").replace(/^omahub:\s*/, "").trim() || "That didn't go through. Try again"
+      }
+    }
+  }
+
   // The theme's palette, shared by every pet on the dock.
   PetPalette {
     id: petPalette
@@ -1122,7 +1232,7 @@ Item {
   // that soon is taken again instead of closing the menu under the pointer.
   property real grabStartedAt: 0
   property bool grabArmed: true
-  readonly property bool grabWanted: root.menuOpen || root.keyboardActive || root.pickerOpen
+  readonly property bool grabWanted: root.menuOpen || root.keyboardActive || root.pickerOpen || root.replyOpen
   onGrabWantedChanged: if (root.grabWanted) root.grabStartedAt = Date.now()
   // Opening or closing the menu or the Add apps panel reshapes the window and its input region, and the
   // panel takes the keyboard, any of which can end the grab too.
@@ -1161,7 +1271,7 @@ Item {
     // with the mouse leaves focus alone, as Omarchy's popups do, since switching focus as the menu opens
     // can end the grab that keeps it open. Typing otherwise goes to the window in front.
     // The Add apps panel takes it too, for its search.
-    WlrLayershell.keyboardFocus: root.keyboardActive || root.pickerOpen ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+    WlrLayershell.keyboardFocus: root.keyboardActive || root.pickerOpen || root.replyOpen ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
     // A dock that stays on screen keeps its own room, so windows resize to make way for it, like the
     // bar. One that hides floats over them instead.
     exclusionMode: root.enabled && !root.autohide ? ExclusionMode.Normal : ExclusionMode.Ignore
@@ -1175,13 +1285,13 @@ Item {
     // closes it. Everywhere else reaches the windows below.
     mask: Region {
       // A pressed icon takes the whole window too, so a drag off the dock stays with the dock.
-      item: root.menuOpen || root.pickerOpen || root.iconPressed ? menuHit : (root.shown ? dockHit : edgeHit)
+      item: root.menuOpen || root.pickerOpen || root.replyOpen || root.iconPressed ? menuHit : (root.shown ? dockHit : edgeHit)
     }
 
     Item {
       id: dockKeys
       anchors.fill: parent
-      focus: root.keyboardActive || root.menuOpen || root.pickerOpen
+      focus: root.keyboardActive || root.menuOpen || root.pickerOpen || root.replyOpen
 
       Keys.onPressed: function(event) {
         // Keys by name, not by the text they type, so they work with SUPER still held from SUPER + D.
@@ -1189,6 +1299,39 @@ Item {
         var next = event.key === Qt.Key_Right || event.key === Qt.Key_Down || event.key === Qt.Key_L || event.key === Qt.Key_J
         var enter = event.key === Qt.Key_Return || event.key === Qt.Key_Enter
         var shifted = (event.modifiers & Qt.ShiftModifier) !== 0
+
+        // The quick answer panel: A or Enter allows and D denies what Claude asks, typing writes a message to
+        // Codex that Enter sends, and Esc clears the message, then closes the panel.
+        if (root.replyOpen) {
+          var session = root.replySession
+          var asking = !!(session && session.asking)
+          var typing = !asking && !!(session && session.thread !== "")
+          var printable = !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier)) && event.text.length === 1
+            && event.text.charCodeAt(0) >= 32 && event.text.charCodeAt(0) !== 127
+          if (event.key === Qt.Key_Escape) {
+            if (root.replyText !== "") root.replyText = ""
+            else root.closeReply()
+          } else if (asking && (event.key === Qt.Key_A || enter)) {
+            root.answerAgent("allow")
+          } else if (asking && event.key === Qt.Key_D) {
+            root.answerAgent("deny")
+          } else if (typing && enter) {
+            root.sendReply()
+          } else if (typing && Util.editsFilter(event, root.replyText)) {
+            root.replyText = Util.editedFilter(event, root.replyText)
+          } else if (typing && printable) {
+            root.replyText = root.replyText + event.text
+            root.replyNotice = ""
+          } else if (!asking && !typing && enter && session) {
+            root.closeReply()
+            root.goToAgent(session, false)
+            root.leaveKeyboard()
+          } else {
+            return
+          }
+          event.accepted = true
+          return
+        }
 
         // The Add apps panel types into its search, so only arrows and Tab move through it.
         if (root.pickerOpen) {
@@ -1254,8 +1397,13 @@ Item {
             }
             root.leaveKeyboard()
           } else if (event.key === Qt.Key_Space || event.key === Qt.Key_Menu) {
-            var target = iconRepeater.itemAt(root.keyCursor)
-            if (target) root.openMenu(target.modelData, target, true)
+            var agentIndex = root.keyCursor - root.items.length
+            if (agentIndex >= 0 && agentIndex < root.agentSessions.length) {
+              root.openReply(root.agentSessions[agentIndex], agentRepeater.itemAt(agentIndex))
+            } else {
+              var target = iconRepeater.itemAt(root.keyCursor)
+              if (target) root.openMenu(target.modelData, target, true)
+            }
           } else {
             return
           }
@@ -1273,12 +1421,13 @@ Item {
 
     MouseArea {
       anchors.fill: menuHit
-      enabled: root.menuOpen || root.pickerOpen
+      enabled: root.menuOpen || root.pickerOpen || root.replyOpen
       acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
       onClicked: {
         root.menuOpen = false
         root.menuIndex = -1
         root.closePicker()
+        root.closeReply()
       }
     }
 
@@ -1851,7 +2000,7 @@ Item {
             AgentCard {
               session: agentTile.modelData
               agentState: agentTile.agentState
-              open: (agentTile.hovered || agentTile.keyed) && root.dragIndex < 0 && !root.menuOpen && !root.pickerOpen
+              open: (agentTile.hovered || agentTile.keyed) && root.dragIndex < 0 && !root.menuOpen && !root.pickerOpen && !root.replyOpen
               z: 10
               x: root.edge === "left" ? agentBox.x + agentBox.width + root.labelGap
                 : (root.edge === "right" ? agentBox.x - width - root.labelGap : Math.round(agentBox.x + (agentBox.width - width) / 2))
@@ -1864,10 +2013,15 @@ Item {
               width: root.vertical ? root.iconSize + root.clickAway + root.reachEdge : parent.width
               height: root.vertical ? parent.height : root.iconSize + root.clickAway + root.reachEdge
               cursorShape: Qt.PointingHandCursor
-              onPressed: tilePet.press()
+              acceptedButtons: Qt.LeftButton | Qt.RightButton
+              onPressed: function(mouse) { if (mouse.button === Qt.LeftButton) tilePet.press() }
               onReleased: tilePet.letGo()
               onCanceled: tilePet.letGo()
-              onClicked: root.goToAgent(agentTile.modelData, true)
+              // A right-click opens the quick answer panel; a click goes to the agent.
+              onClicked: function(mouse) {
+                if (mouse.button === Qt.RightButton) root.openReply(agentTile.modelData, agentTile)
+                else root.goToAgent(agentTile.modelData, true)
+              }
             }
           }
         }
@@ -2002,6 +2156,271 @@ Item {
         x: root.edge === "left" ? dockBackground.x + dockBackground.width + root.labelGap
           : (root.edge === "right" ? dockBackground.x - width - root.labelGap : dockBackground.x + (dockBackground.width - width) / 2)
         y: root.vertical ? dockBackground.y - height - root.labelGap : dockBackground.y - height - root.labelGap * 5
+      }
+    }
+
+    // A quick answer to an agent, beside the dock above its tile: allow or deny what Claude asks, or send Codex a
+    // message, without leaving the desktop you are on.
+    BorderSurface {
+      id: replyCard
+      readonly property var session: root.replySession
+      readonly property bool asking: !!(replyCard.session && replyCard.session.asking)
+      readonly property bool typing: !replyCard.asking && !!(replyCard.session && replyCard.session.thread !== "")
+      readonly property string agentName: replyCard.session ? Desktops.agentLabel(replyCard.session.agent) : ""
+      visible: root.replyOpen && replyCard.session !== null
+      width: Style.space(340)
+      height: replyColumn.implicitHeight + Style.spacing.lg * 2
+      x: root.edge === "left" ? root.edgeGap + root.baseHeight + root.labelGap
+        : (root.edge === "right" ? dockWindow.width - root.edgeGap - root.baseHeight - width - root.labelGap
+          : Math.max(Style.gapsOut, Math.min(dockWindow.width - width - Style.gapsOut, root.replyCenter - width / 2)))
+      y: root.vertical ? Math.max(Style.gapsOut, Math.min(dockWindow.height - height - Style.gapsOut, root.replyCenter - height / 2))
+        : dockWindow.height - root.baseHeight - root.edgeGap - height - root.labelGap
+      radius: Style.cornerRadius
+      color: Color.menu.background
+      // A question for you is framed in the urgent color, like the waiting ring on its tile.
+      borderSpec: replyCard.asking ? Border.flat(Color.urgent, Math.max(1, Style.space(2)))
+        : Border.surfaceSpec("menu", "border", Color.menu.border, Math.max(1, Style.space(2)))
+
+      // Clicks inside the panel stay in it, instead of reaching the area that closes it.
+      MouseArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+      }
+
+      Column {
+        id: replyColumn
+        x: Style.spacing.lg
+        y: Style.spacing.lg
+        width: parent.width - Style.spacing.lg * 2
+        spacing: Style.spacing.md
+
+        Row {
+          spacing: Style.spacing.md
+
+          AgentPet {
+            anchors.verticalCenter: parent.verticalCenter
+            family: replyCard.session ? replyCard.session.family : ""
+            choices: root.config
+            hues: petPalette.colors
+            tint: replyCard.session ? root.projectTints[root.tintName(replyCard.session)] || "" : ""
+            mood: replyCard.session ? root.stateOf(replyCard.session.activity) : ""
+            still: true
+            pixelSize: Math.max(1, Style.space(2))
+          }
+
+          Column {
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.spacing.xxs
+
+            Text {
+              width: Math.min(implicitWidth, replyColumn.width - Style.space(48))
+              elide: Text.ElideRight
+              textFormat: Text.PlainText
+              text: replyCard.session ? (replyCard.session.project || replyCard.agentName) : ""
+              color: Color.menu.text
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.subtitle
+              font.bold: true
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              text: replyCard.session ? replyCard.agentName + " · " + Desktops.stateLine(replyCard.session, root.now, root.napAfter) : ""
+              color: Color.menu.text
+              opacity: 0.6
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.caption
+            }
+          }
+        }
+
+        // What Claude asks to do, shown exactly, so you know what you allow.
+        Column {
+          visible: replyCard.asking
+          width: parent.width
+          spacing: Style.spacing.xs
+
+          Text {
+            textFormat: Text.PlainText
+            text: replyCard.asking ? replyCard.agentName + " wants to use " + replyCard.session.asking.tool : ""
+            color: Color.menu.text
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.body
+          }
+
+          Rectangle {
+            visible: replyCard.asking && replyCard.session.asking.detail !== ""
+            width: parent.width
+            height: askDetail.implicitHeight + Style.spacing.sm * 2
+            radius: Style.cornerRadius
+            color: Util.alpha(Color.menu.text, 0.06)
+            border.width: Math.max(1, Style.space(1))
+            border.color: root.hairline
+
+            Text {
+              id: askDetail
+              x: Style.spacing.sm
+              y: Style.spacing.sm
+              width: parent.width - Style.spacing.sm * 2
+              wrapMode: Text.WrapAnywhere
+              maximumLineCount: 3
+              elide: Text.ElideRight
+              textFormat: Text.PlainText
+              text: replyCard.asking ? replyCard.session.asking.detail : ""
+              color: Color.menu.text
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+          }
+        }
+
+        Row {
+          visible: replyCard.asking
+          anchors.right: parent.right
+          spacing: Style.spacing.sm
+
+          Button {
+            id: denyButton
+            text: "Deny  D"
+            bordered: true
+            foreground: Color.menu.text
+            fontFamily: Style.font.menuFamily
+            fontSize: Style.font.bodySmall
+            horizontalPadding: Style.spacing.lg
+            verticalPadding: Style.spacing.controlPaddingY
+            onClicked: root.answerAgent("deny")
+          }
+
+          // Allow is the default, as Enter answers with it, so it is filled with the accent.
+          Rectangle {
+            id: allowButton
+            width: allowLabel.implicitWidth + Style.spacing.lg * 2
+            height: denyButton.height
+            radius: Style.cornerRadius
+            color: allowMouse.pressed ? Qt.darker(Color.accent, 1.15) : (allowMouse.containsMouse ? Qt.lighter(Color.accent, 1.08) : Color.accent)
+
+            Behavior on color {
+              ColorAnimation { duration: 120 }
+            }
+
+            Text {
+              id: allowLabel
+              anchors.centerIn: parent
+              textFormat: Text.PlainText
+              text: "Allow  ↵"
+              color: Color.menu.background
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.bodySmall
+              font.bold: true
+            }
+
+            MouseArea {
+              id: allowMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.answerAgent("allow")
+            }
+          }
+        }
+
+        // A message to Codex, typed straight into the panel.
+        Rectangle {
+          visible: replyCard.typing
+          width: parent.width
+          height: Style.space(34)
+          radius: Style.cornerRadius
+          color: Util.alpha(Color.menu.text, 0.06)
+          border.width: Math.max(1, Style.space(1))
+          border.color: Color.accent
+
+          Row {
+            anchors.left: parent.left
+            anchors.leftMargin: Style.spacing.sm
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 1
+
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              width: Math.min(implicitWidth, replyColumn.width - Style.space(24))
+              elide: Text.ElideLeft
+              textFormat: Text.PlainText
+              text: root.replyText !== "" ? root.replyText : "Message " + replyCard.agentName
+              color: Color.menu.text
+              opacity: root.replyText !== "" ? 1 : 0.5
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.body
+            }
+
+            Rectangle {
+              anchors.verticalCenter: parent.verticalCenter
+              width: Math.max(1, Style.space(2))
+              height: Style.font.body + Style.spacing.xs
+              color: Color.accent
+
+              SequentialAnimation on opacity {
+                running: replyCard.visible && replyCard.typing
+                loops: Animation.Infinite
+                NumberAnimation { to: 1; duration: 0 }
+                PauseAnimation { duration: 530 }
+                NumberAnimation { to: 0; duration: 0 }
+                PauseAnimation { duration: 530 }
+              }
+            }
+          }
+        }
+
+        Text {
+          visible: !replyCard.asking && !replyCard.typing
+          width: parent.width
+          wrapMode: Text.WordWrap
+          textFormat: Text.PlainText
+          text: replyCard.agentName + " can't take a typed reply from here yet. When it asks to use a tool, you can allow or deny it here."
+          color: Color.menu.text
+          opacity: 0.75
+          font.family: Style.font.menuFamily
+          font.pixelSize: Style.font.bodySmall
+        }
+
+        Item {
+          width: parent.width
+          height: Math.max(replyHint.implicitHeight, goButton.implicitHeight)
+
+          Text {
+            id: replyHint
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            width: parent.width - (goButton.visible ? goButton.implicitWidth + Style.spacing.md : 0)
+            wrapMode: Text.WordWrap
+            textFormat: Text.PlainText
+            text: root.replyBusy ? "Sending…"
+              : (root.replyNotice !== "" ? root.replyNotice
+                : (replyCard.typing ? "Enter sends. Codex reads it when its turn ends" : "Esc closes"))
+            color: root.replyFailed && root.replyNotice !== "" ? Color.urgent : Color.menu.text
+            opacity: root.replyFailed && root.replyNotice !== "" ? 1 : 0.55
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.caption
+          }
+
+          Button {
+            id: goButton
+            visible: !replyCard.asking && !replyCard.typing
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            text: "Go to " + replyCard.agentName + "  ↵"
+            bordered: true
+            foreground: Color.menu.text
+            fontFamily: Style.font.menuFamily
+            fontSize: Style.font.bodySmall
+            horizontalPadding: Style.spacing.md
+            verticalPadding: Style.spacing.controlPaddingY
+            onClicked: {
+              var session = replyCard.session
+              root.closeReply()
+              root.goToAgent(session, true)
+            }
+          }
+        }
       }
     }
 

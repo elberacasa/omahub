@@ -1,0 +1,32 @@
+#!/bin/bash
+
+# omahub:title=Answer agents from the dock
+# omahub:summary=Adds a hook to Claude Code's settings, so you can allow or deny what Claude asks right from the dock. Claude still asks in its terminal, and off removes only that hook
+# omahub:section=agents
+# omahub:kind=toggle
+# omahub:icon=󰍨
+# omahub:requires=claude
+# omahub:keywords=agents claude answer approve allow deny permission reply quick dock pet
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/hooks.sh"
+
+case "${1:-}" in
+  get) ;;
+  set)
+    case "${2:-}" in
+      on | true) omahub_hook_on "$OMAHUB_CLAUDE_SETTINGS" PermissionRequest "*" "$(omahub_decide_command)" 120 ;;
+      off | false) omahub_hook_off "$OMAHUB_CLAUDE_SETTINGS" PermissionRequest "$(omahub_decide_command)" ;;
+      *) omahub_fail "'${2:-}' is not on or off. Use: omahub set agents/answer-from-dock on|off" ;;
+    esac
+    ;;
+  reset) omahub_hook_off "$OMAHUB_CLAUDE_SETTINGS" PermissionRequest "$(omahub_decide_command)" ;;
+  *) omahub_fail "usage: omahub get|set|reset agents/answer-from-dock" ;;
+esac
+
+if omahub_hook_has "$OMAHUB_CLAUDE_SETTINGS" PermissionRequest "$(omahub_decide_command)"; then
+  omahub_state true "On"
+else
+  omahub_state false "Off"
+fi

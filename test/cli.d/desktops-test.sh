@@ -113,6 +113,16 @@ else
   printf '{"event":"Stop","at":%s}\n' "$EPOCHSECONDS" >"$signal_file"
   assert_eq "and only a wait counts as waiting" "$(HOME="$home" "$context" "0x2=$terminal" | jq -r "$session.state")" "done"
   rm -f "$signal_file"
+  requests="$home/.local/state/omahub/requests"
+  mkdir -p "$requests"
+  record=$(printf '%s' "$claude_log" | sha1sum | cut -c1-16)
+  printf '{"tool":"Bash","detail":"git push origin main","at":%s}\n' "$EPOCHSECONDS" >"$requests/$record.json"
+  output=$(HOME="$home" "$context" "0x2=$terminal")
+  assert_eq "a session goes by the key its waits and answers use" "$(jq -r "$session.key" <<<"$output")" "$record"
+  assert_eq "and an open question shows what it asks to run" "$(jq -c "$session | [.askTool, .askDetail]" <<<"$output")" '["Bash","git push origin main"]'
+  printf '{"tool":"Bash","detail":"git push origin main","at":%s}\n' "$(( EPOCHSECONDS - 60 ))" >"$requests/$record.json"
+  assert_eq "a question older than the record's last change is over" "$(HOME="$home" "$context" "0x2=$terminal" | jq -r "$session.askTool")" ""
+  rm -f "$requests/$record.json"
   assert_eq "with how long its record has been quiet" "$(jq -r "$session.quiet | . >= 0 and . < 10" <<<"$output")" "true"
   assert_eq "and the first line it said, on one line" "$(jq -r "$session.message" <<<"$output")" "The dock is fixed."
   printf '%s\n' '{"type":"assistant","isSidechain":true,"message":{"stop_reason":"tool_use","content":[{"type":"tool_use","name":"Read"}]}}' >>"$claude_log"
@@ -125,7 +135,7 @@ else
   printf '#!/bin/bash\nsleep 30\n' >"$TEST_ROOT/bin/codex"
   chmod +x "$TEST_ROOT/bin/codex"
   start_terminal "$project" "$TEST_ROOT/bin/codex"
-  codex_log="$home/.codex/sessions/2026/09/15/rollout-test.jsonl"
+  codex_log="$home/.codex/sessions/2026/09/15/rollout-2026-09-15T10-00-00-0192aaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee.jsonl"
   mkdir -p "${codex_log%/*}"
   printf '%s\n' "{\"type\":\"session_meta\",\"payload\":{\"cwd\":\"$folder\"}}" \
     '{"type":"turn_context","payload":{"model":"gpt-6-astra"}}' \
@@ -136,6 +146,7 @@ else
   assert_eq "and names the tool" "$(jq -r "$session.tool" <<<"$output")" "apply_patch"
   assert_eq "and the model its turn uses" "$(jq -r "$session.model" <<<"$output")" "gpt-6-astra"
   assert_eq "and when its task began" "$(jq -r "$session.since" <<<"$output")" "1789466400"
+  assert_eq "and the session id a reply goes to" "$(jq -r "$session.thread" <<<"$output")" "0192aaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
   printf '%s\n' '{"type":"event_msg","payload":{"type":"task_complete","last_agent_message":"Search ships.\nMore below."}}' >>"$codex_log"
   output=$(HOME="$home" "$context" "0x4=$terminal")
   assert_eq "and done once its task completes" "$(jq -r "$session.state" <<<"$output")" "done"

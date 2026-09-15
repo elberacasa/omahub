@@ -15,6 +15,11 @@ omahub_hook_command() {
   printf '%s\n' "$HOME/.config/omarchy/plugins/$OMAHUB_PLUGIN_ID/bin/omahub signal"
 }
 
+# The command of the hook that lets you answer Claude from the dock, which waits for your answer.
+omahub_decide_command() {
+  printf '%s\n' "$HOME/.config/omarchy/plugins/$OMAHUB_PLUGIN_ID/bin/omahub decide"
+}
+
 # Every agent Omahub can hook, one per line: name, label, settings file, event, and matcher.
 omahub_hook_agents() {
   printf '%s\t%s\t%s\t%s\t%s\n' claude Claude "$OMAHUB_CLAUDE_SETTINGS" Notification permission_prompt
@@ -34,10 +39,11 @@ omahub_hook_read() {
   fi
 }
 
+# Hooks default to the signal command; answering from the dock passes its own.
 omahub_hook_has() {
-  local file="$1" event="$2"
+  local file="$1" event="$2" command="${3:-$(omahub_hook_command)}"
   [[ -s $file ]] || return 1
-  jq -e --arg event "$event" --arg command "$(omahub_hook_command)" \
+  jq -e --arg event "$event" --arg command "$command" \
     'any(.hooks[$event][]?.hooks[]?; .command == $command)' "$file" >/dev/null 2>&1
 }
 
@@ -53,25 +59,25 @@ omahub_hook_write() {
 }
 
 omahub_hook_on() {
-  local file="$1" event="$2" matcher="$3" current
+  local file="$1" event="$2" matcher="$3" command="${4:-$(omahub_hook_command)}" timeout="${5:-10}" current
   current=$(omahub_hook_read "$file")
   if [[ $file == "$OMAHUB_CODEX_HOOKS" && ! -e $file ]]; then
     mkdir -p "$OMAHUB_STATE_DIR"
     touch "$OMAHUB_CODEX_HOOKS_CREATED"
   fi
-  omahub_hook_write "$file" "$(jq -c --arg event "$event" --arg matcher "$matcher" --arg command "$(omahub_hook_command)" '
+  omahub_hook_write "$file" "$(jq -c --arg event "$event" --arg matcher "$matcher" --arg command "$command" --argjson timeout "$timeout" '
     if any(.hooks[$event][]?.hooks[]?; .command == $command) then .
     else .hooks[$event] = ((.hooks[$event] // []) + [{
       matcher: $matcher,
-      hooks: [{type: "command", command: $command, timeout: 10}]
+      hooks: [{type: "command", command: $command, timeout: $timeout}]
     }]) end' <<<"$current")"
 }
 
 omahub_hook_off() {
-  local file="$1" event="$2" current next
+  local file="$1" event="$2" command="${3:-$(omahub_hook_command)}" current next
   [[ -e $file ]] || return 0
   current=$(omahub_hook_read "$file")
-  next=$(jq -c --arg event "$event" --arg command "$(omahub_hook_command)" '
+  next=$(jq -c --arg event "$event" --arg command "$command" '
     if (.hooks[$event] | type) != "array" then .
     else
       .hooks[$event] |= (map(if (.hooks | type) == "array" then .hooks |= map(select(.command != $command)) else . end)

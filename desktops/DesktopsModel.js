@@ -142,6 +142,11 @@ function sessions(windows, info) {
           // When its latest turn began, in epoch seconds, and the first line of what it last said.
           since: Number(session.since) || 0,
           message: String(session.message || ""),
+          // The key its waits and answers go by, its Codex session id for replies, and what it is asking
+          // you to allow, when it is.
+          key: String(session.key || ""),
+          thread: String(session.thread || ""),
+          asking: session.askTool ? { tool: String(session.askTool), detail: String(session.askDetail || "") } : null,
           activity: {
             agent: lower(session.command),
             agentWorking: state === "working",

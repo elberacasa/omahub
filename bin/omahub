@@ -307,10 +307,90 @@ agent_signal() {
     && mv "$dir/$key.json.tmp" "$dir/$key.json"
 }
 
+# The short key an agent's session record goes by, for the waits, questions, and answers noted beside it.
+record_key() {
+  printf '%s' "$1" | sha1sum | cut -c1-16
+}
+
+# With answering from the dock on, Claude Code's permission hook runs `omahub decide` when Claude asks to use
+# a tool. It notes what Claude asks, then waits for an answer from the dock and hands it to Claude as the
+# decision. Claude asks in its terminal at the same time, so the first answer wins: once Claude's record moves
+# on, or after a while, it stops waiting and prints nothing, which leaves the decision to Claude's own prompt.
+agent_decide() {
+  local input transcript tool detail key dir started wait decision
+  input=$(cat)
+  transcript=$(jq -r '.transcript_path // empty' <<<"$input" 2>/dev/null) || return 0
+  [[ -n $transcript ]] || return 0
+  tool=$(jq -r '.tool_name // ""' <<<"$input" 2>/dev/null) || tool=""
+  detail=$(jq -r '(.tool_input.command // .tool_input.file_path // .tool_input.url // .tool_input.pattern // "")
+    | tostring | gsub("[\t\r]"; " ") | split("\n")[0] | .[0:160]' <<<"$input" 2>/dev/null) || detail=""
+  key=$(record_key "$transcript")
+  dir="$OMAHUB_STATE_DIR"
+  mkdir -p "$dir/requests" "$dir/answers" "$dir/signals"
+  started=$EPOCHSECONDS
+  rm -f "$dir/answers/$key.json"
+  jq -nc --arg tool "$tool" --arg detail "$detail" --argjson at "$started" '{tool: $tool, detail: $detail, at: $at}' \
+    >"$dir/requests/$key.json"
+  jq -nc --argjson at "$started" '{event: "PermissionRequest", at: $at}' >"$dir/signals/$key.json"
+  wait="${OMAHUB_DECIDE_WAIT:-110}"
+  decision=""
+  while (( EPOCHSECONDS - started < wait )); do
+    if [[ -f $dir/answers/$key.json ]]; then
+      decision=$(jq -r '.decision // empty' "$dir/answers/$key.json" 2>/dev/null) || decision=""
+      break
+    fi
+    # Answered in the terminal: Claude's record moves on.
+    if [[ -f $transcript ]] && (( $(stat -c %Y "$transcript") > started + 2 )); then
+      break
+    fi
+    sleep 0.25
+  done
+  rm -f "$dir/requests/$key.json" "$dir/answers/$key.json"
+  case "$decision" in
+    allow) jq -nc '{hookSpecificOutput: {hookEventName: "PermissionRequest", decision: {behavior: "allow"}}}' ;;
+    deny) jq -nc '{hookSpecificOutput: {hookEventName: "PermissionRequest", decision: {behavior: "deny", message: "Declined from the Omahub dock"}}}' ;;
+  esac
+}
+
+# The dock answers what Claude asks with `omahub answer <record key> allow|deny`.
+agent_answer() {
+  local key="${1:-}" decision="${2:-}" dir="$OMAHUB_STATE_DIR"
+  [[ $key =~ ^[0-9a-f]{16}$ ]] || omahub_fail "usage: omahub answer <record key> allow|deny"
+  [[ $decision == "allow" || $decision == "deny" ]] || omahub_fail "'$decision' is not allow or deny"
+  [[ -f $dir/requests/$key.json ]] || omahub_fail "That agent is no longer asking"
+  mkdir -p "$dir/answers"
+  jq -nc --arg decision "$decision" --argjson at "$EPOCHSECONDS" '{decision: $decision, at: $at}' >"$dir/answers/$key.json.tmp"
+  mv "$dir/answers/$key.json.tmp" "$dir/answers/$key.json"
+}
+
+# The dock sends a message to a running Codex session with `omahub reply <session id> <message>`. Codex reads
+# it once its current turn ends.
+agent_reply() {
+  local thread="${1:-}" message="${2:-}" out
+  [[ $thread =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || omahub_fail "usage: omahub reply <codex session id> <message>"
+  [[ -n ${message//[[:space:]]/} ]] || omahub_fail "Type a message first"
+  command -v codex >/dev/null 2>&1 || omahub_fail "Codex is not installed"
+  if ! out=$(codex queue --thread "$thread" --message "$message" 2>&1 >/dev/null); then
+    omahub_fail "Codex couldn't take the message: ${out##*: }"
+  fi
+}
+
 case "${1:-help}" in
   signal)
     agent_signal >/dev/null 2>&1 || true
     exit 0
+    ;;
+  decide)
+    agent_decide 2>/dev/null || true
+    exit 0
+    ;;
+  answer)
+    shift
+    agent_answer "$@"
+    ;;
+  reply)
+    shift
+    agent_reply "$@"
     ;;
   settings)
     shift

@@ -10,7 +10,8 @@
 # started through a runtime or a version manager by what it runs, that command's process, the git
 # project and branch of its folder, and for an agent that keeps a session record, what it is doing.
 #
-# Prints a JSON array, [{address, sessions: [{terminal, command, pid, project, branch, folder, state, tool, quiet, model, since, message}]}],
+# Prints a JSON array, [{address, sessions: [{terminal, command, pid, project, branch, folder, state, tool, quiet, model, since,
+# message, key, thread, askTool, askDetail}]}],
 # leaving out windows without terminals. `folder` is the name of the folder the terminal works in, empty for
 # the home folder, so a folder that is not a git project still has a name. Folders and projects are names
 # only, never paths, so nothing it
@@ -79,9 +80,12 @@ agent_name() {
 # record older than the agent's process belongs to an earlier session, so it says nothing. Prints
 # state<TAB>tool<TAB>quiet<TAB>model<TAB>since<TAB>message: quiet is how many seconds ago the record last
 # changed, model the one the agent last answered with, since when its latest turn began, in epoch seconds,
-# and message the first line of what it last said, kept short.
+# and message the first line of what it last said, kept short. After those come the key its waits and answers
+# go by, a Codex session's id for replies, and the tool and first line of what it asks you to allow, while
+# Omahub's answer hook holds that question open.
 agent_state() {
   local command="$1" pid="$2" folder="$3" log="" file started said model since message signal event at
+  local record thread="" ask_tool="" ask_detail="" request ask_at
   case "$command" in
     claude)
       log=$(ls -t "$HOME/.claude/projects/${folder//[^a-zA-Z0-9]/-}"/*.jsonl 2>/dev/null | head -n 1)
@@ -127,7 +131,8 @@ agent_state() {
   # With Omahub's hook added, an agent that asks for your answer says so. The wait holds until its record
   # changes again, as it does once you answer. The hook runs a moment after the ask, and may note itself
   # in the record, so a change within a few seconds of the signal still counts as waiting.
-  signal="$HOME/.local/state/omahub/signals/$(printf '%s' "$log" | sha1sum | cut -c1-16).json"
+  record=$(printf '%s' "$log" | sha1sum | cut -c1-16)
+  signal="$HOME/.local/state/omahub/signals/$record.json"
   if [[ -f $signal ]] && read -r event at < <(jq -r '"\(.event // "") \(.at // 0)"' "$signal" 2>/dev/null); then
     if [[ $event == "Notification" || $event == "PermissionRequest" ]] && (( at + 3 >= $(stat -c %Y "$log") )); then
       said="waiting"$'\t'"${said#*$'\t'}"
@@ -150,7 +155,20 @@ agent_state() {
     message=$(grep '"type":"task_complete"' "$log" | tail -n 1 \
       | jq -r '.payload.last_agent_message // "" | gsub("\t"; " ") | split("\n") | map(select(test("\\S"))) | first // "" | sub("^\\s+"; "") | .[0:140]' 2>/dev/null)
   fi
-  printf '%s\t%s\t%s\t%s\t%s\n' "$said" "$(( EPOCHSECONDS - $(stat -c %Y "$log") ))" "$model" "${since:-0}" "$message"
+  if [[ $command == "codex" && ${log##*/} =~ ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}) ]]; then
+    thread=${BASH_REMATCH[1]}
+  fi
+  # A question counts while it is newer than the record's last change, give or take the moment the hook takes.
+  request="$HOME/.local/state/omahub/requests/$record.json"
+  if [[ -f $request ]]; then
+    ask_at=$(jq -r '.at // 0' "$request" 2>/dev/null) || ask_at=0
+    if (( ask_at + 3 >= $(stat -c %Y "$log") )); then
+      ask_tool=$(jq -r '.tool // ""' "$request" 2>/dev/null | tr '\t' ' ')
+      ask_detail=$(jq -r '.detail // ""' "$request" 2>/dev/null | tr '\t' ' ')
+    fi
+  fi
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$said" "$(( EPOCHSECONDS - $(stat -c %Y "$log") ))" "$model" "${since:-0}" "$message" \
+    "$record" "$thread" "$ask_tool" "$ask_detail"
 }
 
 # What each agent's record said this run, by agent and folder.
@@ -225,6 +243,10 @@ for pair in "$@"; do
     model=""
     since=0
     message=""
+    record=""
+    thread=""
+    ask_tool=""
+    ask_detail=""
     if [[ ($command == "claude" || $command == "codex") && -n $process && -n $folder ]]; then
       # Agents working in one folder write one record, so it is read once.
       key="$command:$folder"
@@ -240,13 +262,22 @@ for pair in "$@"; do
         model=${rest%%$'\t'*}
         rest=${rest#*$'\t'}
         since=${rest%%$'\t'*}
-        message=${rest#*$'\t'}
+        rest=${rest#*$'\t'}
+        message=${rest%%$'\t'*}
+        rest=${rest#*$'\t'}
+        record=${rest%%$'\t'*}
+        rest=${rest#*$'\t'}
+        thread=${rest%%$'\t'*}
+        rest=${rest#*$'\t'}
+        ask_tool=${rest%%$'\t'*}
+        ask_detail=${rest#*$'\t'}
       fi
     fi
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$address" "$terminal" "$command" "${process:-0}" "$project" "$branch" \
-      "$state" "$tool" "$quiet" "$model" "$since" "$folder_name" "$message"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$address" "$terminal" "$command" "${process:-0}" "$project" "$branch" \
+      "$state" "$tool" "$quiet" "$model" "$since" "$folder_name" "$message" "$record" "$thread" "$ask_tool" "$ask_detail"
   done
 done | jq -Rcn '[inputs | split("\t") | {address: .[0], terminal: .[1], command: .[2], pid: (.[3] | tonumber), project: .[4], branch: .[5],
     state: (.[6] // ""), tool: (.[7] // ""), quiet: ((.[8] // "0") | tonumber? // 0), model: (.[9] // ""),
-    since: ((.[10] // "0") | tonumber? // 0), folder: (.[11] // ""), message: (.[12:] | join(" "))}]
+    since: ((.[10] // "0") | tonumber? // 0), folder: (.[11] // ""), message: (.[12] // ""), key: (.[13] // ""),
+    thread: (.[14] // ""), askTool: (.[15] // ""), askDetail: (.[16:] | join(" "))}]
   | group_by(.address) | map({address: .[0].address, sessions: map(del(.address))})'
