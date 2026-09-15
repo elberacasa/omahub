@@ -22,7 +22,7 @@
 #   dev/agent chord <keys>                 press keys together, such as SUPER+TAB, SHIFT+6, Escape, u
 #   dev/agent hold SUPER | let-go SUPER    keep SUPER down across chords, then let it go
 #   dev/agent keys <commands...>           exact timing: down Super_L tap Tab wait 40 up Super_L
-#   dev/agent type <text>                  type text into a focused test window or text field
+#   dev/agent type <text> [--human]        type text into a focused test window or text field, at a person's pace with --human
 #   dev/agent point|click <target> [left|right|middle]
 #   dev/agent drag <from> <to>
 #   dev/agent call <function> [argument]   one of Omahub's shell functions, such as open or dismiss
@@ -242,7 +242,7 @@ keyboard() {
   keyboard_running || die "the virtual keyboard is not running. End the sandbox and start it again"
   id="$RANDOM$RANDOM"
   timeout 2 bash -c 'printf "%s\n" "$1" >"$2"' _ "$id $*" "$KEYBOARD_DIR/command" || die "the virtual keyboard did not take the keys"
-  answer=$(timeout 3 head -n 1 "$KEYBOARD_DIR/reply" || true)
+  answer=$(timeout "${KEYBOARD_REPLY_SECONDS:-3}" head -n 1 "$KEYBOARD_DIR/reply" || true)
   case "$answer" in
     "$id ok") ;;
     "$id error "*) die "keyboard: ${answer#"$id error "}" ;;
@@ -634,7 +634,7 @@ raw_keys() {
 # overview are commands, not text, so it refuses there; use chord.
 type_text() {
   require_sandbox
-  local text="$1" char keys=() index
+  local text="$1" pace="${2:-}" char keys=() index gap total=0
   if state | jq -e '.omahub.overview.opened and (.omahub.overview.searching | not) and ((.omahub.overview.renaming // 0) == 0) and (.omahub.overview.picker == null)' >/dev/null 2>&1; then
     die "type is for text; the overview reads letters as commands. Use chord"
   fi
@@ -650,10 +650,30 @@ type_text() {
       /) keys+=(tap slash) ;;
       _) keys+=(down Shift_L tap minus up Shift_L) ;;
       :) keys+=(down Shift_L tap semicolon up Shift_L) ;;
-      *) die "type types letters, digits, spaces, and - . / _ : only" ;;
+      ,) keys+=(tap comma) ;;
+      \') keys+=(tap apostrophe) ;;
+      *) die "type types letters, digits, spaces, and - . / _ : , ' only" ;;
     esac
+    if [[ $pace == "--human" ]]; then
+      # A person's rhythm: quick runs of keys, a beat after most words, and now and then a longer one.
+      gap=$(( 6 + RANDOM % 30 ))
+      [[ $char == " " ]] && gap=$(( gap + RANDOM % 55 ))
+      (( RANDOM % 23 == 0 )) && gap=$(( gap + 110 + RANDOM % 120 ))
+      keys+=(wait "$gap")
+      total=$(( total + gap + 60 ))
+    fi
   done
-  keyboard "${keys[@]}"
+  # The keyboard reads at most 63 words a command, so long text goes over in pieces that end between keys.
+  local piece=() start=0 word
+  for (( index = 0; index < ${#keys[@]}; index++ )); do
+    word=${keys[index]}
+    piece+=("$word")
+    if (( ${#piece[@]} >= 48 )) && [[ $word != "down" && $word != "tap" && $word != "wait" && ${keys[index - 1]:-} != "down" ]]; then
+      KEYBOARD_REPLY_SECONDS=$(( 3 + total / 1000 )) keyboard "${piece[@]}"
+      piece=()
+    fi
+  done
+  (( ${#piece[@]} == 0 )) || KEYBOARD_REPLY_SECONDS=$(( 3 + total / 1000 )) keyboard "${piece[@]}"
 }
 
 hold() {
@@ -756,7 +776,7 @@ case "$command" in
   own) own_window "${1:-}" ;;
   chord) chord "${1:?usage: dev/agent chord <keys>}" ;;
   keys) raw_keys "$@" ;;
-  type) type_text "${1:?usage: dev/agent type <text>}" ;;
+  type) type_text "${1:?usage: dev/agent type <text> [--human]}" "${2:-}" ;;
   hold) hold "${1:-SUPER}" ;;
   let-go) let_go "${1:-SUPER}" ;;
   point) point "${1:?usage: dev/agent point <target>}" ;;

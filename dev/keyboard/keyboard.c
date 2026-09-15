@@ -230,10 +230,16 @@ static int serve(const char *command_path, const char *reply_path) {
     char *words[64];
     int count = 0;
     char *save = NULL;
-    for (char *word = strtok_r(line, " \t\n", &save); word != NULL && count < 64; word = strtok_r(NULL, " \t\n", &save)) {
+    char *word = strtok_r(line, " \t\n", &save);
+    for (; word != NULL && count < 64; word = strtok_r(NULL, " \t\n", &save)) {
       words[count++] = word;
     }
     if (count == 0) continue;
+    // A longer command would lose its end without a word, so it is refused whole instead.
+    if (word != NULL) {
+      reply(reply_path, words[0], "a command holds at most 63 words");
+      continue;
+    }
     reply(reply_path, words[0], run(words + 1, count - 1));
   }
 

@@ -5,14 +5,15 @@
 //   omahub-pointer --extent <width> <height> --from <x> <y> [command...]
 //
 // Commands run in order:
-//   move <x> <y> <ms>   glide to a point in the compositor's global layout, eased in and out
+//   move <x> <y> <ms>   go straight to a point in the compositor's global layout, eased in and out
+//   glide <x> <y> <ms>  go there the way a hand does: a slight curve, a faint tremor, a small overshoot
 //   down <button>       press left, right, or middle
 //   up <button>         release it
 //   click <button>      press and release
 //   scroll <steps>      wheel steps, positive scrolls down
 //   wait <ms>           pause
 
-#define _POSIX_C_SOURCE 200809L
+#define _DEFAULT_SOURCE
 
 #include <linux/input-event-codes.h>
 #include <math.h>
@@ -20,6 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 #include <wayland-client.h>
 
 #include "wlr-virtual-pointer-unstable-v1-client-protocol.h"
@@ -93,6 +95,47 @@ static void move_to(double x, double y, long ms) {
   }
 }
 
+// A hand's path: a gentle curve bowing to one side, quick in the middle and slow at both ends, a
+// faint tremor that fades as it arrives, and a small overshoot that settles back onto the point.
+static void glide_to(double x, double y, long ms) {
+  double start_x = position_x;
+  double start_y = position_y;
+  double dx = x - start_x;
+  double dy = y - start_y;
+  double distance = hypot(dx, dy);
+  if (distance < 3 || ms < 60) {
+    move_to(x, y, ms);
+    return;
+  }
+  double normal_x = -dy / distance;
+  double normal_y = dx / distance;
+  double bow = distance * (0.05 + drand48() * 0.08) * (drand48() < 0.5 ? -1 : 1);
+  double overshoot = fmin(9, distance * 0.018);
+  double end_x = x + dx / distance * overshoot;
+  double end_y = y + dy / distance * overshoot;
+  double control1_x = start_x + dx * 0.28 + normal_x * bow;
+  double control1_y = start_y + dy * 0.28 + normal_y * bow;
+  double control2_x = start_x + dx * 0.72 + normal_x * bow * 0.55;
+  double control2_y = start_y + dy * 0.72 + normal_y * bow * 0.55;
+  double phase = drand48() * 6.28;
+  long travel = ms * 86 / 100;
+  long steps = travel / 8;
+  if (steps < 1) steps = 1;
+  for (long step = 1; step <= steps; step++) {
+    double t = (double)step / steps;
+    double eased = t * t * t * (10 - 15 * t + 6 * t * t);
+    double u = 1 - eased;
+    double px = u * u * u * start_x + 3 * u * u * eased * control1_x + 3 * u * eased * eased * control2_x
+      + eased * eased * eased * end_x;
+    double py = u * u * u * start_y + 3 * u * u * eased * control1_y + 3 * u * eased * eased * control2_y
+      + eased * eased * eased * end_y;
+    double tremor = 0.6 * (1 - t);
+    place(px + tremor * sin(phase + t * 23), py + tremor * cos(phase * 1.3 + t * 19));
+    sleep_ms(travel / steps);
+  }
+  move_to(x, y, ms - travel);
+}
+
 static int button_code(const char *name) {
   if (strcmp(name, "left") == 0) return BTN_LEFT;
   if (strcmp(name, "right") == 0) return BTN_RIGHT;
@@ -159,6 +202,7 @@ int main(int argc, char **argv) {
   sleep_ms(40);
   position_x = from_x;
   position_y = from_y;
+  srand48((long)now_ms() ^ (long)getpid());
 
   while (index < argc) {
     const char *command = argv[index];
@@ -168,6 +212,9 @@ int main(int argc, char **argv) {
 
     if (strcmp(command, "move") == 0 && third != NULL) {
       move_to(strtod(first, NULL), strtod(second, NULL), strtol(third, NULL, 10));
+      index += 4;
+    } else if (strcmp(command, "glide") == 0 && third != NULL) {
+      glide_to(strtod(first, NULL), strtod(second, NULL), strtol(third, NULL, 10));
       index += 4;
     } else if ((strcmp(command, "down") == 0 || strcmp(command, "up") == 0 || strcmp(command, "click") == 0)
                && first != NULL) {
@@ -184,7 +231,7 @@ int main(int argc, char **argv) {
       sleep_ms(strtol(first, NULL, 10));
       index += 2;
     } else {
-      return fail("commands are move <x> <y> <ms>, down, up, or click <button>, scroll <steps>, and wait <ms>");
+      return fail("commands are move or glide <x> <y> <ms>, down, up, or click <button>, scroll <steps>, and wait <ms>");
     }
   }
 

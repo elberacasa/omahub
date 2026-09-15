@@ -33,6 +33,11 @@ pointer() {
   "$DEMO_POINTER" --extent $extent --from $from "$@"
 }
 
+# glide <x> <y> [ms]: the way a hand moves, curved a little, with a small overshoot that settles.
+glide() {
+  pointer glide "$1" "$2" "${3:-600}"
+}
+
 # move <x> <y> [ms]
 move() {
   pointer move "$1" "$2" "${3:-500}"
