@@ -36,6 +36,8 @@ Item {
   readonly property bool bounce: root.config.bounce !== false
   readonly property bool showDesktops: root.config.desktops === true
   readonly property bool showAgents: root.config.agents === true
+  // What an agent's card shows on hover, from the dock's settings: any of project, state, step, and message.
+  readonly property var cardFields: Array.isArray(root.config.card) ? root.config.card : ["project", "state", "step", "message"]
 
   onShowDesktopsChanged: {
     if (!root.showDesktops) return
@@ -109,6 +111,10 @@ Item {
   readonly property int agentsGap: root.agentSessions.length > 0 && root.items.length > 0 ? root.dividerWidth : 0
   readonly property int agentsLength: root.agentSessions.length > 0 ? root.agentsGap + root.agentSessions.length * root.cellWidth : 0
   // The agent tile under the pointer, measured from where the tiles are drawn.
+  // The time agent cards measure from, in epoch seconds, read again whenever a card may open.
+  property real now: Date.now() / 1000
+  onHoveredAgentChanged: root.now = Date.now() / 1000
+  onKeyCursorChanged: root.now = Date.now() / 1000
   readonly property int hoveredAgent: root.dragIndex < 0 && root.pointerAlong >= 0
     ? Model.desktopAt(root.pointerAlong - (root.vertical ? agentRow.y : agentRow.x), 0, root.agentsGap, root.cellWidth,
       root.agentSessions.length) : -1
@@ -294,6 +300,141 @@ Item {
     border.color: Color.accent
   }
 
+  // What an agent is up to, beside its tile while the pointer or the keyboard is on it: the project and
+  // branch, how long it has worked or since it finished, the step it is on and its model, and the first line
+  // it said when its turn ended. The dock's settings choose which of these it shows.
+  component AgentCard: BorderSurface {
+    id: card
+    property var session: ({})
+    property string agentState: ""
+    property bool open: false
+    readonly property bool showProject: root.cardFields.indexOf("project") >= 0
+    readonly property bool showState: root.cardFields.indexOf("state") >= 0
+    readonly property bool showStep: root.cardFields.indexOf("step") >= 0
+    readonly property string tool: card.agentState === "working" && card.session.activity ? String(card.session.activity.agentTool || "") : ""
+    readonly property string message: card.agentState !== "working" && root.cardFields.indexOf("message") >= 0 ? String(card.session.message || "") : ""
+
+    // As wide as its lines, up to a limit, and at the limit when a message wraps.
+    readonly property real widest: Math.max(cardTitle.implicitWidth + (cardBranch.visible ? cardBranch.implicitWidth + Style.spacing.md : 0),
+      cardState.visible ? cardState.implicitWidth : 0, cardModel.visible ? cardModel.implicitWidth : 0)
+    width: card.message !== "" ? Style.space(260) : Math.min(Style.space(260), Math.ceil(card.widest) + Style.spacing.lg * 2)
+    height: cardColumn.implicitHeight + Style.spacing.lg * 2
+    radius: Style.cornerRadius
+    color: Color.menu.background
+    borderSpec: Border.surfaceSpec("menu", "border", Color.menu.border, Math.max(1, Style.space(2)))
+    opacity: card.open ? 1 : 0
+    visible: card.opacity > 0
+
+    Behavior on opacity {
+      NumberAnimation { duration: card.open ? 160 : 120; easing.type: card.open ? Easing.OutCubic : Easing.InCubic }
+    }
+
+    // It rises out of the dock, and sinks back toward it.
+    transform: Translate {
+      x: card.open || !root.vertical ? 0 : (root.edge === "left" ? -Style.space(4) : Style.space(4))
+      y: card.open || root.vertical ? 0 : Style.space(4)
+
+      Behavior on x {
+        NumberAnimation { duration: card.open ? 160 : 120; easing.type: card.open ? Easing.OutCubic : Easing.InCubic }
+      }
+      Behavior on y {
+        NumberAnimation { duration: card.open ? 160 : 120; easing.type: card.open ? Easing.OutCubic : Easing.InCubic }
+      }
+    }
+
+    Column {
+      id: cardColumn
+      x: Style.spacing.lg
+      y: Style.spacing.lg
+      width: parent.width - Style.spacing.lg * 2
+      spacing: Style.spacing.xs
+
+      Item {
+        width: parent.width
+        height: cardTitle.implicitHeight
+
+        Text {
+          id: cardTitle
+          width: Math.min(implicitWidth, parent.width - (cardBranch.visible ? Math.min(cardBranch.implicitWidth, parent.width / 2) + Style.spacing.md : 0))
+          elide: Text.ElideRight
+          textFormat: Text.PlainText
+          text: card.showProject && card.session.project ? card.session.project : Desktops.agentLabel(card.session.agent)
+          color: Color.menu.text
+          font.family: Style.font.menuFamily
+          font.pixelSize: Style.font.subtitle
+          font.bold: true
+        }
+
+        Text {
+          id: cardBranch
+          visible: card.showProject && String(card.session.branch || "") !== ""
+          anchors.left: cardTitle.right
+          anchors.leftMargin: Style.spacing.md
+          anchors.baseline: cardTitle.baseline
+          width: Math.min(implicitWidth, parent.width - cardTitle.width - Style.spacing.md)
+          elide: Text.ElideMiddle
+          textFormat: Text.PlainText
+          text: String(card.session.branch || "")
+          color: Color.menu.text
+          opacity: 0.55
+          font.family: Style.font.menuFamily
+          font.pixelSize: Style.font.caption
+        }
+      }
+
+      Row {
+        id: cardState
+        visible: card.showState
+        spacing: Style.spacing.sm
+
+        Rectangle {
+          anchors.verticalCenter: parent.verticalCenter
+          width: Style.space(6)
+          height: width
+          radius: width / 2
+          color: card.agentState === "working" ? Color.accent
+            : (card.agentState === "waiting" ? Color.urgent : Util.alpha(Color.menu.text, card.agentState === "idle" ? 0.4 : 0.8))
+        }
+
+        Text {
+          textFormat: Text.PlainText
+          text: Desktops.stateLine(card.session, root.now) + (card.showStep && card.tool !== "" ? " · " + card.tool : "")
+          color: Color.menu.text
+          font.family: Style.font.menuFamily
+          font.pixelSize: Style.font.bodySmall
+        }
+      }
+
+      Text {
+        id: cardModel
+        visible: card.showStep
+        width: parent.width
+        elide: Text.ElideRight
+        textFormat: Text.PlainText
+        text: Desktops.agentLabel(card.session.agent) + (card.session.model ? " · " + card.session.model : "")
+        color: Color.menu.text
+        opacity: 0.55
+        font.family: Style.font.menuFamily
+        font.pixelSize: Style.font.caption
+      }
+
+      Text {
+        visible: card.message !== ""
+        width: parent.width
+        topPadding: Style.spacing.xs
+        wrapMode: Text.WordWrap
+        maximumLineCount: 2
+        elide: Text.ElideRight
+        textFormat: Text.PlainText
+        text: card.message
+        color: Color.menu.text
+        opacity: 0.8
+        font.family: Style.font.menuFamily
+        font.pixelSize: Style.font.bodySmall
+      }
+    }
+  }
+
   function reload() {
     stateView.reload()
   }
@@ -388,11 +529,6 @@ Item {
     } else {
       root.dispatch('hl.dsp.focus({ window = "address:' + session.address + '" })')
     }
-  }
-
-  // An agent tile's name: the project it works in, and what its agent is doing.
-  function agentTitle(session) {
-    return root.withAgent(session.project || Desktops.agentLabel(session.agent), session.activity)
   }
 
   // Goes to a desktop and opens an app there. Hyprland places the app's window on that desktop even if it
@@ -1598,12 +1734,14 @@ Item {
               height: agentBox.height + Style.space(8)
             }
 
-            DockLabel {
-              visible: (agentTile.hovered || agentTile.keyed) && root.dragIndex < 0 && !root.menuOpen && !root.pickerOpen
-              text: root.agentTitle(agentTile.modelData)
+            AgentCard {
+              session: agentTile.modelData
+              agentState: agentTile.agentState
+              open: (agentTile.hovered || agentTile.keyed) && root.dragIndex < 0 && !root.menuOpen && !root.pickerOpen
+              z: 10
               x: root.edge === "left" ? agentBox.x + agentBox.width + root.labelGap
-                : (root.edge === "right" ? agentBox.x - width - root.labelGap : agentBox.x + (agentBox.width - width) / 2)
-              y: root.vertical ? agentBox.y + (agentBox.height - height) / 2 : agentBox.y - height - root.labelGap
+                : (root.edge === "right" ? agentBox.x - width - root.labelGap : Math.round(agentBox.x + (agentBox.width - width) / 2))
+              y: root.vertical ? Math.round(agentBox.y + (agentBox.height - height) / 2) : agentBox.y - height - root.labelGap
             }
 
             MouseArea {

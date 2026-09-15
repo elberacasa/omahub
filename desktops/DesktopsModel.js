@@ -139,6 +139,9 @@ function sessions(windows, info) {
           branch: String(session.branch || ""),
           address: window.address,
           workspace: Number(window.workspace) || 0,
+          // When its latest turn began, in epoch seconds, and the first line of what it last said.
+          since: Number(session.since) || 0,
+          message: String(session.message || ""),
           activity: {
             agent: lower(session.command),
             agentWorking: state === "working",
@@ -153,6 +156,26 @@ function sessions(windows, info) {
   }
   return order.map(id => found[id].entry)
     .sort((a, b) => a.workspace - b.workspace || a.project.localeCompare(b.project) || a.id.localeCompare(b.id))
+}
+
+// How long ago something was, said the short way: "less than a minute", "4 min", "2 h 5 min".
+function duration(seconds) {
+  const minutes = Math.floor(Math.max(0, Number(seconds) || 0) / 60)
+  if (minutes < 1) return "less than a minute"
+  if (minutes < 60) return minutes + " min"
+  const hours = Math.floor(minutes / 60)
+  return minutes % 60 === 0 ? hours + " h" : hours + " h " + (minutes % 60) + " min"
+}
+
+// The state line on an agent's card, at `now` in epoch seconds: "Working for 4 min", "Done 2 min ago",
+// "Idle for 1 h". Without a turn start, working says only that.
+function stateLine(session, now) {
+  const state = activityState(session.activity)
+  if (state === "working") return session.since > 0 ? "Working for " + duration(now - session.since) : "Working"
+  if (state === "done") return "Done " + duration(session.activity.agentQuiet) + " ago"
+  if (state === "idle") return "Idle for " + duration(session.activity.agentQuiet)
+  if (state === "waiting") return "Waiting on you"
+  return "Running"
 }
 
 // What most needs a look, from facts only: a window asking for attention, an agent waiting on you, working,

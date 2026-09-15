@@ -92,17 +92,19 @@ else
   folder=$(cd "$project" && pwd -P)
   claude_log="$home/.claude/projects/${folder//[^a-zA-Z0-9]/-}/session.jsonl"
   mkdir -p "${claude_log%/*}"
-  printf '%s\n' '{"type":"user","message":{"role":"user","content":"Fix the dock"}}' \
+  printf '%s\n' '{"type":"user","timestamp":"2026-09-15T10:00:00.250Z","message":{"role":"user","content":"Fix the dock"}}' \
     '{"type":"assistant","message":{"model":"claude-fable-5","stop_reason":"tool_use","content":[{"type":"tool_use","name":"Bash"}]}}' >"$claude_log"
   output=$(HOME="$home" "$context" "0x2=$terminal")
   assert_eq "a Claude session running a tool is working" "$(jq -r "$session.state" <<<"$output")" "working"
   assert_eq "and names the tool" "$(jq -r "$session.tool" <<<"$output")" "Bash"
   assert_eq "and the model it answers with" "$(jq -r "$session.model" <<<"$output")" "claude-fable-5"
-  printf '%s\n' '{"type":"assistant","message":{"stop_reason":"end_turn","content":[{"type":"text"}]}}' \
+  assert_eq "and when its turn began" "$(jq -r "$session.since" <<<"$output")" "$(date -d 2026-09-15T10:00:00Z +%s)"
+  printf '%s\n' '{"type":"assistant","message":{"stop_reason":"end_turn","content":[{"type":"text","text":"\n\tThe dock is fixed.\nDetails follow."}]}}' \
     '{"type":"system","subtype":"turn_duration"}' >>"$claude_log"
   output=$(HOME="$home" "$context" "0x2=$terminal")
   assert_eq "and done once its turn ends" "$(jq -r "$session.state" <<<"$output")" "done"
   assert_eq "with how long its record has been quiet" "$(jq -r "$session.quiet | . >= 0 and . < 10" <<<"$output")" "true"
+  assert_eq "and the first line it said, on one line" "$(jq -r "$session.message" <<<"$output")" "The dock is fixed."
   printf '%s\n' '{"type":"assistant","isSidechain":true,"message":{"stop_reason":"tool_use","content":[{"type":"tool_use","name":"Read"}]}}' >>"$claude_log"
   assert_eq "a subagent's steps leave the turn done" "$(HOME="$home" "$context" "0x2=$terminal" | jq -r "$session.state")" "done"
   touch -d '1 hour ago' "$claude_log"
@@ -117,14 +119,17 @@ else
   mkdir -p "${codex_log%/*}"
   printf '%s\n' "{\"type\":\"session_meta\",\"payload\":{\"cwd\":\"$folder\"}}" \
     '{"type":"turn_context","payload":{"model":"gpt-6-astra"}}' \
-    '{"type":"event_msg","payload":{"type":"task_started"}}' \
+    '{"type":"event_msg","payload":{"type":"task_started","started_at":1789466400}}' \
     '{"type":"response_item","payload":{"type":"custom_tool_call","name":"apply_patch"}}' >"$codex_log"
   output=$(HOME="$home" "$context" "0x4=$terminal")
   assert_eq "a Codex session calling a tool is working" "$(jq -r "$session.state" <<<"$output")" "working"
   assert_eq "and names the tool" "$(jq -r "$session.tool" <<<"$output")" "apply_patch"
   assert_eq "and the model its turn uses" "$(jq -r "$session.model" <<<"$output")" "gpt-6-astra"
-  printf '%s\n' '{"type":"event_msg","payload":{"type":"task_complete"}}' >>"$codex_log"
-  assert_eq "and done once its task completes" "$(HOME="$home" "$context" "0x4=$terminal" | jq -r "$session.state")" "done"
+  assert_eq "and when its task began" "$(jq -r "$session.since" <<<"$output")" "1789466400"
+  printf '%s\n' '{"type":"event_msg","payload":{"type":"task_complete","last_agent_message":"Search ships.\nMore below."}}' >>"$codex_log"
+  output=$(HOME="$home" "$context" "0x4=$terminal")
+  assert_eq "and done once its task completes" "$(jq -r "$session.state" <<<"$output")" "done"
+  assert_eq "with the first line of its last message" "$(jq -r "$session.message" <<<"$output")" "Search ships."
   stop_all
 
   outside=$(mktemp -d)
@@ -151,7 +156,7 @@ fi
 results=$(node - "$OMAHUB_PATH/desktops/DesktopsModel.js" <<'EOF'
 const fs = require("fs")
 const source = fs.readFileSync(process.argv[2], "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { projectFromTitle, windowContext, summary, appIndex, entryFor, agentLabel, activityState, activityLabel, family, sessions }")()
+const Model = new Function(source + "\nreturn { projectFromTitle, windowContext, summary, appIndex, entryFor, agentLabel, activityState, activityLabel, family, sessions, duration, stateLine }")()
 const checks = []
 const check = (name, ok) => checks.push({ name, ok: !!ok })
 
@@ -215,7 +220,8 @@ const agentWindows = [
   { address: "w3", appId: "foot", title: "foot", workspace: 3 }
 ]
 const editorSessions = { sessions: [
-  { terminal: "pts/1", command: "claude", pid: 11, project: "lumen", branch: "main", state: "working", tool: "Edit", quiet: 3, model: "claude-fable-5" },
+  { terminal: "pts/1", command: "claude", pid: 11, project: "lumen", branch: "main", state: "working", tool: "Edit", quiet: 3, model: "claude-fable-5",
+    since: 1789466400, message: "Reading the dock" },
   { terminal: "pts/2", command: "codex", pid: 12, project: "orbit-api", branch: "search", state: "done", quiet: 40, model: "gpt-6-astra" },
   { terminal: "pts/3", command: "nvim", pid: 13, project: "lumen" }
 ] }
@@ -229,6 +235,11 @@ check("each session carries what its agent is doing", Model.activityState(agentL
   && agentList[0].activity.agentTool === "Edit" && Model.activityState(agentList[2].activity) === "idle")
 check("every Claude model shares one pet, and every GPT model another", Model.family("claude-fable-5", "claude") === "anthropic"
   && Model.family("claude-opus-5", "") === "anthropic" && Model.family("gpt-6-astra", "codex") === "openai")
+check("durations read the short way", Model.duration(20) === "less than a minute" && Model.duration(240) === "4 min"
+  && Model.duration(7500) === "2 h 5 min" && Model.duration(3600) === "1 h")
+check("a card says how long an agent has worked, or how long ago it finished",
+  Model.stateLine(agentList[0], agentList[0].since + 300) === "Working for 5 min"
+  && Model.stateLine(agentList[1], 0) === "Done less than a minute ago" && Model.stateLine(agentList[2], 0) === "Idle for 15 min")
 check("an agent without a model is known by its own name", Model.family("", "claude") === "anthropic" && Model.family("", "codex") === "openai")
 check("other companies are their own, and unknown models share the generic pet",
   Model.family("kimi-k3", "opencode") === "moonshot" && Model.family("mystery-1", "crush") === "other")

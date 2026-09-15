@@ -10,7 +10,7 @@
 # started through a runtime or a version manager by what it runs, that command's process, the git
 # project and branch of its folder, and for an agent that keeps a session record, what it is doing.
 #
-# Prints a JSON array, [{address, sessions: [{terminal, command, pid, project, branch, state, tool, quiet, model}]}],
+# Prints a JSON array, [{address, sessions: [{terminal, command, pid, project, branch, state, tool, quiet, model, since, message}]}],
 # leaving out windows without terminals. Folders and projects are names only, never paths, so nothing it
 # prints shows where they live. It reads the process table once and then only /proc, .git files, and the
 # ends of agents' session records, so it is cheap enough to run every second.
@@ -75,10 +75,11 @@ agent_name() {
 # What an agent is doing, from its own session record for the folder it works in: "working" and the tool
 # it is running, or "done" once its turn ends. Only Claude Code and Codex keep records Omahub can read. A
 # record older than the agent's process belongs to an earlier session, so it says nothing. Prints
-# state<TAB>tool<TAB>quiet<TAB>model, where quiet is how many seconds ago the record last changed and model
-# is the one the agent last answered with.
+# state<TAB>tool<TAB>quiet<TAB>model<TAB>since<TAB>message: quiet is how many seconds ago the record last
+# changed, model the one the agent last answered with, since when its latest turn began, in epoch seconds,
+# and message the first line of what it last said, kept short.
 agent_state() {
-  local command="$1" pid="$2" folder="$3" log="" file started said model
+  local command="$1" pid="$2" folder="$3" log="" file started said model since message
   case "$command" in
     claude)
       log=$(ls -t "$HOME/.claude/projects/${folder//[^a-zA-Z0-9]/-}"/*.jsonl 2>/dev/null | head -n 1)
@@ -122,12 +123,23 @@ agent_state() {
   fi
   [[ -n $said ]] || return 1
   if [[ $command == "claude" ]]; then
-    model=$(tail -n 80 "$log" | jq -Rrn '[inputs | fromjson? // empty | select(.type == "assistant" and .isSidechain != true)
-      | .message.model // empty | select(. != "<synthetic>")] | last // ""')
+    IFS=$'\t' read -r model since message < <(tail -n 160 "$log" | jq -Rrn '
+      [inputs | fromjson? // empty | select(.isSidechain != true)] as $all
+      | ([$all[] | select(.type == "assistant") | .message.model // empty | select(. != "<synthetic>")] | last // "") as $model
+      | ([$all[] | select(.type == "user" and .isMeta != true
+          and ((.message.content | type) == "string" or any(.message.content[]?; .type == "text")))] | last) as $prompt
+      | ([$all[] | select(.type == "assistant") | .message.content[]? | select(.type == "text") | .text] | last // "") as $text
+      | [$model,
+         (($prompt.timestamp // "") | sub("\\.[0-9]+Z$"; "Z") | (try fromdateiso8601 catch 0) | floor | tostring),
+         ($text | gsub("\t"; " ") | split("\n") | map(select(test("\\S"))) | first // "" | sub("^\\s+"; "") | .[0:140])]
+      | @tsv')
   else
     model=$(grep '"type":"turn_context"' "$log" | tail -n 1 | jq -r '.payload.model // ""' 2>/dev/null)
+    since=$(grep '"type":"task_started"' "$log" | tail -n 1 | jq -r '.payload.started_at // 0 | floor' 2>/dev/null)
+    message=$(grep '"type":"task_complete"' "$log" | tail -n 1 \
+      | jq -r '.payload.last_agent_message // "" | gsub("\t"; " ") | split("\n") | map(select(test("\\S"))) | first // "" | sub("^\\s+"; "") | .[0:140]' 2>/dev/null)
   fi
-  printf '%s\t%s\t%s\n' "$said" "$(( EPOCHSECONDS - $(stat -c %Y "$log") ))" "$model"
+  printf '%s\t%s\t%s\t%s\t%s\n' "$said" "$(( EPOCHSECONDS - $(stat -c %Y "$log") ))" "$model" "${since:-0}" "$message"
 }
 
 # What each agent's record said this run, by agent and folder.
@@ -196,6 +208,8 @@ for pair in "$@"; do
     tool=""
     quiet=0
     model=""
+    since=0
+    message=""
     if [[ ($command == "claude" || $command == "codex") && -n $process && -n $folder ]]; then
       # Agents working in one folder write one record, so it is read once.
       key="$command:$folder"
@@ -207,11 +221,17 @@ for pair in "$@"; do
         tool=${rest%%$'\t'*}
         rest=${rest#*$'\t'}
         quiet=${rest%%$'\t'*}
-        model=${rest#*$'\t'}
+        rest=${rest#*$'\t'}
+        model=${rest%%$'\t'*}
+        rest=${rest#*$'\t'}
+        since=${rest%%$'\t'*}
+        message=${rest#*$'\t'}
       fi
     fi
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$address" "$terminal" "$command" "${process:-0}" "$project" "$branch" "$state" "$tool" "$quiet" "$model"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$address" "$terminal" "$command" "${process:-0}" "$project" "$branch" \
+      "$state" "$tool" "$quiet" "$model" "$since" "$message"
   done
 done | jq -Rcn '[inputs | split("\t") | {address: .[0], terminal: .[1], command: .[2], pid: (.[3] | tonumber), project: .[4], branch: .[5],
-    state: (.[6] // ""), tool: (.[7] // ""), quiet: ((.[8] // "0") | tonumber? // 0), model: (.[9] // "")}]
+    state: (.[6] // ""), tool: (.[7] // ""), quiet: ((.[8] // "0") | tonumber? // 0), model: (.[9] // ""),
+    since: ((.[10] // "0") | tonumber? // 0), message: (.[11:] | join(" "))}]
   | group_by(.address) | map({address: .[0].address, sessions: map(del(.address))})'
