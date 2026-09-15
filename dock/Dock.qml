@@ -1866,7 +1866,8 @@ Item {
               onClicked: function(mouse) {
                 if (cellMouse.moved) return
                 if (mouse.button === Qt.RightButton) {
-                  root.openMenu(cell.modelData, cell, false)
+                  // Opened after the click is delivered, as the quick answer panel is.
+                  Qt.callLater(function() { root.openMenu(cell.modelData, cell, false) })
                 } else if (mouse.button === Qt.MiddleButton) {
                   cell.startLaunch()
                   root.launch(cell.modelData)
@@ -2017,9 +2018,14 @@ Item {
               onPressed: function(mouse) { if (mouse.button === Qt.LeftButton) tilePet.press() }
               onReleased: tilePet.letGo()
               onCanceled: tilePet.letGo()
-              // A right-click opens the quick answer panel; a click goes to the agent.
+              // A right-click opens the quick answer panel; a click goes to the agent. The panel opens once the
+              // click is fully delivered: Qt still walks the items under the pointer for a context menu after
+              // this handler, and the panel reshaping the dock in between crashed the shell.
               onClicked: function(mouse) {
-                if (mouse.button === Qt.RightButton) root.openReply(agentTile.modelData, agentTile)
+                if (mouse.button === Qt.RightButton) {
+                  var session = agentTile.modelData
+                  Qt.callLater(function() { root.openReply(session, agentTile) })
+                }
                 else root.goToAgent(agentTile.modelData, true)
               }
             }

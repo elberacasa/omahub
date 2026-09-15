@@ -24,6 +24,7 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 
 ### Fixed
 
+- Right-clicking an agent's tile or an app in the dock no longer crashes the shell now and then as the panel or menu opens.
 - An agent working in a folder that is not a git project, such as Codex in one of several Cursor windows, gets its tile on that window's desktop and goes by the folder's name, instead of landing on another window of the same editor.
 - Dock icons magnify and show their names only once the pointer is over the dock, not as it comes near, and settle as soon as it leaves them. The empty space above a resting dock no longer opens apps.
 - Walking windows with SUPER + TAB and back with SHIFT + TAB, then letting go, jumps to the window chosen instead of leaving the overview open.
