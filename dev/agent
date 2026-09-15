@@ -542,7 +542,7 @@ guard_keys() {
       esac
     elif [[ $upper == "PRINT" && ! ( $with_shift == true && $other == false ) ]]; then
       die "refusing $key: it takes a real screenshot. SHIFT + PRINT opens the thumbnail's menu"
-    elif ! jq -e '.omahub.overview.opened or .omahub.dock.keyboard or .omahub.dock.picker != null
+    elif ! jq -e '.omahub.overview.opened or .omahub.dock.keyboard or .omahub.dock.picker != null or .omahub.dock.reply != null
         or .omahub.hub.opened or .omahub.capture.menu or (.focus.test // false)' <<<"$now" >/dev/null; then
       die "refusing $key: the focused window is not a test window and no Omahub surface has the keyboard"
     fi
@@ -711,7 +711,11 @@ click_target() {
     die "refusing to $button-click ${target#dock.app:}: it would open or focus a real app. Right-click opens its menu"
   fi
   if [[ $target == dock.agent:* ]]; then
-    die "refusing to $button-click an agent tile: it would focus a real agent's window. Point at it to open its card"
+    local agent_address
+    agent_address=$(state | jq -r --argjson index "${target#dock.agent:}" '.omahub.dock.agents[$index].address // empty')
+    if ! state | jq -e --arg a "$agent_address" '$a != "" and any(.windows[]; .address == $a and .test)' >/dev/null 2>&1; then
+      die "refusing to $button-click an agent tile whose window is not a test window: it would focus or answer a real agent. Point at it to open its card"
+    fi
   fi
   read -r x y <<<"$(center_of "$target")"
   demo_build_pointer

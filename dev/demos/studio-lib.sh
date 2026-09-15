@@ -39,6 +39,9 @@ rest() {
   agent call dismiss >/dev/null 2>&1 || true
   park
   hyprctl dispatch 'hl.dsp.focus({ workspace = "1" })' >/dev/null
-  focus orbit
+  # A studio up in terminals has no staged editor to put in front.
+  if [[ $(window orbit) != "null" ]]; then
+    focus orbit
+  fi
   sleep 0.4
 }

@@ -7,6 +7,9 @@
 #                      desktop 2: lumen-docs in Cursor
 #                      desktop 3: X, signed out, in a throwaway browser profile
 #                      tidewater waits in ~/Code, not open yet, for the project launcher
+#   dev/studio up --terminals
+#                      the same projects and hidden real windows, but no editor, browser, or btop, and a dock
+#                      that keeps only a terminal, a browser, files, and btop: for takes filmed in terminals
 #   dev/studio down    close the staged windows, delete the projects it made, put everything back
 #
 # The projects are made in ~/Code, the projects folder while the studio is up, so the project launcher lists
@@ -228,8 +231,10 @@ open_window() {
 }
 
 up() {
+  local terminals=0
+  [[ ${1:-} == "--terminals" ]] && terminals=1
   [[ ! -d $STATE ]] || die "a studio is already up. Take it down with dev/studio down"
-  command -v cursor >/dev/null || die "the studio needs Cursor"
+  (( terminals )) || command -v cursor >/dev/null || die "the studio needs Cursor"
   mkdir -p "$STATE"
   : >"$STATE/created"
 
@@ -265,6 +270,15 @@ Icon=btop
 Exec=foot --title=btop btop -c $STATE/btop.conf
 EOF
   sleep 1
+  if (( terminals )); then
+    # Scenes in terminals open their own windows. The dock keeps apps with nothing personal and no editor.
+    omahub dock order foot chromium org.gnome.Nautilus omahub-studio-btop >/dev/null
+    printf '{}\n' >"$STATE/windows.json"
+    touch "$STATE/terminals"
+    hyprctl dispatch 'hl.dsp.focus({ workspace = "1" })' >/dev/null
+    echo "The studio is up in terminals. Take it down with dev/studio down."
+    return 0
+  fi
   omahub dock pin omahub-studio-btop >/dev/null
   omahub set dock/desktops on >/dev/null
 
@@ -369,6 +383,10 @@ down() {
       rm -f "$STATE/cursor-quiet"
     fi
   fi
+  # A pets scene that stopped halfway still removes its stand-in agents and the records it wrote.
+  if [[ -d $STATE/pets && -f $STATE/windows.json ]]; then
+    bash "$ROOT/dev/demos/studio-pets.sh" cleanup >/dev/null 2>&1 || true
+  fi
   if [[ -f $STATE/guard.pid ]]; then
     kill "$(<"$STATE/guard.pid")" 2>/dev/null || true
   fi
@@ -424,7 +442,7 @@ record() {
 }
 
 case "${1:-}" in
-  up) up ;;
+  up) up "${2:-}" ;;
   down) down ;;
   record) record "${2:?usage: dev/studio record <scene> [seconds]}" "${3:-14}" ;;
   *) sed -n '3,13p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;

@@ -39,7 +39,10 @@ Item {
   readonly property bool showAgents: root.config.agents === true
   // Pets move unless the dock's settings make them calm, and agents nap after the quiet time chosen there.
   readonly property bool livelyPets: root.config["pet-motion"] !== "calm"
-  readonly property int napAfter: ({ "5m": 300, "15m": 900, "1h": 3600, "never": 0 })[root.config["pet-naps"]] ?? 300
+  // A number of seconds written straight into the dock's file also works, which demo recordings use; the setting
+  // itself offers only the choices below.
+  readonly property int napAfter: typeof root.config["pet-naps"] === "number" ? root.config["pet-naps"]
+    : ({ "5m": 300, "15m": 900, "1h": 3600, "never": 0 })[root.config["pet-naps"]] ?? 300
   // What an agent's card shows on hover, from the dock's settings: any of project, state, step, and message.
   readonly property var cardFields: Array.isArray(root.config.card) ? root.config.card : ["project", "state", "step", "message"]
 
@@ -102,8 +105,14 @@ Item {
     return item.pinned && slot > root.dragIndex ? slot - 1 : slot
   }
 
-  readonly property var items: Model.items(root.pins,
-    DesktopEntries.applications.values || [], ToplevelManager.toplevels.values || [], root.showOpen)
+  // Windows Omahub put away on its own hidden desktop, as it does for a recording, are not open for the dock either.
+  readonly property var items: {
+    var stashed = (Hyprland.toplevels.values || []).filter(function(toplevel) {
+      return toplevel && toplevel.workspace && toplevel.workspace.name === "special:omahub-stash"
+    }).map(function(toplevel) { return toplevel.wayland })
+    return Model.items(root.pins, DesktopEntries.applications.values || [],
+      (ToplevelManager.toplevels.values || []).filter(function(toplevel) { return stashed.indexOf(toplevel) < 0 }), root.showOpen)
+  }
   readonly property var layout: Model.layout(root.items, root.cellWidth, root.dividerWidth)
 
   // Desktops at the end of the dock, when that setting is on: each one with a window, and the one in front.
@@ -126,7 +135,10 @@ Item {
 
   // Agents between the apps and the desktops, when that setting is on: one tile for each agent session.
   readonly property var agentSessions: root.showAgents
-    ? Desktops.sessions(Model.windowList(Hyprland.toplevels.values || []), root.terminalInfo) : []
+    ? Desktops.sessions(Model.windowList(Hyprland.toplevels.values || []).filter(function(window) {
+      // Windows Omahub put away on its own hidden desktop, as it does for a recording, are not on screen.
+      return window.workspaceName !== "special:omahub-stash"
+    }), root.terminalInfo) : []
   // An agent waiting for your answer brings a hidden dock out until you answer.
   readonly property bool agentCalling: root.agentSessions.some(function(session) { return session.activity.agentWaiting })
   // The window with focus, as Hyprland's address, so a turn that ends in front of you counts as seen.
@@ -538,7 +550,8 @@ Item {
     for (var g = 0; g < agentRepeater.count; g++) {
       var agentTile = agentRepeater.itemAt(g)
       if (agentTile) agents.push(Object.assign({ id: agentTile.modelData.id, family: agentTile.modelData.family,
-        project: agentTile.modelData.project, agent: agentTile.agentState, unseen: root.unseen[agentTile.modelData.id] === true },
+        project: agentTile.modelData.project, agent: agentTile.agentState, unseen: root.unseen[agentTile.modelData.id] === true,
+        address: agentTile.modelData.address },
         place(agentTile)))
     }
     var desktops = []

@@ -175,8 +175,8 @@ function reorder(pins, id, slot) {
   return rest.slice(0, at).concat([id], rest.slice(at))
 }
 
-// Hyprland's windows as the dock reads them: address, app, title, desktop, how recently each was used, and
-// its process. `toplevels` are Hyprland's.
+// Hyprland's windows as the dock reads them: address, app, title, desktop and its name, how recently each was
+// used, and its process. `toplevels` are Hyprland's.
 function windowList(toplevels) {
   return listValue(toplevels).map(toplevel => {
     const data = (toplevel && toplevel.lastIpcObject) || {}
@@ -185,6 +185,7 @@ function windowList(toplevels) {
       appId: String(data.class || ""),
       title: String((toplevel && toplevel.title) || data.title || ""),
       workspace: toplevel && toplevel.workspace ? toplevel.workspace.id : (data.workspace ? data.workspace.id : 0),
+      workspaceName: String(toplevel && toplevel.workspace ? toplevel.workspace.name : (data.workspace ? data.workspace.name : "") || ""),
       focus: data.focusHistoryID !== undefined ? Number(data.focusHistoryID) : 1000,
       pid: Number(data.pid) || 0
     }
