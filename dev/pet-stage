@@ -1,0 +1,44 @@
+#!/bin/bash
+
+# Pets on a stage of their own, for recording them: large and crisp on the theme's background, in any look,
+# color, and mood, switched on cue. Nothing on the stage reads or touches an agent.
+#
+#   dev/pet-stage show '<json>'        open or update the stage, for example
+#                                      '{"pets": [{"look": "blob", "mood": "working"}, {"look": "cat", "tint": "cyan"}], "pixel": 12}'
+#                                      pets: look (blob cat gem bunny fox owl robot), mood (agent working done idle
+#                                      waiting, or "" to hide), tint (a palette color name), gazeX and gazeY (-1 to 1)
+#                                      pixel: the size of one pet pixel; gap: room between pets, in pet pixels;
+#                                      background: theme or clear
+#   dev/pet-stage mood <index> <mood>  change one pet's mood, so a working pet set to done hops and bursts
+#   dev/pet-stage parade [pixel]       all seven pets in their own colors, awake
+#   dev/pet-stage state                what the stage shows, with each pet's box on screen
+#   dev/pet-stage close
+
+set -euo pipefail
+
+ID="io.github.elberacasa.omahub"
+
+call() {
+  omarchy-shell shell call "$ID" stage "$1"
+}
+
+state() {
+  omarchy-shell shell call "$ID" inspect "" | jq -c '.stage'
+}
+
+case "${1:-}" in
+  show) call "${2:?usage: dev/pet-stage show '<json>'}" | jq -c . ;;
+  mood)
+    index="${2:?usage: dev/pet-stage mood <index> <mood>}"
+    mood="${3-}"
+    call "$(state | jq -c --argjson index "$index" --arg mood "$mood" \
+      '{pets: (.pets | map({look, mood, tint, gazeX, gazeY}) | .[$index].mood = $mood)}')" | jq -c '.pets | map(.mood)'
+    ;;
+  parade)
+    call "$(jq -nc --argjson pixel "${2:-12}" \
+      '{pixel: $pixel, gap: 5, background: "theme", pets: (["blob", "cat", "gem", "bunny", "fox", "owl", "robot"] | map({look: ., mood: "agent"}))}')" | jq -c '.pets | length'
+    ;;
+  state) state ;;
+  close) call '{"open": false}' >/dev/null ;;
+  *) sed -n '3,17p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

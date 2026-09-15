@@ -2,18 +2,24 @@
 
 # Cut segments of a take into an MP4 for social posts and a GIF for READMEs.
 #
-#   dev/export-media <video> <name> <start-end> [<start-end>...] [--crop W:H:X:Y] [--filter <ffmpeg filters>] [--gif-width <px>] [--gif-fps <n>] [--no-gif]
+#   dev/export-media <video> <name> <start-end> [<start-end>...] [--crop W:H:X:Y] [--zoom <keys>] [--filter <ffmpeg filters>] [--gif-width <px>] [--gif-fps <n>] [--no-gif]
 #
 # Segments are joined with hard cuts in the order given, for example:
 #   dev/export-media tmp/takes/hero.mp4 capture-hero 0.5-13.5 27.3-30
 # --crop frames one window instead of the whole monitor, so small UI stays readable in a README.
 # --filter runs on the take before it is cut, so `enable='gte(t,8.5)'` uses the take's own clock,
 # for example to cover a home path an app prints on screen.
+# --zoom eases the camera between keys on the exported clip's own clock, each key time:x:y:scale with x and y
+# the point in the middle of the frame, in the take's pixels after --crop, and scale 1 for the whole frame:
+#   --zoom 0:960:540:1,1.5:960:540:1,3:640:560:2.6,6:640:560:2.6,7.5:960:540:1
+# holds the whole frame, eases into the point at 640,560 by 2.6 times over 1.5 seconds, holds, and eases back.
+# Before the first key and after the last the camera holds still. Frames are doubled with hard pixels before the
+# zoom, so pixel art stays crisp.
 # Output lands in tmp/media/.
 
 set -euo pipefail
 
-usage="usage: dev/export-media <video> <name> <start-end> [<start-end>...] [--crop W:H:X:Y] [--filter <ffmpeg filters>] [--gif-width <px>] [--gif-fps <n>] [--no-gif]"
+usage="usage: dev/export-media <video> <name> <start-end> [<start-end>...] [--crop W:H:X:Y] [--zoom <keys>] [--filter <ffmpeg filters>] [--gif-width <px>] [--gif-fps <n>] [--no-gif]"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 
 (( $# >= 3 )) || { echo "$usage" >&2; exit 1; }
@@ -27,11 +33,14 @@ gif_width=960
 gif_fps=24
 gif=1
 crop=""
+crop_size=""
+zoom=""
 extra=""
 
 while (( $# )); do
   case "$1" in
-    --crop) crop="crop=$2,"; shift 2 ;;
+    --crop) crop="crop=$2,"; crop_size="${2%:*:*}"; shift 2 ;;
+    --zoom) zoom="$2"; shift 2 ;;
     --filter) extra="$2,"; shift 2 ;;
     --gif-width) gif_width="$2"; shift 2 ;;
     --gif-fps) gif_fps="$2"; shift 2 ;;
@@ -55,7 +64,37 @@ for i in "${!segments[@]}"; do
   filter+="[0:v]${extra}${crop}trim=$from:$to,setpts=PTS-STARTPTS[s$i];"
   labels+="[s$i]"
 done
-filter+="${labels}concat=n=${#segments[@]}:v=1[v]"
+camera=""
+if [[ -n $zoom ]]; then
+  if [[ -n $crop_size ]]; then
+    size="${crop_size/:/x}"
+  else
+    size=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0:s=x "$video")
+  fi
+  rate=$(ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate -of csv=p=0 "$video")
+  # The camera as zoompan expressions: each quantity eases between its keys with smoothstep.
+  camera=$(python3 - "$zoom" <<'SCRIPT'
+import sys
+keys = []
+for key in sys.argv[1].split(","):
+    t, x, y, scale = (float(part) for part in key.split(":"))
+    keys.append((t, x * 2, y * 2, max(1.0, scale)))
+keys.sort()
+def eased(index):
+    out = repr(keys[-1][index])
+    for k in reversed(range(len(keys) - 1)):
+        (t0, v0), (t1, v1) = (keys[k][0], keys[k][index]), (keys[k + 1][0], keys[k + 1][index])
+        span = max(t1 - t0, 0.001)
+        p = f"clip((it-{t0})/{span},0,1)"
+        out = f"if(lt(it,{t1}),{v0}+({v1 - v0})*({p})*({p})*(3-2*({p})),{out})"
+    return out
+zoom, x, y = eased(3), eased(1), eased(2)
+print(f"z='{zoom}':x='max(0,min(iw-iw/zoom,{x}-iw/zoom/2))':y='max(0,min(ih-ih/zoom,{y}-ih/zoom/2))'")
+SCRIPT
+)
+  camera=",scale=iw*2:ih*2:flags=neighbor,zoompan=${camera}:d=1:s=${size}:fps=${rate}"
+fi
+filter+="${labels}concat=n=${#segments[@]}:v=1${camera}[v]"
 
 ffmpeg -y -loglevel error -i "$video" -filter_complex "$filter" -map "[v]" \
   -c:v libx264 -crf 16 -preset slow -pix_fmt yuv420p -movflags +faststart -an \

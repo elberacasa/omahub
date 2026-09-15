@@ -69,8 +69,16 @@ Item {
     return dock.layoutJson()
   }
 
+  // Pets on a stage of their own, for recordings, driven by dev/pet-stage. Returns what the stage shows.
+  function stage(payloadJson) {
+    var payload = {}
+    try { payload = JSON.parse(payloadJson || "{}") } catch (e) {}
+    petStage.show(payload)
+    return petStage.stateJson()
+  }
+
   // Everything Omahub shows right now, in one answer, for dev/agent and the live checks: the hub, the
-  // overview, the dock, and the screenshot thumbnail.
+  // overview, the dock, the screenshot thumbnail, and the pet stage.
   function inspect() {
     function parsed(text) {
       try { return JSON.parse(text) } catch (e) { return null }
@@ -79,7 +87,8 @@ Item {
       hub: parsed(hub.stateJson()),
       overview: parsed(overview.layoutJson()),
       dock: parsed(dock.layoutJson()),
-      capture: parsed(capture.stateJson())
+      capture: parsed(capture.stateJson()),
+      stage: parsed(petStage.stateJson())
     })
   }
 
@@ -90,6 +99,7 @@ Item {
     overview.close()
     dock.dismiss()
     capture.closeMenu()
+    petStage.close()
   }
 
   Hub {
@@ -106,5 +116,9 @@ Item {
 
   Overview {
     id: overview
+  }
+
+  PetStage {
+    id: petStage
   }
 }
