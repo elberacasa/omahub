@@ -2,8 +2,9 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 
-// One setting in the hub. Toggles reuse Omarchy's switch, choices show their options as chips,
-// and other kinds show their current label. The row owns clicks and hover; the hub owns state.
+// One setting in the hub. Toggles reuse Omarchy's switch, choices show their options as chips, a
+// setting that holds several choices at once shows each as a chip of its own, and other kinds show
+// their current label. The row owns clicks and hover; the hub owns state.
 Rectangle {
   id: row
 
@@ -15,6 +16,8 @@ Rectangle {
   property bool pending: false
   property string error: ""
   property bool hasCursor: false
+  // The chip the keyboard is on, in a row that holds several choices at once, or -1.
+  property int chipCursor: -1
   property bool promptActive: false
   property string promptText: ""
 
@@ -27,7 +30,7 @@ Rectangle {
   signal pointerMoved(var item, var mouse)
 
   readonly property bool isOn: row.settingState !== null && row.settingState.value === true
-  readonly property bool hasChips: row.setting.kind === "choice" || row.setting.kind === "folder"
+  readonly property bool hasChips: row.setting.kind === "choice" || row.setting.kind === "folder" || row.setting.kind === "multi"
   // A choice with More… keeps its chips short: the current one and up to three others, so the
   // title always has room. The rest live behind More….
   readonly property var chipOptions: {
@@ -191,6 +194,7 @@ Rectangle {
 
           delegate: Button {
             required property var modelData
+            required property int index
             text: modelData.label
             selected: modelData.current === true
             bordered: true
@@ -200,6 +204,17 @@ Rectangle {
             horizontalPadding: Style.spacing.md
             verticalPadding: Style.spacing.controlPaddingY
             onClicked: row.chose(modelData.value)
+
+            // The chip the keyboard is on wears a ring, apart from whether it is on.
+            Rectangle {
+              visible: row.chipCursor === index
+              anchors.fill: parent
+              anchors.margins: -Style.space(3)
+              color: "transparent"
+              radius: Style.cornerRadius + Style.space(3)
+              border.width: Math.max(1, Style.space(2))
+              border.color: Color.accent
+            }
           }
         }
 

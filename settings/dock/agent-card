@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# omahub:title=Agent cards
+# omahub:summary=What the card shows when you hover an agent in the dock
+# omahub:section=dock
+# omahub:order=67
+# omahub:kind=multi
+# omahub:icon=󰋽
+# omahub:keywords=dock agents card hover project branch state working done tool model message
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/dock.sh"
+
+omahub_dock_multi_setting card project,state,step,message "project=Project state=State step=Tool message=Message" dock/agent-card "$@"

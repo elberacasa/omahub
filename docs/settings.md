@@ -47,7 +47,7 @@ Only executable files are read. `chmod +x` a new setting.
 | `title` | yes | Row title in sentence case |
 | `summary` | yes | One line under the title. Also searched |
 | `section` | yes | The hub section the row belongs to |
-| `kind` | yes | `toggle`, `choice`, `folder`, `keys`, or `action`. Decides how the hub draws it |
+| `kind` | yes | `toggle`, `choice`, `multi`, `folder`, `keys`, or `action`. Decides how the hub draws it. A `multi` setting holds several of its choices at once, each a chip that turns on and off |
 | `icon` | no | A Nerd Font glyph |
 | `keywords` | no | Extra words people might search for |
 | `requires` | no | A plugin id (contains a dot) or a command. The setting is hidden when it is missing |
@@ -64,8 +64,8 @@ Only executable files are read. `chmod +x` a new setting.
 | Verb | Prints | Rules |
 |---|---|---|
 | `get` | `{"value": ..., "label": "..."}` | Reads the real system every time. Never cached |
-| `set <value>` | The new state, same shape as `get` | Idempotent. Rejects values it doesn't understand |
-| `options` | `[{"value": ..., "label": "...", "current": true}]` | Only for `choice` and `folder` |
+| `set <value>` | The new state, same shape as `get` | Idempotent. Rejects values it doesn't understand. A `multi` setting takes a comma list of its values, or `none` |
+| `options` | `[{"value": ..., "label": "...", "current": true}]` | Only for `choice`, `multi`, and `folder`. Every option that is on is `current` |
 | `reset` | The state after resetting | Undoes everything the setting ever changed |
 
 Exit with `1` and a short message on stderr when something fails. `omahub_fail` does both.

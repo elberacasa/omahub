@@ -12,7 +12,7 @@ fi
 results=$(node - "$OMAHUB_PATH/hub/HubModel.js" <<'EOF'
 const fs = require("fs")
 const source = fs.readFileSync(process.argv[2], "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { rows, keyboardSummary, optimistic, markCurrent, errorText }")()
+const Model = new Function(source + "\nreturn { rows, keyboardSummary, optimistic, markCurrent, errorText, toggleMulti }")()
 const checks = []
 const check = (name, ok) => checks.push({ name, ok: !!ok })
 
@@ -44,6 +44,24 @@ check("a choice moves its highlight at once", chosen.options.map(o => o.current)
 check("a choice keeps the rest of its state", Array.isArray(chosen.state.recommended))
 check("an action waits for the real answer", Model.optimistic({ id: "projects/new", kind: "action" }, null, null, "moonshot") === null)
 check("highlights compare values as text", Model.markCurrent([{ value: 60 }, { value: "tkl" }], "60")[0].current === true)
+
+const fields = [
+  { value: "project", label: "Project", current: true },
+  { value: "state", label: "State", current: true },
+  { value: "message", label: "Message", current: false }
+]
+const card = { id: "dock/agent-card", kind: "multi" }
+check("a list marks every value in it", Model.markCurrent(fields, ["message", "project"]).map(option => option.current).join(",") === "true,false,true")
+check("switching a chip off keeps the others", Model.toggleMulti(fields, "project") === "state")
+check("switching a chip on adds it in its place", Model.toggleMulti(fields, "message") === "project,state,message")
+check("switching the last chip off sends none", Model.toggleMulti([{ value: "project", current: true }], "project") === "none")
+const shown = Model.optimistic(card, { value: ["project", "state"] }, fields, "state,message")
+check("a multi setting shows its new chips at once", shown.state.value.join(",") === "state,message"
+  && shown.options.map(option => option.current).join(",") === "false,true,true" && shown.state.label === "State, Message")
+check("every chip on reads as everything, and none as nothing",
+  Model.optimistic(card, null, fields, "project,state,message").state.label === "Everything"
+  && Model.optimistic(card, null, fields, "none").state.label === "Nothing")
+check("a value that is not a chip waits for the real answer", Model.optimistic(card, null, fields, "project,colour") === null)
 check("an empty error says what to do", Model.errorText("") === "Omahub didn't respond. Try again")
 check("an error drops the command's name and starts a sentence", Model.errorText("omahub: no app named 'x'") === "No app named 'x'")
 

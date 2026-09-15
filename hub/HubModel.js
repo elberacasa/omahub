@@ -81,7 +81,26 @@ function errorText(stderr) {
 // Choices with the given value marked current, compared as text since values arrive as either.
 function markCurrent(options, value) {
   if (!Array.isArray(options)) return options
-  return options.map(option => Object.assign({}, option, { current: String(option.value) === String(value) }))
+  // A setting holding several choices has a list for its value, and every option in it is current.
+  const chosen = Array.isArray(value) ? value.map(String) : [String(value)]
+  return options.map(option => Object.assign({}, option, { current: chosen.indexOf(String(option.value)) >= 0 }))
+}
+
+// What to send when one chip of a setting holding several choices is switched: the options that stay or
+// become on, in the order the options come, or "none".
+function toggleMulti(options, value) {
+  const on = (options || [])
+    .filter(option => (String(option.value) === String(value)) !== (option.current === true))
+    .map(option => String(option.value))
+  return on.length > 0 ? on.join(",") : "none"
+}
+
+// How a setting holding several choices reads: every chip on is "Everything", none is "Nothing".
+function multiLabel(options) {
+  const on = options.filter(option => option.current)
+  if (on.length === 0) return "Nothing"
+  if (on.length === options.length) return "Everything"
+  return on.map(option => option.label).join(", ")
 }
 
 // What a switch or a choice will show once a change goes through, so the row can show it at once.
@@ -101,6 +120,12 @@ function optimistic(setting, state, options, value) {
       state: Object.assign({}, state || {}, { value: chosen.value, label: chosen.label }),
       options: markCurrent(options, chosen.value)
     }
+  }
+  if (setting.kind === "multi" && Array.isArray(options)) {
+    const values = String(value) === "none" ? [] : String(value).split(",")
+    if (values.some(item => !options.some(option => String(option.value) === item))) return null
+    const next = markCurrent(options, values)
+    return { state: Object.assign({}, state || {}, { value: values, label: multiLabel(next) }), options: next }
   }
   return null
 }

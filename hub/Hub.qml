@@ -74,7 +74,7 @@ Item {
     + "    kind=${entry##*|}\n"
     + "    state=$(\"$bin\" get \"$id\" 2>/dev/null) || state=null\n"
     + "    options=null\n"
-    + "    if [[ $kind == \"choice\" || $kind == \"folder\" ]]; then\n"
+    + "    if [[ $kind == \"choice\" || $kind == \"folder\" || $kind == \"multi\" ]]; then\n"
     + "      options=$(\"$bin\" options \"$id\" 2>/dev/null) || options=null\n"
     + "    fi\n"
     + "    printf '%s\\t%s\\t%s\\n' \"$id\" \"${state:-null}\" \"${options:-null}\" >\"$dir/$i\"\n"
@@ -213,6 +213,15 @@ Item {
     root.statesReady = true
   }
 
+  // The chip the keyboard is on in a row that holds several choices at once: Space moves it, Enter
+  // switches it. It starts on the first chip whenever the cursor reaches another row.
+  property var chipFocus: ({ row: -1, index: 0 })
+  readonly property string cursorKind: root.rows[root.cursor] ? root.rows[root.cursor].kind : ""
+
+  function activeChip(index) {
+    return root.chipFocus.row === index ? root.chipFocus.index : 0
+  }
+
   // Changes run one at a time. The row shows its new state at once, and a change that matches the
   // last one already on its way for that setting is not sent again.
   function setValue(id, value) {
@@ -287,7 +296,7 @@ Item {
         var nextStates = Object.assign({}, root.states)
         nextStates[id] = state
         root.states = nextStates
-        if (setting && setting.kind === "choice" && root.options[id]) {
+        if (setting && (setting.kind === "choice" || setting.kind === "multi") && root.options[id]) {
           var nextOptions = Object.assign({}, root.options)
           nextOptions[id] = Model.markCurrent(root.options[id], state.value)
           root.options = nextOptions
@@ -317,9 +326,10 @@ Item {
     }
   }
 
-  // Space and Enter change the row under the cursor, and a step of -1 moves a choice back. The
-  // keyboard card above the first row is index -1 while it has settings to turn on.
-  function activate(index, step) {
+  // Space and Enter change the row under the cursor, and a step of -1 moves a choice back. In a row of
+  // several choices, Space moves between its chips and Enter, given as `toggle`, switches the one it is on.
+  // The keyboard card above the first row is index -1 while it has settings to turn on.
+  function activate(index, step, toggle) {
     if (index === -1) {
       root.applyRecommended()
       return
@@ -337,6 +347,12 @@ Item {
       var current = choices.findIndex(function(option) { return option.current })
       var direction = step === -1 ? -1 : 1
       root.setValue(setting.id, choices[(current + direction + choices.length) % choices.length].value)
+    } else if (setting.kind === "multi") {
+      var chips = root.options[setting.id] || []
+      if (chips.length === 0) return
+      var at = Math.min(root.activeChip(index), chips.length - 1)
+      if (toggle === true) root.setValue(setting.id, Model.toggleMulti(chips, chips[at].value))
+      else root.chipFocus = { row: index, index: (at + (step === -1 ? -1 : 1) + chips.length) % chips.length }
     } else if (setting.kind === "folder") {
       root.chooseFolder(setting)
     } else if (setting.kind === "action") {
@@ -717,7 +733,7 @@ Item {
           } else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && (event.modifiers & Qt.ShiftModifier)) {
             root.openSecondary(root.cursor)
           } else if (event.key === Qt.Key_Space || event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-            root.activate(root.cursor, (event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+            root.activate(root.cursor, (event.modifiers & Qt.ShiftModifier) ? -1 : 1, event.key !== Qt.Key_Space)
           } else if (event.text === "/") {
             if (root.view === "welcome") root.showAll("")
             else root.searching = true
@@ -1151,13 +1167,21 @@ Item {
                 error: root.errors[modelData.id]
                   || (root.readErrors[modelData.id] ? "Couldn't read this setting. Close and open Omahub to try again" : "")
                 hasCursor: index === root.cursor
+                chipCursor: index === root.cursor && modelData.kind === "multi" ? root.activeChip(index) : -1
                 promptActive: root.promptId === modelData.id
                 promptText: root.promptId === modelData.id ? root.promptText : ""
                 onActivated: root.activate(index)
                 onMoreChosen: root.openMore(modelData)
                 onChose: function(value) {
                   root.cursor = index
-                  root.setValue(modelData.id, value)
+                  if (modelData.kind === "multi") {
+                    var chips = root.options[modelData.id] || []
+                    var at = chips.findIndex(function(chip) { return String(chip.value) === String(value) })
+                    root.chipFocus = { row: index, index: Math.max(0, at) }
+                    root.setValue(modelData.id, Model.toggleMulti(chips, value))
+                  } else {
+                    root.setValue(modelData.id, value)
+                  }
                 }
                 onChooseFolder: {
                   root.cursor = index
@@ -1204,7 +1228,8 @@ Item {
             model: [
               { keys: ["j", "k"], label: "Move" },
               { keys: ["h", "l"], label: "Sections", hidden: root.view !== "hub" || root.sections.length < 2 },
-              { keys: ["space"], label: root.cursor === -1 ? "Turn on" : "Change" },
+              { keys: ["space"], label: root.cursor === -1 ? "Turn on" : (root.cursorKind === "multi" ? "Next" : "Change") },
+              { keys: ["enter"], label: "Switch", hidden: root.cursorKind !== "multi" },
               { keys: ["shift", "enter"], label: root.secondaryLabel, hidden: root.secondaryLabel === "" },
               { keys: ["/"], label: root.view === "welcome" ? "All settings" : "Search" },
               { keys: ["esc"], label: root.view === "welcome" ? "Done" : "Close" },

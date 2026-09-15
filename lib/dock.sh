@@ -186,6 +186,68 @@ omahub_dock_choice_setting() {
   done
 }
 
+# Which of a dock setting's choices are on, as a JSON list in the choices' order. A value that is not a
+# list reads as the default, a comma list.
+omahub_dock_multi() {
+  local key="$1" default="$2" choices="$3" names="" pair
+  for pair in $choices; do
+    names+="${pair%%=*} "
+  done
+  omahub_dock_read | jq -c --arg key "$key" --arg default "$default" --arg names "$names" '
+    ($names | split(" ") | map(select(. != ""))) as $all
+    | (if (.[$key] | type) == "array" then .[$key] else ($default | split(",")) end) as $on
+    | [$all[] | select(. as $name | $on | index($name) != null)]'
+}
+
+# The get, options, set, and reset verbs of a dock setting that holds several of its choices at once,
+# stored under <key> as a list. Choices are "value=Label" words, and the default is a comma list. Set
+# takes a comma list of values, or none.
+omahub_dock_multi_setting() {
+  local key="$1" default="$2" choices="$3" id="$4" verb="${5:-}" value="${6:-}" current pair word list label names
+  local -a words
+  names=$(tr ' ' '\n' <<<"$choices" | cut -d= -f1 | paste -sd ' ')
+
+  case "$verb" in
+    get) ;;
+    options)
+      current=$(omahub_dock_multi "$key" "$default" "$choices")
+      for pair in $choices; do
+        jq -nc --arg value "${pair%%=*}" --arg label "${pair#*=}" --argjson on "$current" \
+          '{value: $value, label: $label, current: ($on | index($value) != null)}'
+      done | jq -sc '.'
+      return
+      ;;
+    set)
+      [[ -n $value ]] || omahub_fail "Give the parts to show, such as omahub set $id ${default}, or none"
+      if [[ $value == "none" ]]; then
+        list='[]'
+      else
+        IFS=',' read -r -a words <<<"$value"
+        for word in "${words[@]}"; do
+          [[ -n $word && " $choices " == *" $word="* ]] || omahub_fail "'$word' is not one of the choices. Use any of: $names, or none"
+        done
+        list=$(for pair in $choices; do
+          if [[ ",$value," == *",${pair%%=*},"* ]]; then
+            printf '%s\n' "${pair%%=*}"
+          fi
+        done | jq -Rsc 'split("\n") | map(select(. != ""))')
+      fi
+      omahub_dock_update --arg key "$key" --argjson list "$list" '.[$key] = $list'
+      ;;
+    reset) omahub_dock_update --arg key "$key" 'del(.[$key])' ;;
+    *) omahub_fail "usage: omahub get|set|options|reset $id" ;;
+  esac
+
+  current=$(omahub_dock_multi "$key" "$default" "$choices")
+  label=$(for pair in $choices; do printf '%s\t%s\n' "${pair%%=*}" "${pair#*=}"; done | jq -Rsr --argjson on "$current" '
+    split("\n") | map(select(. != "") | split("\t")) as $all
+    | [$all[] | select(.[0] as $value | $on | index($value) != null) | .[1]] as $labels
+    | if ($labels | length) == 0 then "Nothing"
+      elif ($labels | length) == ($all | length) then "Everything"
+      else $labels | join(", ") end')
+  omahub_state "$current" "$label"
+}
+
 # The get, set, and reset verbs of a dock switch stored under <key>, with its default.
 omahub_dock_toggle_setting() {
   local key="$1" default="$2" id="$3" verb="${4:-}" value="${5:-}"

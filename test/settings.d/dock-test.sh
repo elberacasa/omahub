@@ -103,9 +103,23 @@ assert_eq "agents in the dock start off" "$(omahub get dock/agents | jq -r .valu
 assert_eq "agents in the dock turn on" "$(omahub set dock/agents on | jq -r .value)" "true"
 assert_eq "agents in the dock are saved for the dock" "$(jq -r .agents "$HOME/.local/state/omahub/dock.json")" "true"
 omahub reset dock/agents >/dev/null
+assert_eq "agent cards start with every part" "$(omahub get dock/agent-card | jq -c .value)" '["project","state","step","message"]'
+assert_eq "and read as everything" "$(omahub get dock/agent-card | jq -r .label)" "Everything"
+assert_eq "agent cards keep the parts chosen, in their order" "$(omahub set dock/agent-card message,project | jq -c .value)" '["project","message"]'
+assert_eq "and name them" "$(omahub get dock/agent-card | jq -r .label)" "Project, Message"
+assert_eq "agent cards are saved for the dock" "$(jq -c .card "$HOME/.local/state/omahub/dock.json")" '["project","message"]'
+assert_eq "their parts list with the ones on marked" "$(omahub options dock/agent-card | jq -c 'map(select(.current) | .value)')" '["project","message"]'
+assert_eq "agent cards can show nothing but the agent" "$(omahub set dock/agent-card none | jq -r .label)" "Nothing"
+if omahub set dock/agent-card project,colour >/dev/null 2>&1; then
+  fail "a part that is not one of the choices is refused"
+else
+  pass "a part that is not one of the choices is refused"
+fi
+assert_eq "and changes nothing" "$(omahub get dock/agent-card | jq -r .label)" "Nothing"
+omahub reset dock/agent-card >/dev/null
 assert_eq "the hub lists dock settings in the Mac's order" \
   "$(omahub settings --json | jq -c '[.[] | select(.section == "dock" and (.hidden | not))] | sort_by(.order) | map(.id | ltrimstr("dock/"))')" \
-  '["show","size","magnify","position","tiles","autohide","indicators","recents","desktops","agents","bounce"]'
+  '["show","size","magnify","position","tiles","autohide","indicators","recents","desktops","agents","agent-card","bounce"]'
 
 for setting in indicators recents bounce; do
   assert_eq "dock/$setting starts on" "$(omahub get "dock/$setting" | jq -r .value)" "true"
