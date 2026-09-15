@@ -22,6 +22,8 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - For contributors and their agents: `dev/live` runs live checks of the overview and the dock on a real desktop, and `dev/agent` reads what Omahub shows and types on a virtual keyboard with the real keymap. Both work inside a sandbox of test windows that puts every setting back when it ends. The live checks cover the overview, the dock and its agent tiles, cards, and waiting agents, the hub, the screenshot thumbnail, and turning Omahub off, on, and restarting it.
 - `dev/privacy-check` reads every half second of a video with OCR and fails when a user name, host name, home folder, or git identity is on screen, and `dev/export-media` runs it on everything it exports.
 
+- Pets move with more life: a working pet types in a rhythm, a finished turn ends with a squash and stretch hop, a sleeping pet stretches and blinks awake when work arrives and closes its eyes before it dozes off, a pet calling you bounces its mark, and sleeping z's read clearly at any size.
+
 ### Fixed
 
 - Right-clicking an agent's tile or an app in the dock no longer crashes the shell now and then as the panel or menu opens.

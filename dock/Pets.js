@@ -156,19 +156,20 @@ const DEFAULTS = { anthropic: "blob", openai: "cat", google: "gem", moonshot: "b
 // Each mood draws its face and paws over the body: [row, column, pixel].
 const FACES = {
   present: () => [[8, 5, "e"], [9, 5, "e"], [8, 10, "e"], [9, 10, "e"]],
-  // Eyes down on a tiny keyboard, paws tapping.
+  // Eyes down on a tiny keyboard, typing in a rhythm: the left paw strikes a key, both lift, the right strikes,
+  // both lift.
   working: step => [[10, 5, "e"], [10, 10, "e"]]
     .concat(clearRow(14))
-    .concat(step % 2 === 0 ? [[14, 4, "p"], [14, 9, "p"]] : [[14, 6, "p"], [14, 11, "p"]])
-    .concat(range(2, 13).map(column => [15, column, "k"])),
+    .concat(range(2, 13).map(column => [15, column, "k"]))
+    .concat([[[15, 5, "p"], [14, 10, "p"]], [[14, 5, "p"], [14, 10, "p"]], [[14, 5, "p"], [15, 10, "p"]], [[14, 5, "p"], [14, 10, "p"]]][step % 4]),
   // Happy eyes and an open mouth, arms out against its sides.
   done: (step, body) => [[9, 4, "e"], [8, 5, "e"], [9, 6, "e"], [9, 9, "e"], [8, 10, "e"], [9, 11, "e"], [11, 7, "e"], [11, 8, "e"]]
     .concat(arms(body, 9)).concat(arms(body, 10)),
   // Eyes shut, asleep.
   idle: () => [[10, 4, "e"], [10, 5, "e"], [10, 6, "e"], [10, 9, "e"], [10, 10, "e"], [10, 11, "e"]],
-  // Wide eyes and an exclamation mark, on the outer edge where no ears or tufts reach.
-  waiting: () => [[8, 5, "e"], [8, 6, "e"], [9, 5, "e"], [9, 6, "e"], [8, 9, "e"], [8, 10, "e"], [9, 9, "e"], [9, 10, "e"],
-    [0, 15, "u"], [1, 15, "u"], [3, 15, "u"]]
+  // Wide eyes and an exclamation mark that bounces, on the outer edge where no ears or tufts reach.
+  waiting: step => [[8, 5, "e"], [8, 6, "e"], [9, 5, "e"], [9, 6, "e"], [8, 9, "e"], [8, 10, "e"], [9, 9, "e"], [9, 10, "e"]]
+    .concat(step % 2 === 0 ? [[0, 15, "u"], [1, 15, "u"], [3, 15, "u"]] : [[1, 15, "u"], [2, 15, "u"], [4, 15, "u"]])
 }
 
 function range(from, to) {
@@ -257,12 +258,19 @@ function moodOf(state) {
 
 function frameCount(state) {
   const mood = moodOf(state)
-  return mood === "working" ? 2 : 1
+  if (mood === "working") return 4
+  return mood === "waiting" ? 2 : 1
+}
+
+// How long each frame of a moving mood lasts, in milliseconds: quick keys, a slower bounce for a call.
+function frameInterval(state) {
+  return moodOf(state) === "working" ? 150 : 460
 }
 
 // One frame of a pet: `pet` is one of PETS, `state` the dock's activity state, and `step` counts frames
-// for the moods that move. `look` holds what a lively pet is doing with its eyes: `blink`, and `gazeX` and
-// `gazeY`, each -1, 0, or 1, to look toward the pointer or up at you. A sleeping pet does neither.
+// for the moods that move. `look` holds what a lively pet is doing: `blink`, `gazeX` and `gazeY`, each -1, 0, or 1,
+// to look toward the pointer or up at you, `shut` to close its eyes whatever the mood as it falls asleep, and
+// `pose`, squash or stretch, for a hop. A sleeping pet neither blinks nor looks around.
 function frame(pet, state, step, look) {
   const mood = moodOf(state)
   const body = BODIES[pet] || BODIES.robot
@@ -273,7 +281,7 @@ function frame(pet, state, step, look) {
   for (const pixel of FACES[mood](step || 0, body)) rows[pixel[0]][pixel[1]] = pixel[2]
   if (look && mood !== "idle") {
     const eyes = eyePixels(rows)
-    if (look.blink && mood !== "done" && eyes.length > 0) {
+    if (((look.blink && mood !== "done") || look.shut) && eyes.length > 0) {
       const bottom = Math.max.apply(null, eyes.map(eye => eye[0]))
       for (const eye of eyes) rows[eye[0]][eye[1]] = "#"
       for (const eye of eyes) rows[bottom][eye[1]] = "e"
@@ -287,7 +295,26 @@ function frame(pet, state, step, look) {
       for (const eye of moved) rows[eye[0] + dy][eye[1] + dx] = "e"
     }
   }
-  return rows.map(row => row.join(""))
+  return posed(rows, look ? look.pose : "").map(row => row.join(""))
+}
+
+// A pose squashes the pet a pixel shorter or stretches it a pixel taller through the middle of its body, feet
+// where they were when squashed and a pixel lower when stretched, so a hop reads without leaving the grid.
+function posed(rows, pose) {
+  const middle = 9
+  if (pose === "squash") {
+    const squashed = rows.slice()
+    squashed.splice(middle, 1)
+    squashed.unshift(range(0, 15).map(() => "."))
+    return squashed
+  }
+  if (pose === "stretch") {
+    const stretched = rows.slice()
+    stretched.splice(middle, 0, rows[middle].slice())
+    stretched.pop()
+    return stretched
+  }
+  return rows
 }
 
 // The eyes, as [row, column] pairs: the cut-outs above the mouth.

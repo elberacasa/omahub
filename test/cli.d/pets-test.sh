@@ -13,7 +13,7 @@ fi
 results=$(node - "$OMAHUB_PATH/dock/Pets.js" <<'SCRIPT'
 const fs = require("fs")
 const source = fs.readFileSync(process.argv[2], "utf8").replace(/^\.pragma library\s*/, "")
-const Pets = new Function(source + "\nreturn { frame, frameCount, petFor, PETS, parsePalette, hueFor, projectHues }")()
+const Pets = new Function(source + "\nreturn { frame, frameCount, frameInterval, petFor, PETS, parsePalette, hueFor, projectHues }")()
 const checks = []
 const check = (name, ok) => checks.push({ name, ok: !!ok })
 
@@ -24,6 +24,7 @@ pets.forEach(pet => states.forEach(state => {
   for (let step = 0; step < Pets.frameCount(state); step++) frames.push(Pets.frame(pet, state, step))
 }))
 const text = rows => rows.join("\n")
+const eyeRowCount = rows => rows.slice(6, 11).filter(row => row.includes("e")).length
 
 check("the gallery has seven pets", pets.join(",") === "blob,cat,gem,bunny,fox,owl,robot")
 check("every frame is 16 pixels square", frames.every(rows => rows.length === 16 && rows.every(row => row.length === 16)))
@@ -36,7 +37,25 @@ check("an idle pet shuts its eyes and holds its pose, its sleep drawn over it", 
   Pets.frame(pet, "idle", 0)[10].includes("eee") && Pets.frameCount("idle") === 1))
 check("a working pet taps at its keyboard", pets.every(pet => text(Pets.frame(pet, "working", 0)) !== text(Pets.frame(pet, "working", 1))
   && text(Pets.frame(pet, "working", 0)).includes("k")))
+check("a working pet types in a rhythm: left key, lift, right key, lift", pets.every(pet => {
+  const pawsOnKeys = step => Pets.frame(pet, "working", step)[15].split("").map((pixel, c) => pixel === "p" ? c : -1).filter(c => c >= 0).join(",")
+  return Pets.frameCount("working") === 4 && pawsOnKeys(0) === "5" && pawsOnKeys(1) === "" && pawsOnKeys(2) === "10" && pawsOnKeys(3) === ""
+}))
+check("keys come quicker than a call's bounce", Pets.frameInterval("working") < Pets.frameInterval("waiting"))
+check("a pet calling you bounces its mark", pets.every(pet => Pets.frameCount("waiting") === 2
+  && text(Pets.frame(pet, "waiting", 0)) !== text(Pets.frame(pet, "waiting", 1)) && text(Pets.frame(pet, "waiting", 1)).includes("u")))
 check("a pet whose turn is done holds still", Pets.frameCount("done") === 1 && Pets.frameCount("agent") === 1)
+check("a squash makes the pet a pixel shorter with its feet on the ground", pets.every(pet => {
+  const rest = Pets.frame(pet, "done", 0, {})
+  const squashed = Pets.frame(pet, "done", 0, { pose: "squash" })
+  return squashed.length === 16 && squashed[14] === rest[14] && squashed[0] === "................" && text(squashed) !== text(rest)
+}))
+check("a stretch makes it a pixel taller, still on the 16 pixel grid", pets.every(pet => {
+  const stretched = Pets.frame(pet, "done", 0, { pose: "stretch" })
+  return stretched.length === 16 && stretched.every(row => row.length === 16) && stretched[15] === Pets.frame(pet, "done", 0, {})[14]
+}))
+check("falling asleep shuts even a happy pet's eyes", pets.every(pet =>
+  eyeRowCount(Pets.frame(pet, "done", 0, { shut: true })) < eyeRowCount(Pets.frame(pet, "done", 0, {}))))
 check("a pet calling you turns its mark urgent", pets.every(pet => ["waiting", "attention"].every(state =>
   text(Pets.frame(pet, state, 0)).includes("u") && !text(Pets.frame(pet, state, 0)).includes("a"))))
 

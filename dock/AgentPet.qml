@@ -4,8 +4,9 @@ import "Pets.js" as Pets
 
 // An agent's pet, in its project's color from the active theme's palette, or its own color in the gallery. Its pose says the state: tapping at a
 // tiny keyboard while its agent works, arms out once the turn is done, asleep once idle, and wide-eyed with an
-// urgent mark while it calls you. A lively pet blinks, looks toward the pointer, breathes in its sleep, squishes
-// when pressed, and celebrates a finished turn with a hop and a burst of its color. A calm pet only changes
+// urgent mark while it calls you. A lively pet types in a rhythm, blinks, looks toward the pointer, stretches awake
+// and blinks as work arrives, shuts its eyes and settles as it falls asleep, breathes in its sleep, squishes when
+// pressed, and celebrates a finished turn with a squash and stretch hop and a burst of its color. A calm pet only changes
 // pose, and with Hyprland's animations off every pet holds still. Every movement stays on the pixel grid, so the
 // pet is never blurred by scaling.
 Item {
@@ -32,6 +33,9 @@ Item {
   property bool blinking: false
   // Held down by a press: the pet ducks a pixel and squeezes its eyes shut.
   property bool pressed: false
+  // Eyes closing on the way to sleep, and the squash or stretch of a hop or a wake-up.
+  property bool closing: false
+  property string pose: ""
   // The pet last shown, so it keeps its look while it shrinks away.
   property string heldPet: ""
   property string heldMood: ""
@@ -40,7 +44,7 @@ Item {
   readonly property bool moving: pet.lively && !pet.still
   readonly property string petId: Pets.petFor(pet.family, pet.look, pet.choices)
   readonly property var rows: Pets.frame(pet.heldPet, pet.heldMood, pet.moving ? pet.step : 0,
-    pet.moving ? { blink: pet.blinking || pet.pressed, gazeX: pet.gazeX, gazeY: pet.gazeY } : null)
+    pet.moving ? { blink: pet.blinking || pet.pressed, shut: pet.closing, gazeX: pet.gazeX, gazeY: pet.gazeY, pose: pet.pose } : null)
   readonly property int columns: pet.rows[0].length
   // The project's color, or the pet's own from the theme, or the accent when the theme has neither.
   readonly property color hue: {
@@ -51,6 +55,16 @@ Item {
   // A sleeping pet fades toward the tile's background rather than showing it through, so it stays a clean color.
   readonly property color body: pet.heldMood === "idle" ? Qt.tint(pet.hue, Util.alpha(Color.menu.background, 0.28)) : pet.hue
   readonly property color mark: pet.heldMood === "waiting" || pet.heldMood === "attention" ? Color.urgent : Color.menu.text
+  // The colors ease when a project's color, sleep, or a call changes them, while every pixel changes at once, so a
+  // pose or a frame never smears between two shapes.
+  property color shownBody: pet.body
+  property color shownMark: pet.mark
+  Behavior on shownBody {
+    ColorAnimation { duration: 200 }
+  }
+  Behavior on shownMark {
+    ColorAnimation { duration: 200 }
+  }
 
   width: pet.columns * pet.pixelSize
   height: pet.rows.length * pet.pixelSize
@@ -60,6 +74,15 @@ Item {
   // Handlers read the mood itself: a binding such as active may not have caught up yet when they run.
   onMoodChanged: {
     if (pet.mood === "") return
+    // Falling asleep shuts the eyes and settles the pet before the sleeping pose takes over.
+    if (pet.mood === "idle" && pet.heldMood !== "idle" && pet.heldMood !== "" && pet.moving) {
+      pet.heldPet = pet.petId
+      drowse.restart()
+      return
+    }
+    drowse.stop()
+    pet.closing = false
+    if (pet.heldMood === "idle" && pet.mood !== "idle" && pet.moving) wake.restart()
     // Only a turn that ends while the dock watches earns a celebration, never a pet that appears already done.
     if (pet.mood === "done" && pet.heldMood === "working" && pet.moving) {
       hop.restart()
@@ -90,11 +113,11 @@ Item {
   }
 
   function colorFor(pixel) {
-    if (pixel === "a" || pixel === "u") return pet.mark
+    if (pixel === "a" || pixel === "u") return pet.shownMark
     if (pixel === "e") return Color.menu.background
-    if (pixel === "p") return Qt.darker(pet.body, 1.35)
+    if (pixel === "p") return Qt.darker(pet.shownBody, 1.35)
     if (pixel === "k") return Util.alpha(Color.menu.text, 0.4)
-    return pet.body
+    return pet.shownBody
   }
 
   transform: [
@@ -113,11 +136,49 @@ Item {
     NumberAnimation { duration: pet.active ? 220 : 160; easing.type: pet.active ? Easing.OutCubic : Easing.InCubic }
   }
 
-  // Up easing out, down easing in, like something light landing.
+  // A crouch, a stretch on the way up easing out, back to shape at the top, down easing in, and a squash on landing,
+  // like something light and springy.
   SequentialAnimation {
     id: hop
-    NumberAnimation { target: lift; property: "y"; to: -pet.pixelSize * 2; duration: 200; easing.type: Easing.OutCubic }
-    NumberAnimation { target: lift; property: "y"; to: 0; duration: 260; easing.type: Easing.InCubic }
+    PropertyAction { target: pet; property: "pose"; value: "squash" }
+    PauseAnimation { duration: 90 }
+    PropertyAction { target: pet; property: "pose"; value: "stretch" }
+    NumberAnimation { target: lift; property: "y"; to: -pet.pixelSize * 3; duration: 190; easing.type: Easing.OutCubic }
+    PropertyAction { target: pet; property: "pose"; value: "" }
+    NumberAnimation { target: lift; property: "y"; to: 0; duration: 240; easing.type: Easing.InCubic }
+    PropertyAction { target: pet; property: "pose"; value: "squash" }
+    PauseAnimation { duration: 90 }
+    PropertyAction { target: pet; property: "pose"; value: "" }
+  }
+
+  // Work arrives for a sleeping pet: it stretches as its eyes open, then blinks twice.
+  SequentialAnimation {
+    id: wake
+    PropertyAction { target: pet; property: "pose"; value: "stretch" }
+    PropertyAction { target: pet; property: "blinking"; value: true }
+    PauseAnimation { duration: 150 }
+    PropertyAction { target: pet; property: "pose"; value: "" }
+    PropertyAction { target: pet; property: "blinking"; value: false }
+    PauseAnimation { duration: 120 }
+    PropertyAction { target: pet; property: "blinking"; value: true }
+    PauseAnimation { duration: 90 }
+    PropertyAction { target: pet; property: "blinking"; value: false }
+  }
+
+  // Falling asleep: the eyes close, the pet sinks a pixel, and then it sleeps.
+  SequentialAnimation {
+    id: drowse
+    PropertyAction { target: pet; property: "closing"; value: true }
+    PauseAnimation { duration: 320 }
+    PropertyAction { target: pet; property: "pose"; value: "squash" }
+    PauseAnimation { duration: 180 }
+    ScriptAction {
+      script: {
+        pet.pose = ""
+        pet.closing = false
+        pet.heldMood = pet.mood
+      }
+    }
   }
 
   SequentialAnimation {
@@ -127,12 +188,12 @@ Item {
     PropertyAction { target: duck; property: "y"; value: 0 }
   }
 
-  // Paws tap briskly.
+  // Paws type in a quick rhythm, and a call's mark bounces more slowly.
   Timer {
-    interval: 280
+    interval: Pets.frameInterval(pet.heldMood)
     repeat: true
     running: pet.active && pet.moving && Pets.frameCount(pet.heldMood) > 1
-    onTriggered: pet.step = (pet.step + 1) % 2
+    onTriggered: pet.step = (pet.step + 1) % Pets.frameCount(pet.heldMood)
   }
 
   // Awake pets blink now and then, never on a beat.
@@ -179,10 +240,6 @@ Item {
       width: pet.pixelSize
       height: pet.pixelSize
       color: pet.colorFor(pixel)
-
-      Behavior on color {
-        ColorAnimation { duration: 200 }
-      }
     }
   }
 
@@ -239,7 +296,7 @@ Item {
 
         width: zee.cell * 4
         height: width
-        opacity: pet.moving ? 0 : (zee.index === 0 ? 0.55 : 0)
+        opacity: pet.moving ? 0 : (zee.index === 0 ? 0.7 : 0)
 
         transform: Translate {
           x: zee.drift * 0.5
@@ -268,13 +325,13 @@ Item {
           onRunningChanged: {
             if (running) return
             zee.drift = pet.pixelSize * 2
-            zee.opacity = pet.moving ? 0 : (zee.index === 0 ? 0.55 : 0)
+            zee.opacity = pet.moving ? 0 : (zee.index === 0 ? 0.7 : 0)
           }
           PauseAnimation { duration: zee.index * 1650 }
           ParallelAnimation {
             NumberAnimation { target: zee; property: "drift"; from: 0; to: pet.pixelSize * 3; duration: 1600; easing.type: Easing.OutSine }
             SequentialAnimation {
-              NumberAnimation { target: zee; property: "opacity"; from: 0; to: 0.7; duration: 450; easing.type: Easing.OutSine }
+              NumberAnimation { target: zee; property: "opacity"; from: 0; to: 0.95; duration: 450; easing.type: Easing.OutSine }
               PauseAnimation { duration: 450 }
               NumberAnimation { target: zee; property: "opacity"; to: 0; duration: 700; easing.type: Easing.InSine }
             }
