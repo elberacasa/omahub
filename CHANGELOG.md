@@ -19,7 +19,7 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 - Drag an icon along the dock to move it, drag an open app among the kept ones to keep it there, or drag an icon off the dock to remove it. Shift + h and l move the app under the cursor after SUPER + D.
 - `omahub dock order <app>...` keeps exactly those apps, in that order.
 - Desktops in the dock, a switch in the dock's menu and settings: your desktops sit at the end of the dock, named like in the overview and showing the app used last. Click one to go there, drop an app on one to open it there, or reach them with SUPER + D.
-- For contributors and their agents: `dev/live` runs live checks of the overview and the dock on a real desktop, and `dev/agent` reads what Omahub shows and types on a virtual keyboard with the real keymap. Both work inside a sandbox of test windows that puts every setting back when it ends. The live checks cover the overview, the dock, the hub, the screenshot thumbnail, and turning Omahub off, on, and restarting it.
+- For contributors and their agents: `dev/live` runs live checks of the overview and the dock on a real desktop, and `dev/agent` reads what Omahub shows and types on a virtual keyboard with the real keymap. Both work inside a sandbox of test windows that puts every setting back when it ends. The live checks cover the overview, the dock and its agent tiles, cards, and waiting agents, the hub, the screenshot thumbnail, and turning Omahub off, on, and restarting it.
 - `dev/privacy-check` reads every half second of a video with OCR and fails when a user name, host name, home folder, or git identity is on screen, and `dev/export-media` runs it on everything it exports.
 
 ### Fixed

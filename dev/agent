@@ -27,7 +27,7 @@
 #   dev/agent drag <from> <to>
 #   dev/agent call <function> [argument]   one of Omahub's shell functions, such as open or dismiss
 #
-# Targets are names from the state, never guessed pixels: dock.app:<id>, dock.desktop:<number>, dock.overview, dock.picker,
+# Targets are names from the state, never guessed pixels: dock.app:<id>, dock.agent:<index>, dock.desktop:<number>, dock.overview, dock.picker,
 # overview.card:<test window>, overview.desktop:<number>, overview.new, or x,y.
 #
 # Real keys run real actions, so the keyboard refuses what could reach the desktop outside the test:
@@ -481,6 +481,7 @@ target_rect() {
       ;;
     dock.app:*) jq -c --arg id "${target#dock.app:}" '.omahub.dock.apps[]? | select(.id == $id)' <<<"$now" | head -1 ;;
     dock.desktop:*) jq -c --argjson id "${target#dock.desktop:}" '.omahub.dock.desktops[]? | select(.id == $id)' <<<"$now" | head -1 ;;
+    dock.agent:*) jq -c --argjson index "${target#dock.agent:}" '.omahub.dock.agents[$index] // empty' <<<"$now" ;;
     dock.overview) jq -c '.omahub.dock.overview // empty' <<<"$now" ;;
     dock.picker) jq -c '.omahub.dock.picker.card // empty' <<<"$now" ;;
     overview.card:*)
@@ -490,7 +491,7 @@ target_rect() {
       ;;
     overview.desktop:*) jq -c --argjson id "${target#overview.desktop:}" '.omahub.overview.desktops[]? | select(.id == $id)' <<<"$now" | head -1 ;;
     overview.new) jq -c '.omahub.overview.newDesktop // empty' <<<"$now" ;;
-    *) die "unknown target '$target'. Use dock.app:<id>, dock.desktop:<number>, dock.overview, dock.picker, overview.card:<test window>, overview.desktop:<number>, overview.new, or x,y" ;;
+    *) die "unknown target '$target'. Use dock.app:<id>, dock.agent:<index>, dock.desktop:<number>, dock.overview, dock.picker, overview.card:<test window>, overview.desktop:<number>, overview.new, or x,y" ;;
   esac
 }
 
@@ -708,6 +709,9 @@ click_target() {
   local target="$1" button="${2:-left}" x y
   if [[ $target == dock.app:* && ${target#dock.app:} != "$TEST_PREFIX"* && $button != "right" ]]; then
     die "refusing to $button-click ${target#dock.app:}: it would open or focus a real app. Right-click opens its menu"
+  fi
+  if [[ $target == dock.agent:* ]]; then
+    die "refusing to $button-click an agent tile: it would focus a real agent's window. Point at it to open its card"
   fi
   read -r x y <<<"$(center_of "$target")"
   demo_build_pointer

@@ -119,6 +119,14 @@ Item {
   property var unseen: ({})
   // A turn that ends out of sight brings a hidden dock out for a moment, so its pet's hop is seen.
   property bool peeking: false
+  // The agent whose card is open, by session id, or "" when none is.
+  readonly property string openCard: {
+    if (root.dragIndex >= 0 || root.menuOpen || root.pickerOpen) return ""
+    var hovered = root.agentSessions[root.hoveredAgent]
+    if (hovered) return hovered.id
+    var keyed = root.keyboardActive ? root.agentSessions[root.keyCursor - root.items.length] : null
+    return keyed && root.keyCursor >= root.items.length ? keyed.id : ""
+  }
   onAgentSessionsChanged: root.followAgents()
   onFocusedAddressChanged: root.followAgents()
   readonly property int agentsGap: root.agentSessions.length > 0 && root.items.length > 0 ? root.dividerWidth : 0
@@ -496,7 +504,7 @@ Item {
         : { x: screenX + screenWidth / 2, y: screenY + screenHeight - 1 })
     return JSON.stringify({
       shown: root.shown, position: root.edge, keyboard: root.keyboardActive, cursor: root.keyCursor,
-      menu: root.menuOpen, apps: apps, agents: agents, desktops: desktops, peeking: root.peeking, overview: place(overviewButton), pressed: root.iconPressed,
+      menu: root.menuOpen, apps: apps, agents: agents, desktops: desktops, peeking: root.peeking, card: root.openCard, overview: place(overviewButton), pressed: root.iconPressed,
       screen: { x: screenX, y: screenY, width: screenWidth, height: screenHeight },
       usable: { x: screenX + root.reserved[0], y: screenY + root.reserved[1],
         width: screenWidth - root.reserved[0] - root.reserved[2], height: screenHeight - root.reserved[1] - root.reserved[3] },

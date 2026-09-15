@@ -170,4 +170,34 @@ check "its tile reads the project the terminal works in" ".omahub.dock.desktops[
 hyprctl clients -j | jq -r '.[] | select(.class == "omahub-demo-t") | .pid' | xargs -r kill 2>/dev/null || true
 rm -rf "$project"
 
+section "Agents in the dock show what each agent is doing, and SUPER + D reaches the one waiting"
+"$omahub_cmd" set dock/agents on >/dev/null
+if ! agent wait-for '(.omahub.dock.agents // []) | length > 0' 8 >/dev/null 2>&1; then
+  skip "no agent is running on this desktop, so the agent checks do not apply"
+else
+  check "every agent tile has a pet and a state" 'all(.omahub.dock.agents[]; .family != "" and .agent != "")' 2
+  agent point dock.agent:0
+  check "hovering a tile opens its card" '.omahub.dock.card == .omahub.dock.agents[0].id' 2
+  agent point "$(agent state '.omahub.dock.shelf | "\((.x + .width / 2) | floor),\((.y - 300) | floor)"')"
+  check "and moving away closes it" '.omahub.dock.card == ""' 2
+
+  # A wait signaled for a resting Claude session, the way Omahub's hook signals it.
+  resting=$(agent state '[.omahub.dock.agents[] | select(.family == "anthropic" and (.agent == "idle" or .agent == "done") and .project != "")][0].project // empty')
+  log=$([[ -n $resting ]] && ls -t "$HOME"/.claude/projects/*-"$resting"/*.jsonl 2>/dev/null | head -1)
+  if [[ -z $log ]]; then
+    skip "no resting Claude session with a record, so the waiting checks do not apply"
+  else
+    jq -nc --arg path "$log" '{hook_event_name: "Notification", transcript_path: $path}' | "$omahub_cmd" signal
+    check "an agent whose hook signals a wait shows waiting" "any(.omahub.dock.agents[]; .project == \"$resting\" and .agent == \"waiting\")" 6
+    agent focus a
+    agent chord SUPER+D
+    check "SUPER + D starts on the waiting agent" \
+      '.omahub.dock.keyboard and .omahub.dock.cursor == (.omahub.dock.apps | length) + ([.omahub.dock.agents[] | .agent == "waiting"] | index(true))' 2
+    check "with its card open" '.omahub.dock.card != ""' 1
+    agent chord SUPER+D
+    rm -f "$HOME/.local/state/omahub/signals/$(printf '%s' "$log" | sha1sum | cut -c1-16).json"
+    check "clearing the wait puts the agent back" "all(.omahub.dock.agents[]; .agent != \"waiting\")" 6
+  fi
+fi
+
 finish_live
