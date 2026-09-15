@@ -1,65 +1,87 @@
 #!/bin/bash
 
-# Omahub's hook in an agent's own settings, so the agent says when it waits on you. The hook only runs
-# `omahub signal`, which prints nothing and always succeeds, so it never changes what the agent does.
-# Omahub adds exactly one hook, finds it again by its command, and removes only that one.
+# Omahub's hooks in agents' own settings, so an agent says when it waits for your answer: a permission
+# prompt notification in Claude Code's ~/.claude/settings.json, and a permission request in Codex's
+# ~/.codex/hooks.json. A hook only runs `omahub signal`, which prints nothing and always succeeds, so it
+# never changes what the agent does. Omahub adds exactly one hook to each file, last, finds it again by its
+# command, and removes only that one. It never marks a Codex hook as trusted: Codex asks you once in /hooks.
 
 OMAHUB_CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+OMAHUB_CODEX_HOOKS="$HOME/.codex/hooks.json"
+# Present while Omahub is the one that created Codex's hooks file, so turning off removes the file too.
+OMAHUB_CODEX_HOOKS_CREATED="$OMAHUB_STATE_DIR/created-codex-hooks"
 
 omahub_hook_command() {
   printf '%s\n' "$HOME/.config/omarchy/plugins/$OMAHUB_PLUGIN_ID/bin/omahub signal"
 }
 
-# The settings file, or an empty object when there is none. A file that is not a JSON object stops here
+# Every agent Omahub can hook, one per line: name, label, settings file, event, and matcher.
+omahub_hook_agents() {
+  printf '%s\t%s\t%s\t%s\t%s\n' claude Claude "$OMAHUB_CLAUDE_SETTINGS" Notification permission_prompt
+  printf '%s\t%s\t%s\t%s\t%s\n' codex Codex "$OMAHUB_CODEX_HOOKS" PermissionRequest "*"
+}
+
+# A settings file, or an empty object when there is none. A file that is not a JSON object stops here
 # rather than being overwritten.
-omahub_claude_settings_read() {
-  if [[ ! -s $OMAHUB_CLAUDE_SETTINGS ]]; then
+omahub_hook_read() {
+  local file="$1"
+  if [[ ! -s $file ]]; then
     echo '{}'
-  elif jq -e 'type == "object"' "$OMAHUB_CLAUDE_SETTINGS" >/dev/null 2>&1; then
-    cat "$OMAHUB_CLAUDE_SETTINGS"
+  elif jq -e 'type == "object"' "$file" >/dev/null 2>&1; then
+    cat "$file"
   else
-    omahub_fail "$OMAHUB_CLAUDE_SETTINGS is not valid JSON, so Omahub left it alone. Fix it, then try again"
+    omahub_fail "$file is not valid JSON, so Omahub left it alone. Fix it, then try again"
   fi
 }
 
-omahub_claude_hook_has() {
-  [[ -s $OMAHUB_CLAUDE_SETTINGS ]] || return 1
-  jq -e --arg command "$(omahub_hook_command)" 'any(.hooks.Notification[]?.hooks[]?; .command == $command)' \
-    "$OMAHUB_CLAUDE_SETTINGS" >/dev/null 2>&1
+omahub_hook_has() {
+  local file="$1" event="$2"
+  [[ -s $file ]] || return 1
+  jq -e --arg event "$event" --arg command "$(omahub_hook_command)" \
+    'any(.hooks[$event][]?.hooks[]?; .command == $command)' "$file" >/dev/null 2>&1
 }
 
-# Writes the settings through a temporary file, only when they changed, after a backup.
-omahub_claude_settings_write() {
-  local next="$1"
-  if [[ -s $OMAHUB_CLAUDE_SETTINGS ]] && jq -e --argjson next "$next" '. == $next' "$OMAHUB_CLAUDE_SETTINGS" >/dev/null 2>&1; then
+# Writes a settings file through a temporary file, only when it changed, after a backup.
+omahub_hook_write() {
+  local file="$1" next="$2"
+  if [[ -s $file ]] && jq -e --argjson next "$next" '. == $next' "$file" >/dev/null 2>&1; then
     return 0
   fi
-  mkdir -p "$(dirname "$OMAHUB_CLAUDE_SETTINGS")"
-  omahub_backup "$OMAHUB_CLAUDE_SETTINGS" "#"
-  jq . <<<"$next" >"$OMAHUB_CLAUDE_SETTINGS.omahub-tmp" && mv "$OMAHUB_CLAUDE_SETTINGS.omahub-tmp" "$OMAHUB_CLAUDE_SETTINGS"
+  mkdir -p "$(dirname "$file")"
+  omahub_backup "$file" "#"
+  jq . <<<"$next" >"$file.omahub-tmp" && mv "$file.omahub-tmp" "$file"
 }
 
-omahub_claude_hook_on() {
-  local current
-  current=$(omahub_claude_settings_read)
-  omahub_claude_settings_write "$(jq -c --arg command "$(omahub_hook_command)" '
-    if any(.hooks.Notification[]?.hooks[]?; .command == $command) then .
-    else .hooks.Notification = ((.hooks.Notification // []) + [{
-      matcher: "permission_prompt",
+omahub_hook_on() {
+  local file="$1" event="$2" matcher="$3" current
+  current=$(omahub_hook_read "$file")
+  if [[ $file == "$OMAHUB_CODEX_HOOKS" && ! -e $file ]]; then
+    mkdir -p "$OMAHUB_STATE_DIR"
+    touch "$OMAHUB_CODEX_HOOKS_CREATED"
+  fi
+  omahub_hook_write "$file" "$(jq -c --arg event "$event" --arg matcher "$matcher" --arg command "$(omahub_hook_command)" '
+    if any(.hooks[$event][]?.hooks[]?; .command == $command) then .
+    else .hooks[$event] = ((.hooks[$event] // []) + [{
+      matcher: $matcher,
       hooks: [{type: "command", command: $command, timeout: 10}]
     }]) end' <<<"$current")"
 }
 
-omahub_claude_hook_off() {
-  local current
-  [[ -e $OMAHUB_CLAUDE_SETTINGS ]] || return 0
-  current=$(omahub_claude_settings_read)
-  omahub_claude_settings_write "$(jq -c --arg command "$(omahub_hook_command)" '
-    if (.hooks.Notification | type) != "array" then .
+omahub_hook_off() {
+  local file="$1" event="$2" current next
+  [[ -e $file ]] || return 0
+  current=$(omahub_hook_read "$file")
+  next=$(jq -c --arg event "$event" --arg command "$(omahub_hook_command)" '
+    if (.hooks[$event] | type) != "array" then .
     else
-      .hooks.Notification |= (map(if (.hooks | type) == "array" then .hooks |= map(select(.command != $command)) else . end)
+      .hooks[$event] |= (map(if (.hooks | type) == "array" then .hooks |= map(select(.command != $command)) else . end)
         | map(select((.hooks | type) != "array" or (.hooks | length) > 0)))
-      | if (.hooks.Notification | length) == 0 then del(.hooks.Notification) else . end
+      | if (.hooks[$event] | length) == 0 then del(.hooks[$event]) else . end
       | if (.hooks | length) == 0 then del(.hooks) else . end
-    end' <<<"$current")"
+    end' <<<"$current")
+  if [[ $file == "$OMAHUB_CODEX_HOOKS" && $next == "{}" && -e $OMAHUB_CODEX_HOOKS_CREATED ]]; then
+    rm -f "$file" "$OMAHUB_CODEX_HOOKS_CREATED"
+    return 0
+  fi
+  omahub_hook_write "$file" "$next"
 }

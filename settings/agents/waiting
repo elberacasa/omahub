@@ -1,32 +1,61 @@
 #!/bin/bash
 
 # omahub:title=Waiting agents
-# omahub:summary=Adds a hook to Claude Code's settings, so the dock shows when Claude waits for your answer. Off removes only that hook
+# omahub:summary=Adds one hook each to Claude Code and Codex, so the dock shows when they wait for your answer. Codex asks you to trust it once in /hooks. Off removes only those hooks
 # omahub:section=agents
 # omahub:kind=toggle
 # omahub:icon=󰀦
-# omahub:requires=claude
-# omahub:keywords=agents claude hook waiting permission approval your turn dock pet notification
+# omahub:keywords=agents claude codex hook hooks waiting permission approval your turn dock pet notification
 
 set -euo pipefail
 source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
 source "$OMAHUB_PATH/lib/hooks.sh"
 
+# Agents that are installed get a hook; turning off takes Omahub's hook out of every agent's settings.
 case "${1:-}" in
   get) ;;
   set)
     case "${2:-}" in
-      on | true) omahub_claude_hook_on ;;
-      off | false) omahub_claude_hook_off ;;
+      on | true)
+        added=0
+        while IFS=$'\t' read -r name _ file event matcher; do
+          command -v "$name" >/dev/null 2>&1 || continue
+          omahub_hook_on "$file" "$event" "$matcher"
+          added=1
+        done < <(omahub_hook_agents)
+        (( added )) || omahub_fail "Neither Claude Code nor Codex is installed, so there is nothing to add a hook to"
+        ;;
+      off | false)
+        while IFS=$'\t' read -r _ _ file event _; do
+          omahub_hook_off "$file" "$event"
+        done < <(omahub_hook_agents)
+        ;;
       *) omahub_fail "'${2:-}' is not on or off. Use: omahub set agents/waiting on|off" ;;
     esac
     ;;
-  reset) omahub_claude_hook_off ;;
+  reset)
+    while IFS=$'\t' read -r _ _ file event _; do
+      omahub_hook_off "$file" "$event"
+    done < <(omahub_hook_agents)
+    ;;
   *) omahub_fail "usage: omahub get|set|reset agents/waiting" ;;
 esac
 
-if omahub_claude_hook_has; then
+# On only when every installed agent has its hook. Otherwise the label names the ones that do.
+installed=0
+hooked=()
+while IFS=$'\t' read -r name label file event _; do
+  command -v "$name" >/dev/null 2>&1 || continue
+  installed=$((installed + 1))
+  if omahub_hook_has "$file" "$event"; then
+    hooked+=("$label")
+  fi
+done < <(omahub_hook_agents)
+
+if (( installed > 0 && ${#hooked[@]} == installed )); then
   omahub_state true "On"
+elif (( ${#hooked[@]} > 0 )); then
+  omahub_state false "${hooked[*]} only"
 else
   omahub_state false "Off"
 fi
