@@ -270,6 +270,11 @@ const folderSessions = { sessions: [
 const byFolder = Model.sessions(folderWindows, { c1: folderSessions, c2: folderSessions })
 check("an agent in a folder outside git sits on the window that names the folder, and goes by it",
   byFolder.find(item => item.id === "32").address === "c2" && byFolder.find(item => item.id === "32").project === "experiment")
+const studioWindows = [{ address: "s1", appId: "cursor", title: "search.ts - orbit-api - Cursor", workspace: 1 }]
+check("an editor window never borrows an agent whose own window is not among the windows given",
+  Model.sessions(studioWindows, { s1: folderSessions }).length === 0)
+check("a terminal window, which names no project, still holds its agents",
+  Model.sessions([{ address: "t1", appId: "foot", title: "foot", workspace: 3 }], { t1: folderSessions }).length === 2)
 check("and that editor window counts the agent as its own",
   Model.windowContext(folderWindows[1], folderSessions).agent === "codex" && Model.windowContext(folderWindows[0], folderSessions).agent === "claude")
 check("a session sits on the window whose title names its project",

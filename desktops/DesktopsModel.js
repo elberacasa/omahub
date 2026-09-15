@@ -111,9 +111,11 @@ function family(model, agent) {
 }
 
 // Every agent session running in a window, once each, for the dock's agent tiles. `windows` carry {address,
-// appId, title, workspace}; `info` maps addresses to context.sh entries. The windows of one process list the
-// same terminals, so a session sits on the window whose title names its project, or else the first that has
-// it. Sessions come in desktop order, then by project.
+// appId, title, workspace}; `info` maps addresses to context.sh entries. The windows of one process, such as an
+// editor's, all list the same terminals, so a session sits on the window whose title names its project. A
+// window whose title names no project, such as a terminal's, can hold any session. When every window that
+// lists a session names another project, the session's own window is not among them, so it gets no tile
+// rather than borrowing another. Sessions come in desktop order, then by project.
 function sessions(windows, info) {
   const found = {}
   const order = []
@@ -125,6 +127,7 @@ function sessions(windows, info) {
       if (kindOf(session.command) !== "agent") continue
       const id = String(session.pid || window.address + session.terminal)
       const fits = titleProject !== "" && nameOf(session) === titleProject
+      if (titleProject !== "" && !fits) continue
       if (found[id] && (found[id].fits || !fits)) continue
       if (!found[id]) order.push(id)
       const state = session.state || ""
