@@ -1,0 +1,51 @@
+#!/bin/bash
+
+# omahub:title=Naps after
+# omahub:summary=How long an agent stays quiet after its turn before its pet falls asleep
+# omahub:section=dock
+# omahub:order=74
+# omahub:kind=choice
+# omahub:icon=󰖔
+# omahub:keywords=dock agents pets sleep nap idle quiet minutes hour never
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/dock.sh"
+
+# Values and their labels. Labels have spaces, so they are listed here rather than as choice words.
+values=(5m 15m 1h never)
+labels=("5 min" "15 min" "1 hour" "Never")
+
+label_of() {
+  local i
+  for i in "${!values[@]}"; do
+    [[ ${values[$i]} == "$1" ]] && printf '%s\n' "${labels[$i]}" && return 0
+  done
+  return 1
+}
+
+current() {
+  local value
+  value=$(omahub_dock_flag pet-naps '"5m"')
+  label_of "$value" >/dev/null && printf '%s\n' "$value" || echo 5m
+}
+
+case "${1:-}" in
+  get) ;;
+  options)
+    now=$(current)
+    for i in "${!values[@]}"; do
+      jq -nc --arg value "${values[$i]}" --arg label "${labels[$i]}" --arg now "$now" '{value: $value, label: $label, current: ($value == $now)}'
+    done | jq -sc '.'
+    exit 0
+    ;;
+  set)
+    label_of "${2:-}" >/dev/null || omahub_fail "'${2:-}' is not one of the choices. Use: omahub set dock/pet-naps 5m|15m|1h|never"
+    omahub_dock_update --arg value "$2" '.["pet-naps"] = $value'
+    ;;
+  reset) omahub_dock_update 'del(.["pet-naps"])' ;;
+  *) omahub_fail "usage: omahub get|set|options|reset dock/pet-naps" ;;
+esac
+
+now=$(current)
+omahub_state "$(jq -nc --arg value "$now" '$value')" "$(label_of "$now")"

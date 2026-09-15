@@ -27,16 +27,13 @@ const text = rows => rows.join("\n")
 
 check("the gallery has seven pets", pets.join(",") === "blob,cat,gem,bunny,fox,owl,robot")
 check("every frame is 16 pixels square", frames.every(rows => rows.length === 16 && rows.every(row => row.length === 16)))
-check("every pixel is one the dock colors", frames.every(rows => rows.every(row => /^[.#aeupkz]+$/.test(row))))
+check("every pixel is one the dock colors", frames.every(rows => rows.every(row => /^[.#aeupk]+$/.test(row))))
 check("every pet looks different", new Set(pets.map(pet => text(Pets.frame(pet, "agent", 0)))).size === pets.length)
 check("every pet wears its mark", pets.every(pet => text(Pets.frame(pet, "agent", 0)).includes("a")))
 check("paws, eyes, and mouths land on every pet's body", pets.every(pet =>
   ["agent", "working", "done", "idle", "waiting"].every(state => (text(Pets.frame(pet, state, 0)).match(/e/g) || []).length >= 2)))
-check("sleep drifts behind a pet, never over it", pets.every(pet => {
-  const awake = Pets.frame(pet, "idle", 1)
-  const asleep = Pets.frame(pet, "idle", 0)
-  return asleep.every((row, r) => row.split("").every((pixel, c) => pixel !== "z" || awake[r][c] === "."))
-}))
+check("an idle pet shuts its eyes and holds its pose, its sleep drawn over it", pets.every(pet =>
+  Pets.frame(pet, "idle", 0)[10].includes("eee") && Pets.frameCount("idle") === 1))
 check("a working pet taps at its keyboard", pets.every(pet => text(Pets.frame(pet, "working", 0)) !== text(Pets.frame(pet, "working", 1))
   && text(Pets.frame(pet, "working", 0)).includes("k")))
 check("a pet whose turn is done holds still", Pets.frameCount("done") === 1 && Pets.frameCount("agent") === 1)

@@ -36,6 +36,9 @@ Item {
   readonly property bool bounce: root.config.bounce !== false
   readonly property bool showDesktops: root.config.desktops === true
   readonly property bool showAgents: root.config.agents === true
+  // Pets move unless the dock's settings make them calm, and agents nap after the quiet time chosen there.
+  readonly property bool livelyPets: root.config["pet-motion"] !== "calm"
+  readonly property int napAfter: ({ "5m": 300, "15m": 900, "1h": 3600, "never": 0 })[root.config["pet-naps"]] ?? 300
   // What an agent's card shows on hover, from the dock's settings: any of project, state, step, and message.
   readonly property var cardFields: Array.isArray(root.config.card) ? root.config.card : ["project", "state", "step", "message"]
 
@@ -419,7 +422,7 @@ Item {
 
         Text {
           textFormat: Text.PlainText
-          text: Desktops.stateLine(card.session, root.now) + (card.showStep && card.tool !== "" ? " · " + card.tool : "")
+          text: Desktops.stateLine(card.session, root.now, root.napAfter) + (card.showStep && card.tool !== "" ? " · " + card.tool : "")
           color: Color.menu.text
           font.family: Style.font.menuFamily
           font.pixelSize: Style.font.bodySmall
@@ -593,7 +596,7 @@ Item {
 
   // A name with what its agent is doing, for the label beside an icon or a desktop.
   function withAgent(name, activity) {
-    var said = Desktops.activityLabel(activity)
+    var said = Desktops.activityLabel(activity, root.napAfter)
     return said === "" ? name : name + " · " + said
   }
 
@@ -707,9 +710,14 @@ Item {
     }
   }
 
+  // What an agent is doing, with the dock's own nap time.
+  function stateOf(activity) {
+    return Desktops.activityState(activity, root.napAfter)
+  }
+
   function followAgents() {
     var next = Model.followAgents(root.agentStates, root.unseen, root.agentSessions, root.focusedAddress,
-      function(session) { return Desktops.activityState(session.activity) })
+      function(session) { return root.stateOf(session.activity) })
     root.agentStates = next.states
     root.unseen = next.unseen
     if (next.finished.length > 0) {
@@ -1467,7 +1475,7 @@ Item {
               ? Model.magnification(cell.distance, root.magnifyRange, root.maxScale) : 1
             readonly property bool dragged: root.dragIndex === cell.index
             readonly property var agentActivity: root.itemActivity(cell.modelData)
-            readonly property string agentState: Desktops.activityState(cell.agentActivity)
+            readonly property string agentState: root.stateOf(cell.agentActivity)
             // While another icon is dragged, this one steps aside to open its landing place, or to close
             // the gap it left.
             readonly property real shift: {
@@ -1739,7 +1747,7 @@ Item {
 
             readonly property bool hovered: root.hoveredAgent === agentTile.index
             readonly property bool keyed: root.keyboardActive && !root.menuOpen && root.keyCursor === root.items.length + agentTile.index
-            readonly property string agentState: Desktops.activityState(agentTile.modelData.activity)
+            readonly property string agentState: root.stateOf(agentTile.modelData.activity)
             readonly property real offset: root.agentsGap + agentTile.index * root.cellWidth
 
             x: root.vertical ? 0 : agentTile.offset
@@ -1767,6 +1775,7 @@ Item {
                 choices: root.config
                 mood: agentTile.agentState
                 still: root.stillPets
+                lively: root.livelyPets
                 pixelSize: Math.max(1, Math.floor(root.iconSize * 0.8 / 16))
                 x: Math.round((parent.width - width) / 2)
                 y: Math.round((parent.height - height) / 2)
@@ -1848,7 +1857,7 @@ Item {
             readonly property bool lit: desk.hovered || desk.dropping || desk.keyed
             readonly property var summary: root.desktopSummary(desk.modelData)
             readonly property string title: desk.summary.title
-            readonly property string agentState: Desktops.activityState(desk.summary.activity)
+            readonly property string agentState: root.stateOf(desk.summary.activity)
             readonly property var entry: desk.modelData.windows.length > 0 ? root.entryFor(desk.modelData.windows[0].appId) : null
             readonly property real offset: root.desktopsGap + desk.index * root.cellWidth
 

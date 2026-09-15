@@ -169,8 +169,8 @@ function duration(seconds) {
 
 // The state line on an agent's card, at `now` in epoch seconds: "Working for 4 min", "Done 2 min ago",
 // "Idle for 1 h". Without a turn start, working says only that.
-function stateLine(session, now) {
-  const state = activityState(session.activity)
+function stateLine(session, now, napAfter) {
+  const state = activityState(session.activity, napAfter)
   if (state === "working") return session.since > 0 ? "Working for " + duration(now - session.since) : "Working"
   if (state === "done") return "Done " + duration(session.activity.agentQuiet) + " ago"
   if (state === "idle") return "Idle for " + duration(session.activity.agentQuiet)
@@ -180,19 +180,24 @@ function stateLine(session, now) {
 
 // What most needs a look, from facts only: a window asking for attention, an agent waiting on you, working,
 // done, or idle after a while done, the agent running there, or media playing. Empty when nothing does.
-function activityState(activity) {
+// `napAfter` is how many quiet seconds after its turn an agent counts as idle, five minutes unless given,
+// and 0 for never.
+function activityState(activity, napAfter) {
   if (!activity) return ""
   if (activity.attention) return "attention"
   if (activity.agentWaiting) return "waiting"
   if (activity.agentWorking) return "working"
-  if (activity.agentDone) return (activity.agentQuiet || 0) >= IDLE_SECONDS ? "idle" : "done"
+  if (activity.agentDone) {
+    const nap = napAfter === undefined || napAfter === null ? IDLE_SECONDS : Number(napAfter)
+    return nap > 0 && (activity.agentQuiet || 0) >= nap ? "idle" : "done"
+  }
   if (activity.agent) return "agent"
   return activity.media ? "media" : ""
 }
 
 // The same, said in a few words for a label: "Claude is running Bash", "Codex is done".
-function activityLabel(activity) {
-  const state = activityState(activity)
+function activityLabel(activity, napAfter) {
+  const state = activityState(activity, napAfter)
   const name = activity ? agentLabel(activity.agent) : ""
   if (state === "attention") return "Needs you"
   if (state === "media") return "Playing"

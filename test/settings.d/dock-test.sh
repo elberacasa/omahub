@@ -129,6 +129,20 @@ else
   pass "a pet that is not in the gallery is refused"
 fi
 omahub reset dock/pet-other >/dev/null
+assert_eq "pets start lively" "$(omahub get dock/pet-motion | jq -r .value)" "lively"
+assert_eq "and can be calm" "$(omahub set dock/pet-motion calm | jq -r .label),$(jq -r '.["pet-motion"]' "$HOME/.local/state/omahub/dock.json")" "Calm,calm"
+omahub reset dock/pet-motion >/dev/null
+assert_eq "agents nap after five minutes" "$(omahub get dock/pet-naps | jq -c '[.value, .label]')" '["5m","5 min"]'
+assert_eq "the nap times list with the chosen one marked" \
+  "$(omahub set dock/pet-naps 1h >/dev/null; omahub options dock/pet-naps | jq -c '[.[] | [.label, .current]]')" \
+  '[["5 min",false],["15 min",false],["1 hour",true],["Never",false]]'
+assert_eq "and never is a choice" "$(omahub set dock/pet-naps never | jq -r .label)" "Never"
+if omahub set dock/pet-naps 2h >/dev/null 2>&1; then
+  fail "a nap time that is not a choice is refused"
+else
+  pass "a nap time that is not a choice is refused"
+fi
+omahub reset dock/pet-naps >/dev/null
 assert_eq "the hub lists dock settings in the Mac's order" \
   "$(omahub settings --json | jq -c '[.[] | select(.section == "dock" and (.hidden | not) and (.id | startswith("dock/pet-") | not))] | sort_by(.order) | map(.id | ltrimstr("dock/"))')" \
   '["show","size","magnify","position","tiles","autohide","indicators","recents","desktops","agents","agent-card","bounce"]'

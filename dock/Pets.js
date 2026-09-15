@@ -5,8 +5,8 @@
 // sparkle, a boxy cat with a loop, a gem, a moon bunny, a fox, an owl, or a small robot. The pose says
 // what the agent is doing.
 //
-// Pixels: # body, a the pet's mark, u the mark calling you, e eyes and mouth, p paws, k keyboard,
-// z sleep, and . nothing.
+// Pixels: # body, a the pet's mark, u the mark calling you, e eyes and mouth, p paws, k keyboard, and
+// . nothing. Sleep is not in the sprite: the pet draws its z's over itself, so they can drift.
 
 const BODIES = {
   blob: [
@@ -152,10 +152,8 @@ const FACES = {
   // Happy eyes and an open mouth, arms out against its sides.
   done: (step, body) => [[9, 4, "e"], [8, 5, "e"], [9, 6, "e"], [9, 9, "e"], [8, 10, "e"], [9, 11, "e"], [11, 7, "e"], [11, 8, "e"]]
     .concat(arms(body, 9)).concat(arms(body, 10)),
-  // Eyes shut, a z coming and going behind its ears.
-  idle: step => [[10, 4, "e"], [10, 5, "e"], [10, 6, "e"], [10, 9, "e"], [10, 10, "e"], [10, 11, "e"]]
-    .concat(step % 2 === 0 ? [[0, 11, "z"], [0, 12, "z"], [0, 13, "z"], [0, 14, "z"], [1, 13, "z"], [2, 12, "z"],
-      [3, 11, "z"], [3, 12, "z"], [3, 13, "z"], [3, 14, "z"]] : []),
+  // Eyes shut, asleep.
+  idle: () => [[10, 4, "e"], [10, 5, "e"], [10, 6, "e"], [10, 9, "e"], [10, 10, "e"], [10, 11, "e"]],
   // Wide eyes and an exclamation mark, on the outer edge where no ears or tufts reach.
   waiting: () => [[8, 5, "e"], [8, 6, "e"], [9, 5, "e"], [9, 6, "e"], [8, 9, "e"], [8, 10, "e"], [9, 9, "e"], [9, 10, "e"],
     [0, 15, "u"], [1, 15, "u"], [3, 15, "u"]]
@@ -197,7 +195,7 @@ function moodOf(state) {
 
 function frameCount(state) {
   const mood = moodOf(state)
-  return mood === "working" || mood === "idle" ? 2 : 1
+  return mood === "working" ? 2 : 1
 }
 
 // One frame of a pet: `pet` is one of PETS, `state` the dock's activity state, and `step` counts frames
@@ -209,10 +207,6 @@ function frame(pet, state, step) {
   if (mood === "waiting") {
     for (let r = 0; r < 4; r++) rows[r] = rows[r].map(pixel => pixel === "a" ? "u" : pixel)
   }
-  for (const pixel of FACES[mood](step || 0, body)) {
-    // Sleep drifts behind the pet, never over it.
-    if (pixel[2] === "z" && rows[pixel[0]][pixel[1]] !== ".") continue
-    rows[pixel[0]][pixel[1]] = pixel[2]
-  }
+  for (const pixel of FACES[mood](step || 0, body)) rows[pixel[0]][pixel[1]] = pixel[2]
   return rows.map(row => row.join(""))
 }

@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# omahub:title=Pet motion
+# omahub:summary=Lively pets tap, hop, and doze with drifting z's. Calm pets only change pose
+# omahub:section=dock
+# omahub:order=73
+# omahub:kind=choice
+# omahub:icon=󰏩
+# omahub:keywords=dock agents pets motion animation lively calm still hop sleep
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/dock.sh"
+
+omahub_dock_choice_setting pet-motion lively "lively=Lively calm=Calm" dock/pet-motion "$@"

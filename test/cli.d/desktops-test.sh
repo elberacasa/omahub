@@ -197,6 +197,11 @@ check("an agent running a tool shows working, with the tool's short name", busy.
 const finished = Model.windowContext({ appId: "foot" }, { sessions: [{ command: "codex", project: "lumen", state: "done", quiet: 42 }] })
 check("an agent whose turn ended shows done, and for how long", finished.agentDone && !finished.agentWorking && finished.agentQuiet === 42)
 check("a turn that ended moments ago is done", Model.activityState({ agent: "codex", agentDone: true, agentQuiet: 42 }) === "done")
+check("a nap time of its own changes when an agent counts as idle, and 0 means never",
+  Model.activityState({ agent: "codex", agentDone: true, agentQuiet: 600 }, 900) === "done"
+  && Model.activityState({ agent: "codex", agentDone: true, agentQuiet: 1000 }, 900) === "idle"
+  && Model.activityState({ agent: "codex", agentDone: true, agentQuiet: 99999 }, 0) === "done"
+  && Model.activityLabel({ agent: "codex", agentDone: true, agentQuiet: 600 }, 60) === "Codex is idle")
 check("an agent quiet for five minutes after its turn is idle", Model.activityState({ agent: "codex", agentDone: true, agentQuiet: 300 }) === "idle"
   && Model.activityLabel({ agent: "codex", agentDone: true, agentQuiet: 900 }) === "Codex is idle")
 check("the state that most needs a look wins", Model.activityState({ agent: "claude", agentWorking: true, attention: true }) === "attention"
