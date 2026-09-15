@@ -171,11 +171,17 @@ Item {
   // way to the screen edge, so the dock is easy to hit.
   readonly property real reachAway: root.iconSize * (root.maxScale - 1)
   readonly property real reachEdge: root.dockPadding + root.dotSpace + root.edgeGap
+  // Above the icons, clicks only count while they are magnified, so the empty space above a resting dock
+  // opens nothing.
+  readonly property real clickAway: root.pointerOnDock ? root.reachAway : 0
 
   // The pointer's position along the dock in the unscaled layout, or -1 when it is away.
   property real pointerX: -1
   // The pointer along the dock window, where the icons really are, magnified or not. -1 when outside.
   property real pointerAlong: -1
+  // True once the pointer is over the shelf, until it leaves the shelf and its magnified icons. Hover,
+  // names, and magnification follow it; the wider band around the dock only keeps a hidden dock shown.
+  property bool pointerOnDock: false
   property bool pointerInside: false
   property bool lingering: false
   property bool covered: false
@@ -1013,6 +1019,7 @@ Item {
       }
       onExited: {
         root.pointerInside = false
+        root.pointerOnDock = false
         root.pointerX = -1
         root.pointerAlong = -1
         root.lingering = true
@@ -1021,6 +1028,17 @@ Item {
       onPositionChanged: function(mouse) {
         root.pointerInside = true
         var along = root.vertical ? dockHit.y + mouse.y : dockHit.x + mouse.x
+        var across = root.edge === "left" ? mouse.x : (root.edge === "right" ? dockHit.width - mouse.x : dockHit.height - mouse.y)
+        var start = root.vertical ? dockBackground.y : dockBackground.x
+        var end = start + dockBackground.length
+        var shelfDepth = root.edgeGap + root.baseHeight
+        var reach = root.pointerOnDock ? Math.max(shelfDepth, shelfDepth - root.dockPadding + root.reachAway) : shelfDepth
+        root.pointerOnDock = Model.onDock(across, along, start, end, reach)
+        if (!root.pointerOnDock) {
+          root.pointerX = -1
+          root.pointerAlong = -1
+          return
+        }
         var origin = (dockWindow.alongLength - root.baseWidth) / 2 + root.dockPadding + root.overviewButtonWidth
         root.pointerX = along - origin
         root.pointerAlong = along
@@ -1354,10 +1372,10 @@ Item {
               id: cellMouse
               property point pressPoint: Qt.point(0, 0)
               property bool moved: false
-              x: root.edge === "left" ? -root.reachEdge : (root.edge === "right" ? -root.reachAway : 0)
-              y: root.edge === "bottom" ? -root.reachAway : 0
-              width: root.vertical ? root.iconSize + root.reachAway + root.reachEdge : parent.width
-              height: root.vertical ? parent.height : root.iconSize + root.reachAway + root.reachEdge
+              x: root.edge === "left" ? -root.reachEdge : (root.edge === "right" ? -root.clickAway : 0)
+              y: root.edge === "bottom" ? -root.clickAway : 0
+              width: root.vertical ? root.iconSize + root.clickAway + root.reachEdge : parent.width
+              height: root.vertical ? parent.height : root.iconSize + root.clickAway + root.reachEdge
               acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
               cursorShape: cell.dragged ? Qt.ClosedHandCursor : Qt.PointingHandCursor
               onPressed: function(mouse) {
@@ -1512,10 +1530,10 @@ Item {
             }
 
             MouseArea {
-              x: root.edge === "left" ? -root.reachEdge : (root.edge === "right" ? -root.reachAway : 0)
-              y: root.edge === "bottom" ? -root.reachAway : 0
-              width: root.vertical ? root.iconSize + root.reachAway + root.reachEdge : parent.width
-              height: root.vertical ? parent.height : root.iconSize + root.reachAway + root.reachEdge
+              x: root.edge === "left" ? -root.reachEdge : (root.edge === "right" ? -root.clickAway : 0)
+              y: root.edge === "bottom" ? -root.clickAway : 0
+              width: root.vertical ? root.iconSize + root.clickAway + root.reachEdge : parent.width
+              height: root.vertical ? parent.height : root.iconSize + root.clickAway + root.reachEdge
               cursorShape: Qt.PointingHandCursor
               onClicked: root.goToDesktop(desk.modelData.id)
             }

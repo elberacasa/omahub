@@ -238,6 +238,13 @@ function covered(monitor, clients, edge, length, depth) {
   })
 }
 
+// Whether the pointer is on the dock, as on the Mac: along the shelf, and no further out from the screen
+// edge than `reach`. Callers pass the shelf's depth to start and the magnified icons' depth to stay, so
+// the icons grow only once the pointer is over the dock and settle only once it leaves them.
+function onDock(across, along, start, end, reach) {
+  return across >= 0 && across <= reach && along >= start && along <= end
+}
+
 function magnification(distance, range, maxScale) {
   const t = Math.min(1, Math.abs(distance) / range)
   return 1 + (maxScale - 1) * Math.cos(t * Math.PI / 2)

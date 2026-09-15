@@ -12,7 +12,7 @@ fi
 results=$(node - "$OMAHUB_PATH/dock/DockModel.js" <<'EOF'
 const fs = require("fs")
 const source = fs.readFileSync(process.argv[2], "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { covered, items, parseConfig, catalog, dropSlot, reorder, desktops, desktopAt, fittedIconSize }")()
+const Model = new Function(source + "\nreturn { covered, items, parseConfig, catalog, dropSlot, reorder, desktops, desktopAt, fittedIconSize, onDock }")()
 const checks = []
 const check = (name, ok) => checks.push({ name, ok: !!ok })
 
@@ -91,6 +91,12 @@ check("a dock with room keeps the chosen icon size", Model.fittedIconSize(40, 24
 check("too many icons for the edge shrink to fit, padding and all", Model.fittedIconSize(40, 24, 700, 16, 100, 0.125, 1) === 30)
 check("magnification leaves room for the icons it grows", Model.fittedIconSize(40, 20, 700, 16, 100, 0.125, 1.5) === 27)
 check("icons never shrink below the smallest size", Model.fittedIconSize(40, 24, 300, 16, 100, 0.125, 1.5) === 24)
+
+// A shelf from 600 to 1300 along its edge, reaching 80 in from it.
+check("a pointer over the shelf is on the dock", Model.onDock(40, 900, 600, 1300, 80))
+check("a pointer just above the shelf is not on the dock", Model.onDock(100, 900, 600, 1300, 80) === false)
+check("a pointer past the end of the shelf is not on the dock", Model.onDock(40, 1340, 600, 1300, 80) === false)
+check("magnified icons keep the pointer on the dock above the shelf", Model.onDock(100, 900, 600, 1300, 110))
 
 console.log(JSON.stringify(checks))
 EOF

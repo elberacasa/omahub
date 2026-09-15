@@ -23,6 +23,7 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 
 ### Fixed
 
+- Dock icons magnify and show their names only once the pointer is over the dock, not as it comes near, and settle as soon as it leaves them. The empty space above a resting dock no longer opens apps.
 - Walking windows with SUPER + TAB and back with SHIFT + TAB, then letting go, jumps to the window chosen instead of leaving the overview open.
 - A desktop's thumbnail in the overview shows a window that just moved or resized as it looks once it settles, not a frame from halfway through.
 - A dock with no apps saved shows the default apps, so keeping one more adds just that one.
