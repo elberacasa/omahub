@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # The omahub pets teaser, one continuous take: bring the studio up with dev/studio up --terminals. The seven pets
-# parade on the stage, which clears to an empty desktop whose dock holds three agents working on Omahub on other
-# desktops. The pointer opens a pet's card, with its project, branch, and what it is doing, just as that agent
+# parade on the stage, which clears to an empty desktop whose dock holds five agents, Claude Code and Codex, working
+# on Omahub on other desktops. The pointer opens a pet's card, with its project, branch, and what it is doing, just as that agent
 # finishes with a hop. Another pet calls to run the tests and is answered from the dock, and finishes too. The
 # stage comes back as an end card: the keycap and the omahub wordmark, "Pets for your coding agents", and the pets.
 #
@@ -15,8 +15,8 @@
 source "$(dirname "$0")/studio-lib.sh"
 source "$(dirname "$0")/pets-lib.sh"
 
-STAND_INS="omahub omahub-stats omahub-menu"
-FILMED_DESKTOP=4
+STAND_INS="omahub omahub-stats omahub-menu omahub-files omahub-site"
+FILMED_DESKTOP=6
 LOOKS=(blob cat gem bunny fox owl robot)
 
 stage() {
@@ -25,8 +25,8 @@ stage() {
 
 # Every pet at once in one mood, as a stage payload, with the end card when asked.
 parade() {
-  jq -nc --arg mood "$1" --argjson title "${2:-false}" --argjson pixel "${3:-14}" \
-    '{pixel: $pixel, gap: 5, background: "theme", title: $title, caption: "Pets for your coding agents", pets: (["blob", "cat", "gem", "bunny", "fox", "owl", "robot"] | map({look: ., mood: $mood}))}'
+  jq -nc --arg mood "$1" --argjson title "${2:-false}" --argjson pixel "${3:-12}" \
+    '{pixel: $pixel, gap: 4, background: "theme", title: $title, caption: "Pets for your coding agents", pets: (["blob", "cat", "gem", "bunny", "fox", "owl", "robot"] | map({look: ., mood: $mood}))}'
 }
 
 wave() {
@@ -45,6 +45,8 @@ case "${1:-}" in
     project omahub feature/bar-pets
     project omahub-stats feature/stats-overlay
     project omahub-menu feature/dock-menu
+    project omahub-files feature/file-tree
+    project omahub-site main
     "$OMAHUB" set dock/desktops off >/dev/null
     "$OMAHUB" set dock/agents on >/dev/null
     "$OMAHUB" set dock/autohide off >/dev/null
@@ -73,7 +75,18 @@ case "${1:-}" in
     say_spin omahub-menu "Working" 140
     codex_start omahub-menu "$(( EPOCHSECONDS - 140 ))"
 
-    wait_for_agents '[.omahub.dock.agents[]? | .agent] | sort == ["working","working","working"]'
+    stand_in claude omahub-files 4
+    say_user omahub-files "add a file tree with git status to the hub"
+    say_spin omahub-files "Wiring" 61
+    claude_prompt omahub-files "$(( EPOCHSECONDS - 61 ))" "add a file tree with git status to the hub"
+    claude_tool omahub-files Edit
+
+    stand_in codex omahub-site 5
+    say_user omahub-site "add the pets teaser to the landing page"
+    say_spin omahub-site "Working" 33
+    codex_start omahub-site "$(( EPOCHSECONDS - 33 ))"
+
+    wait_for_agents '[.omahub.dock.agents[]? | .agent] | sort == ["working","working","working","working","working"]'
     only_stand_ins
     park
     hyprctl dispatch "hl.dsp.focus({ workspace = \"$FILMED_DESKTOP\" })" >/dev/null
@@ -120,7 +133,7 @@ case "${1:-}" in
     say_done omahub "Pets sit in the top bar now, with their card on hover and quick answers." "52s"
     claude_done omahub "Pets sit in the top bar now, with their card on hover and quick answers."
     pause 1.5
-    read -r x y <<<"$(tile_center omahub-menu)"
+    read -r x y <<<"$(tile_center omahub-site)"
     glide $(( x + 180 )) $(( y - 420 )) 700
     pause 0.3
 
@@ -142,7 +155,7 @@ case "${1:-}" in
     if [[ -f $PETS/created ]]; then
       while IFS= read -r path; do
         case "$path" in
-          "$PROJECTS"/omahub | "$PROJECTS"/omahub-stats | "$PROJECTS"/omahub-menu) rm -rf "$path" ;;
+          "$PROJECTS"/omahub | "$PROJECTS"/omahub-stats | "$PROJECTS"/omahub-menu | "$PROJECTS"/omahub-files | "$PROJECTS"/omahub-site) rm -rf "$path" ;;
           "$HOME/.claude/projects/$(encoded "$PROJECTS")"-*) rm -rf "$path" ;;
           "$HOME/.codex/sessions/"*/rollout-*.jsonl) rm -f "$path" ;;
         esac
