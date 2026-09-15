@@ -124,7 +124,7 @@ function sessions(windows, info) {
     for (const session of read.sessions) {
       if (kindOf(session.command) !== "agent") continue
       const id = String(session.pid || window.address + session.terminal)
-      const fits = titleProject !== "" && session.project === titleProject
+      const fits = titleProject !== "" && nameOf(session) === titleProject
       if (found[id] && (found[id].fits || !fits)) continue
       if (!found[id]) order.push(id)
       const state = session.state || ""
@@ -135,7 +135,7 @@ function sessions(windows, info) {
           agent: lower(session.command),
           model: String(session.model || ""),
           family: family(session.model, session.command),
-          project: String(session.project || ""),
+          project: nameOf(session),
           branch: String(session.branch || ""),
           address: window.address,
           workspace: Number(window.workspace) || 0,
@@ -208,6 +208,11 @@ function activityLabel(activity, napAfter) {
   return state === "agent" ? name : ""
 }
 
+// What a terminal works on, by name: its git project, or else the folder it is in.
+function nameOf(session) {
+  return String((session && (session.project || session.folder)) || "")
+}
+
 // What one window is running, from facts only. `info` is the window's entry from context.sh. A session's
 // `state` is "working", "waiting", or "done" only when the agent's own record says so; without that, an
 // agent shows as present and nothing more. An app that shows several windows from one process, such as an
@@ -215,8 +220,8 @@ function activityLabel(activity, napAfter) {
 function windowContext(window, info) {
   const titleProject = projectFromTitle(window.appId, window.title)
   let sessions = (info && info.sessions) || []
-  if (titleProject && sessions.some(session => session.project)) {
-    sessions = sessions.filter(session => session.project === titleProject)
+  if (titleProject && sessions.some(session => nameOf(session))) {
+    sessions = sessions.filter(session => nameOf(session) === titleProject)
   }
   const kinds = sessions.map(session => ({ session: session, kind: kindOf(session.command) }))
   const primary = kinds.find(item => item.kind === "agent") || kinds.find(item => item.kind === "build")

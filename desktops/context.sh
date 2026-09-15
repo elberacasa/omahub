@@ -10,8 +10,10 @@
 # started through a runtime or a version manager by what it runs, that command's process, the git
 # project and branch of its folder, and for an agent that keeps a session record, what it is doing.
 #
-# Prints a JSON array, [{address, sessions: [{terminal, command, pid, project, branch, state, tool, quiet, model, since, message}]}],
-# leaving out windows without terminals. Folders and projects are names only, never paths, so nothing it
+# Prints a JSON array, [{address, sessions: [{terminal, command, pid, project, branch, folder, state, tool, quiet, model, since, message}]}],
+# leaving out windows without terminals. `folder` is the name of the folder the terminal works in, empty for
+# the home folder, so a folder that is not a git project still has a name. Folders and projects are names
+# only, never paths, so nothing it
 # prints shows where they live. It reads the process table once and then only /proc, .git files, and the
 # ends of agents' session records, so it is cheap enough to run every second.
 
@@ -209,6 +211,10 @@ for pair in "$@"; do
     folder=$(readlink "/proc/${process:-$top}/cwd" 2>/dev/null || readlink "/proc/$top/cwd" 2>/dev/null) || folder=""
     project=""
     branch=""
+    folder_name=""
+    if [[ -n $folder && $folder != "$HOME" && $folder != "/" ]]; then
+      folder_name=${folder##*/}
+    fi
     if [[ -n $folder ]] && found=$(git_project "$folder"); then
       project=${found%%$'\t'*}
       branch=${found#*$'\t'}
@@ -237,10 +243,10 @@ for pair in "$@"; do
         message=${rest#*$'\t'}
       fi
     fi
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$address" "$terminal" "$command" "${process:-0}" "$project" "$branch" \
-      "$state" "$tool" "$quiet" "$model" "$since" "$message"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$address" "$terminal" "$command" "${process:-0}" "$project" "$branch" \
+      "$state" "$tool" "$quiet" "$model" "$since" "$folder_name" "$message"
   done
 done | jq -Rcn '[inputs | split("\t") | {address: .[0], terminal: .[1], command: .[2], pid: (.[3] | tonumber), project: .[4], branch: .[5],
     state: (.[6] // ""), tool: (.[7] // ""), quiet: ((.[8] // "0") | tonumber? // 0), model: (.[9] // ""),
-    since: ((.[10] // "0") | tonumber? // 0), message: (.[11:] | join(" "))}]
+    since: ((.[10] // "0") | tonumber? // 0), folder: (.[11] // ""), message: (.[12:] | join(" "))}]
   | group_by(.address) | map({address: .[0].address, sessions: map(del(.address))})'

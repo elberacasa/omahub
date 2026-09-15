@@ -144,7 +144,12 @@ else
 
   outside=$(mktemp -d)
   start_terminal "$outside" "sleep 30"
-  assert_eq "a terminal outside git has no project" "$("$context" "0x3=$terminal" | jq -r '.[0].sessions[0].project')" ""
+  output=$("$context" "0x3=$terminal")
+  assert_eq "a terminal outside git has no project" "$(jq -r '.[0].sessions[0].project' <<<"$output")" ""
+  assert_eq "but has its folder's name" "$(jq -r '.[0].sessions[0].folder' <<<"$output")" "${outside##*/}"
+  stop_all
+  start_terminal "$HOME" "sleep 30"
+  assert_eq "and the home folder's name is never shown" "$("$context" "0x3=$terminal" | jq -r '.[0].sessions[0].folder')" ""
   stop_all
   rm -rf "$outside"
 fi
@@ -243,6 +248,19 @@ const editorSessions = { sessions: [
 const agentList = Model.sessions(agentWindows, { w1: editorSessions, w2: editorSessions,
   w3: { sessions: [{ terminal: "pts/4", command: "claude", pid: 21, project: "", state: "done", quiet: 900, model: "" }] } })
 check("every agent session shows once, and editors and shells do not", agentList.length === 3)
+const folderWindows = [
+  { address: "c1", appId: "cursor", title: "omahub - Cursor", workspace: 2 },
+  { address: "c2", appId: "cursor", title: "experiment - Cursor", workspace: 8 }
+]
+const folderSessions = { sessions: [
+  { terminal: "pts/2", command: "claude", pid: 31, project: "omahub", state: "working" },
+  { terminal: "pts/7", command: "codex", pid: 32, project: "", folder: "experiment", state: "done" }
+] }
+const byFolder = Model.sessions(folderWindows, { c1: folderSessions, c2: folderSessions })
+check("an agent in a folder outside git sits on the window that names the folder, and goes by it",
+  byFolder.find(item => item.id === "32").address === "c2" && byFolder.find(item => item.id === "32").project === "experiment")
+check("and that editor window counts the agent as its own",
+  Model.windowContext(folderWindows[1], folderSessions).agent === "codex" && Model.windowContext(folderWindows[0], folderSessions).agent === "claude")
 check("a session sits on the window whose title names its project",
   agentList.find(item => item.id === "11").address === "w2" && agentList.find(item => item.id === "12").address === "w1")
 check("sessions come in desktop order", agentList.map(item => item.workspace).join(",") === "1,2,3")
