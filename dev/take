@@ -2,24 +2,26 @@
 
 # Record a take of the focused monitor, for demos or for reviewing motion frame by frame.
 #
-#   dev/take <name> [seconds] [--workspace <n>] [--fps <n>] [--quiet] [--run <command>]
+#   dev/take <name> [seconds] [--workspace <n>] [--fps <n>] [--quiet] [--no-cursor] [--run <command>]
 #
 #   --workspace  switch to a workspace before recording
 #   --fps        capture rate, default 60
 #   --quiet      skip the countdown and Go cue, for automated motion takes
+#   --no-cursor  leave the pointer out of the video, while it still moves, hovers, and clicks
 #   --run        run a command once recording has started, and print its offset in the video
 #
 # Notifications are silenced during the take and restored after. Takes land in tmp/takes/.
 
 set -euo pipefail
 
-usage="usage: dev/take <name> [seconds] [--workspace <n>] [--fps <n>] [--quiet] [--run <command>]"
+usage="usage: dev/take <name> [seconds] [--workspace <n>] [--fps <n>] [--quiet] [--no-cursor] [--run <command>]"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 name=""
 seconds=15
 workspace=""
 fps=60
 quiet=0
+cursor=yes
 run=""
 
 while (( $# )); do
@@ -27,6 +29,7 @@ while (( $# )); do
     --workspace) workspace="$2"; shift 2 ;;
     --fps) fps="$2"; shift 2 ;;
     --quiet) quiet=1; shift ;;
+    --no-cursor) cursor=no; shift ;;
     --run) run="$2"; shift 2 ;;
     -h|--help) echo "$usage"; exit 0 ;;
     *)
@@ -47,8 +50,21 @@ osd() {
 }
 
 dnd_before=$(omarchy-shell notifications dndState)
-trap 'omarchy-shell notifications setDnd "$dnd_before" >/dev/null 2>&1 || true' EXIT
+cursor_before=""
+restore() {
+  omarchy-shell notifications setDnd "$dnd_before" >/dev/null 2>&1 || true
+  if [[ -n $cursor_before ]]; then
+    hyprctl eval "hl.config({ cursor = { invisible = $cursor_before } })" >/dev/null 2>&1 || true
+  fi
+}
+trap restore EXIT
 omarchy-shell notifications setDnd on >/dev/null
+
+# The recorder keeps the pointer in when it captures a whole monitor, so Hyprland hides it for the take instead.
+if [[ $cursor == "no" ]]; then
+  cursor_before=$(hyprctl getoption cursor:invisible -j | jq -r '.bool')
+  hyprctl eval 'hl.config({ cursor = { invisible = true } })' >/dev/null
+fi
 
 if [[ -n $workspace ]]; then
   hyprctl dispatch "hl.dsp.focus({ workspace = \"$workspace\" })" >/dev/null
@@ -65,7 +81,7 @@ if (( ! quiet )); then
   sleep 0.4
 fi
 
-gpu-screen-recorder -w "$monitor" -f "$fps" -k auto -fm cfr -cursor yes -o "$out" >/dev/null 2>&1 &
+gpu-screen-recorder -w "$monitor" -f "$fps" -k auto -fm cfr -cursor "$cursor" -o "$out" >/dev/null 2>&1 &
 pid=$!
 
 while kill -0 "$pid" 2>/dev/null && [[ ! -f $out ]]; do

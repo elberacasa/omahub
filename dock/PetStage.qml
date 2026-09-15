@@ -19,8 +19,9 @@ Item {
   property int pixel: 10
   property int gap: 6
   property bool clear: false
-  // An end card: the keycap and the omahub pets wordmark in pixels above the pets.
+  // An end card: the keycap and the omahub wordmark in pixels above the pets, with a line saying what they are.
   property bool title: false
+  property string caption: ""
 
   readonly property var focusedScreen: {
     var name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : ""
@@ -38,6 +39,7 @@ Item {
     if (payload.gap !== undefined) root.gap = Math.max(0, Math.round(Number(payload.gap) || 0))
     if (payload.background !== undefined) root.clear = payload.background === "clear"
     if (payload.title !== undefined) root.title = payload.title === true
+    if (payload.caption !== undefined) root.caption = String(payload.caption)
     root.opened = payload.open !== false
   }
 
@@ -62,7 +64,7 @@ Item {
       }
       list.push(entry)
     }
-    return JSON.stringify({ opened: root.opened, pixel: root.pixel, gap: root.gap, clear: root.clear, title: root.title, pets: list })
+    return JSON.stringify({ opened: root.opened, pixel: root.pixel, gap: root.gap, clear: root.clear, title: root.title, caption: root.caption, pets: list })
   }
 
   // Not named palette: every Item already has a palette property, which would shadow it.
@@ -115,13 +117,17 @@ Item {
           word: "omahub"
           cell: root.pixel
         }
+      }
 
-        Wordmark {
-          anchors.bottom: parent.bottom
-          word: "pets"
-          cell: root.pixel
-          color: Color.accent
-        }
+      Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        visible: root.title && root.caption !== ""
+        textFormat: Text.PlainText
+        text: root.caption
+        color: Color.accent
+        font.family: Style.font.menuFamily
+        font.pixelSize: root.pixel * 4
+        font.bold: true
       }
 
       Row {

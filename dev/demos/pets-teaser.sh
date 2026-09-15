@@ -4,7 +4,7 @@
 # parade on the stage, which clears to an empty desktop whose dock holds three agents working on Omahub on other
 # desktops. The pointer opens a pet's card, with its project, branch, and what it is doing, just as that agent
 # finishes with a hop. Another pet calls to run the tests and is answered from the dock, and finishes too. The
-# stage comes back as an end card, the keycap and the omahub pets wordmark over the pets.
+# stage comes back as an end card: the keycap and the omahub wordmark, "Pets for your coding agents", and the pets.
 #
 #   bash dev/demos/pets-teaser.sh setup|take|cleanup
 #   dev/take pets-teaser 20 --quiet --run "bash dev/demos/pets-teaser.sh take"
@@ -26,7 +26,7 @@ stage() {
 # Every pet at once in one mood, as a stage payload, with the end card when asked.
 parade() {
   jq -nc --arg mood "$1" --argjson title "${2:-false}" --argjson pixel "${3:-14}" \
-    '{pixel: $pixel, gap: 5, background: "theme", title: $title, pets: (["blob", "cat", "gem", "bunny", "fox", "owl", "robot"] | map({look: ., mood: $mood}))}'
+    '{pixel: $pixel, gap: 5, background: "theme", title: $title, caption: "Pets for your coding agents", pets: (["blob", "cat", "gem", "bunny", "fox", "owl", "robot"] | map({look: ., mood: $mood}))}'
 }
 
 wave() {
