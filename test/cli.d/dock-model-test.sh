@@ -12,7 +12,7 @@ fi
 results=$(node - "$OMAHUB_PATH/dock/DockModel.js" <<'EOF'
 const fs = require("fs")
 const source = fs.readFileSync(process.argv[2], "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { covered, items, parseConfig, catalog, dropSlot, reorder, desktops, desktopAt, fittedIconSize, onDock }")()
+const Model = new Function(source + "\nreturn { covered, items, parseConfig, catalog, dropSlot, reorder, desktops, desktopAt, fittedIconSize, onDock, followAgents }")()
 const checks = []
 const check = (name, ok) => checks.push({ name, ok: !!ok })
 
@@ -97,6 +97,25 @@ check("a pointer over the shelf is on the dock", Model.onDock(40, 900, 600, 1300
 check("a pointer just above the shelf is not on the dock", Model.onDock(100, 900, 600, 1300, 80) === false)
 check("a pointer past the end of the shelf is not on the dock", Model.onDock(40, 1340, 600, 1300, 80) === false)
 check("magnified icons keep the pointer on the dock above the shelf", Model.onDock(100, 900, 600, 1300, 110))
+
+// Agent sessions from one read to the next.
+const stateOf = session => session.state
+const agents = (states) => Object.keys(states).map(id => ({ id, address: "w" + id, state: states[id] }))
+let follow = Model.followAgents({}, {}, agents({ 1: "done", 2: "working" }), "", stateOf)
+check("agents already finished when the dock starts are not news", follow.finished.length === 0 && Object.keys(follow.unseen).length === 0)
+follow = Model.followAgents(follow.states, follow.unseen, agents({ 1: "done", 2: "done" }), "w9", stateOf)
+check("a turn that ends out of sight is news, and stays unseen", follow.finished.join(",") === "2" && follow.unseen[2] === true)
+follow = Model.followAgents(follow.states, follow.unseen, agents({ 1: "done", 2: "idle" }), "w9", stateOf)
+check("it is news once, and stays unseen as it goes idle", follow.finished.length === 0 && follow.unseen[2] === true)
+follow = Model.followAgents(follow.states, follow.unseen, agents({ 1: "done", 2: "idle" }), "w2", stateOf)
+check("looking at its window clears it", !follow.unseen[2])
+follow = Model.followAgents({ 3: "working" }, {}, agents({ 3: "done" }), "w3", stateOf)
+check("a turn that ends in front of you was seen as it happened", follow.finished.length === 0 && !follow.unseen[3])
+follow = Model.followAgents({ 4: "working" }, {}, agents({ 4: "done" }), "", stateOf)
+follow = Model.followAgents(follow.states, follow.unseen, agents({ 4: "working" }), "", stateOf)
+check("an agent that starts working again is no longer unseen", !follow.unseen[4])
+follow = Model.followAgents({ 5: "working" }, { 6: true }, agents({ 5: "waiting" }), "", stateOf)
+check("waiting is not finishing, and a session that is gone is forgotten", follow.finished.length === 0 && Object.keys(follow.unseen).length === 0)
 
 console.log(JSON.stringify(checks))
 EOF

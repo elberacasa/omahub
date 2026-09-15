@@ -110,6 +110,17 @@ Item {
     ? Desktops.sessions(Model.windowList(Hyprland.toplevels.values || []), root.terminalInfo) : []
   // An agent waiting for your answer brings a hidden dock out until you answer.
   readonly property bool agentCalling: root.agentSessions.some(function(session) { return session.activity.agentWaiting })
+  // The window with focus, as Hyprland's address, so a turn that ends in front of you counts as seen.
+  property string focusedFromEvent: ""
+  readonly property string focusedAddress: Hyprland.activeToplevel && Hyprland.activeToplevel.address
+    ? "0x" + String(Hyprland.activeToplevel.address).replace(/^0x/, "") : root.focusedFromEvent
+  // Each session's state from the last read, and the finished agents you have not looked at yet.
+  property var agentStates: ({})
+  property var unseen: ({})
+  // A turn that ends out of sight brings a hidden dock out for a moment, so its pet's hop is seen.
+  property bool peeking: false
+  onAgentSessionsChanged: root.followAgents()
+  onFocusedAddressChanged: root.followAgents()
   readonly property int agentsGap: root.agentSessions.length > 0 && root.items.length > 0 ? root.dividerWidth : 0
   readonly property int agentsLength: root.agentSessions.length > 0 ? root.agentsGap + root.agentSessions.length * root.cellWidth : 0
   // The agent tile under the pointer, measured from where the tiles are drawn.
@@ -230,7 +241,7 @@ Item {
   property string notice: ""
 
   readonly property bool shown: root.enabled
-    && (!root.autohide || !root.covered || root.pointerInside || root.lingering || root.menuOpen || root.agentCalling
+    && (!root.autohide || !root.covered || root.pointerInside || root.lingering || root.menuOpen || root.agentCalling || root.peeking
       || root.keyboardActive || root.pickerOpen || root.dragIndex >= 0 || root.notice !== "")
 
   readonly property var focusedScreen: {
@@ -471,7 +482,8 @@ Item {
     for (var g = 0; g < agentRepeater.count; g++) {
       var agentTile = agentRepeater.itemAt(g)
       if (agentTile) agents.push(Object.assign({ id: agentTile.modelData.id, family: agentTile.modelData.family,
-        project: agentTile.modelData.project, agent: agentTile.agentState }, place(agentTile)))
+        project: agentTile.modelData.project, agent: agentTile.agentState, unseen: root.unseen[agentTile.modelData.id] === true },
+        place(agentTile)))
     }
     var desktops = []
     for (var d = 0; d < desktopRepeater.count; d++) {
@@ -484,7 +496,7 @@ Item {
         : { x: screenX + screenWidth / 2, y: screenY + screenHeight - 1 })
     return JSON.stringify({
       shown: root.shown, position: root.edge, keyboard: root.keyboardActive, cursor: root.keyCursor,
-      menu: root.menuOpen, apps: apps, agents: agents, desktops: desktops, overview: place(overviewButton), pressed: root.iconPressed,
+      menu: root.menuOpen, apps: apps, agents: agents, desktops: desktops, peeking: root.peeking, overview: place(overviewButton), pressed: root.iconPressed,
       screen: { x: screenX, y: screenY, width: screenWidth, height: screenHeight },
       usable: { x: screenX + root.reserved[0], y: screenY + root.reserved[1],
         width: screenWidth - root.reserved[0] - root.reserved[2], height: screenHeight - root.reserved[1] - root.reserved[3] },
@@ -687,7 +699,19 @@ Item {
     }
   }
 
-  // SUPER + D. The cursor starts on the app in front, or the first app.
+  function followAgents() {
+    var next = Model.followAgents(root.agentStates, root.unseen, root.agentSessions, root.focusedAddress,
+      function(session) { return Desktops.activityState(session.activity) })
+    root.agentStates = next.states
+    root.unseen = next.unseen
+    if (next.finished.length > 0) {
+      root.peeking = true
+      peekTimer.restart()
+    }
+  }
+
+  // SUPER + D. The cursor starts on the agent that needs you, waiting first and then one that finished out
+  // of sight, or else on the app in front, or the first app.
   function focusDock() {
     if (!root.enabled) return "off"
     // SUPER + D again gives the keyboard back.
@@ -698,7 +722,9 @@ Item {
     var active = root.items.findIndex(function(item) {
       return item.windows.some(function(window) { return window.activated })
     })
-    root.keyCursor = active >= 0 ? active : (root.items.length > 0 ? 0 : -1)
+    var calling = root.agentSessions.findIndex(function(session) { return session.activity.agentWaiting })
+    if (calling < 0) calling = root.agentSessions.findIndex(function(session) { return root.unseen[session.id] === true })
+    root.keyCursor = calling >= 0 ? root.items.length + calling : (active >= 0 ? active : (root.items.length > 0 ? 0 : -1))
     root.menuOpen = false
     root.keyboardActive = true
     root.keyboardSince = Date.now()
@@ -1014,6 +1040,10 @@ Item {
       }
       // Desktop tiles show the app used last, so a focus change matters to them too.
       if (root.showDesktops && name === "activewindowv2") coverDelay.restart()
+      if (name === "activewindowv2") {
+        var address = String(event.data || "").replace(/^0x/, "")
+        root.focusedFromEvent = address !== "" && address !== "," ? "0x" + address : ""
+      }
       // A click on a window or a move to another desktop ends the dock's keyboard mode, like clicking away
       // from the Dock on a Mac. The focus change the mode causes as it starts does not count.
       if (root.keyboardActive && Date.now() - root.keyboardSince > 400
@@ -1037,6 +1067,12 @@ Item {
     repeat: true
     running: root.enabled && root.autohide
     onTriggered: root.checkCover()
+  }
+
+  Timer {
+    id: peekTimer
+    interval: 2600
+    onTriggered: root.peeking = false
   }
 
   Timer {
@@ -1727,6 +1763,18 @@ Item {
                 x: Math.round((parent.width - width) / 2)
                 y: Math.round((parent.height - height) / 2)
               }
+            }
+
+            // A turn that ended out of sight keeps a dot under its tile until you look at the agent.
+            Rectangle {
+              visible: root.unseen[agentTile.modelData.id] === true
+              width: Style.space(4)
+              height: width
+              radius: width / 2
+              x: root.edge === "left" ? -root.dotSpace + (root.dotSpace - width) / 2
+                : (root.edge === "right" ? root.iconSize + (root.dotSpace - width) / 2 : agentBox.x + (agentBox.width - width) / 2)
+              y: root.vertical ? agentBox.y + (agentBox.height - height) / 2 : root.iconSize + (root.dotSpace - height) / 2
+              color: Color.accent
             }
 
             FocusRing {

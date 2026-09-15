@@ -191,6 +191,30 @@ function windowList(toplevels) {
   }).filter(window => window.appId !== "")
 }
 
+// Follows agent sessions from one read to the next: which turns just ended out of sight, and which
+// finished agents you have not looked at yet. `states` maps session ids to the state read last time and
+// `unseen` holds the ids still waiting for a look; `stateOf` reads a session's state. A turn that ends
+// while its window has focus was seen as it happened, and looking at the window or the agent starting
+// again clears it.
+function followAgents(states, unseen, sessions, focusedAddress, stateOf) {
+  const nextStates = {}
+  const nextUnseen = {}
+  const finished = []
+  for (const session of sessions || []) {
+    const state = stateOf(session)
+    nextStates[session.id] = state
+    const resting = state === "done" || state === "idle"
+    if (!resting || session.address === focusedAddress) continue
+    if (unseen && unseen[session.id]) {
+      nextUnseen[session.id] = true
+    } else if (states && states[session.id] === "working") {
+      nextUnseen[session.id] = true
+      finished.push(session.id)
+    }
+  }
+  return { states: nextStates, unseen: nextUnseen, finished: finished }
+}
+
 // Where each icon's center sits in the unscaled dock, so magnification never chases its own layout.
 function layout(items, cellWidth, dividerWidth) {
   const centers = []
