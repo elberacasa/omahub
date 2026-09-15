@@ -19,6 +19,8 @@ Rectangle {
   property bool hasCursor: false
   // The chip the keyboard is on, in a row that holds several choices at once, or -1.
   property int chipCursor: -1
+  // The theme's palette, for a gallery of pets.
+  property var petHues: ({})
   property bool promptActive: false
   property string promptText: ""
 
@@ -246,6 +248,7 @@ Rectangle {
               AgentPet {
                 anchors.horizontalCenter: parent.horizontalCenter
                 look: petChip.modelData.value
+                hues: row.petHues
                 mood: petChip.chosen ? "done" : "agent"
                 still: true
                 pixelSize: Math.max(1, Style.space(2))

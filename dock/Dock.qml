@@ -7,6 +7,7 @@ import qs.Commons
 import qs.Ui
 import "DockModel.js" as Model
 import "../desktops/DesktopsModel.js" as Desktops
+import "Pets.js" as Pets
 
 // The dock: pinned apps, then open apps that are not pinned, on one edge of the focused screen.
 // Its settings live in ~/.local/state/omahub/dock.json, which the hub, the terminal, and agents
@@ -132,6 +133,9 @@ Item {
   }
   onAgentSessionsChanged: root.followAgents()
   onFocusedAddressChanged: root.followAgents()
+  // Each project on the dock gets a color of its own from the theme, the same one while the same projects stay.
+  readonly property var projectTints: Pets.projectHues(root.agentSessions.map(function(session) { return root.tintName(session) }),
+    petPalette.colors)
   readonly property int agentsGap: root.agentSessions.length > 0 && root.items.length > 0 ? root.dividerWidth : 0
   readonly property int agentsLength: root.agentSessions.length > 0 ? root.agentsGap + root.agentSessions.length * root.cellWidth : 0
   // The agent tile under the pointer, measured from where the tiles are drawn.
@@ -710,6 +714,11 @@ Item {
     }
   }
 
+  // The name a session's color follows: its project, or the session itself when it has none.
+  function tintName(session) {
+    return session.project || "session-" + session.id
+  }
+
   // What an agent is doing, with the dock's own nap time.
   function stateOf(activity) {
     return Desktops.activityState(activity, root.napAfter)
@@ -1083,6 +1092,11 @@ Item {
     repeat: true
     running: root.enabled && root.autohide
     onTriggered: root.checkCover()
+  }
+
+  // The theme's palette, shared by every pet on the dock.
+  PetPalette {
+    id: petPalette
   }
 
   Timer {
@@ -1748,6 +1762,13 @@ Item {
             readonly property bool hovered: root.hoveredAgent === agentTile.index
             readonly property bool keyed: root.keyboardActive && !root.menuOpen && root.keyCursor === root.items.length + agentTile.index
             readonly property string agentState: root.stateOf(agentTile.modelData.activity)
+            // Which way the pointer sits from the tile's middle, along the dock: -1, 0, or 1.
+            readonly property int pointerSide: {
+              if (!agentTile.hovered) return 0
+              var middle = (root.vertical ? agentRow.y : agentRow.x) + agentTile.offset + root.cellWidth / 2
+              var off = root.pointerAlong - middle
+              return off < -root.cellWidth * 0.15 ? -1 : (off > root.cellWidth * 0.15 ? 1 : 0)
+            }
             readonly property real offset: root.agentsGap + agentTile.index * root.cellWidth
 
             x: root.vertical ? 0 : agentTile.offset
@@ -1766,13 +1787,38 @@ Item {
               border.width: Math.max(1, Style.space(1))
               border.color: root.hairline
 
+              // A waiting agent's tile is ringed in the urgent color until you answer, breathing slowly like every
+              // other wait in Omahub.
+              Rectangle {
+                id: waitingRing
+                visible: agentTile.agentState === "waiting"
+                anchors.fill: parent
+                radius: parent.radius
+                color: "transparent"
+                border.width: Math.max(2, Style.space(2))
+                border.color: Color.urgent
+
+                SequentialAnimation on opacity {
+                  running: waitingRing.visible && root.livelyPets && !root.stillPets
+                  loops: Animation.Infinite
+                  NumberAnimation { to: 0.55; duration: 600; easing.type: Easing.InOutSine }
+                  NumberAnimation { to: 1; duration: 600; easing.type: Easing.InOutSine }
+                  onRunningChanged: if (!running) waitingRing.opacity = 1
+                }
+              }
+
               Behavior on color {
                 ColorAnimation { duration: 120 }
               }
 
               AgentPet {
+                id: tilePet
                 family: agentTile.modelData.family
                 choices: root.config
+                hues: petPalette.colors
+                tint: root.projectTints[root.tintName(agentTile.modelData)] || ""
+                gazeX: root.vertical ? 0 : agentTile.pointerSide
+                gazeY: root.vertical ? Math.min(0, agentTile.pointerSide) : (agentTile.keyed && !agentTile.hovered ? -1 : 0)
                 mood: agentTile.agentState
                 still: root.stillPets
                 lively: root.livelyPets
@@ -1818,6 +1864,9 @@ Item {
               width: root.vertical ? root.iconSize + root.clickAway + root.reachEdge : parent.width
               height: root.vertical ? parent.height : root.iconSize + root.clickAway + root.reachEdge
               cursorShape: Qt.PointingHandCursor
+              onPressed: tilePet.press()
+              onReleased: tilePet.letGo()
+              onCanceled: tilePet.letGo()
               onClicked: root.goToAgent(agentTile.modelData, true)
             }
           }

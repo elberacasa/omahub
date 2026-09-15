@@ -5,6 +5,7 @@ import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
 import "HubModel.js" as Model
+import "../dock"
 
 Item {
   id: root
@@ -89,6 +90,11 @@ Item {
   Component.onCompleted: {
     root.refresh()
     firstRun.running = true
+  }
+
+  // The theme's palette, so the pet gallery shows each pet in its own color.
+  PetPalette {
+    id: petPalette
   }
 
   // Typing again clears a prompt's "Type a name first".
@@ -1168,6 +1174,7 @@ Item {
                   || (root.readErrors[modelData.id] ? "Couldn't read this setting. Close and open Omahub to try again" : "")
                 hasCursor: index === root.cursor
                 chipCursor: index === root.cursor && modelData.kind === "multi" ? root.activeChip(index) : -1
+                petHues: petPalette.colors
                 promptActive: root.promptId === modelData.id
                 promptText: root.promptId === modelData.id ? root.promptText : ""
                 onActivated: root.activate(index)
