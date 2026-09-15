@@ -99,9 +99,13 @@ assert_eq "desktops in the dock start off" "$(omahub get dock/desktops | jq -r .
 assert_eq "desktops in the dock turn on" "$(omahub set dock/desktops on | jq -r .value)" "true"
 assert_eq "desktops in the dock are saved for the dock" "$(jq -r .desktops "$HOME/.local/state/omahub/dock.json")" "true"
 omahub reset dock/desktops >/dev/null
+assert_eq "agents in the dock start off" "$(omahub get dock/agents | jq -r .value)" "false"
+assert_eq "agents in the dock turn on" "$(omahub set dock/agents on | jq -r .value)" "true"
+assert_eq "agents in the dock are saved for the dock" "$(jq -r .agents "$HOME/.local/state/omahub/dock.json")" "true"
+omahub reset dock/agents >/dev/null
 assert_eq "the hub lists dock settings in the Mac's order" \
   "$(omahub settings --json | jq -c '[.[] | select(.section == "dock" and (.hidden | not))] | sort_by(.order) | map(.id | ltrimstr("dock/"))')" \
-  '["show","size","magnify","position","tiles","autohide","indicators","recents","desktops","bounce"]'
+  '["show","size","magnify","position","tiles","autohide","indicators","recents","desktops","agents","bounce"]'
 
 for setting in indicators recents bounce; do
   assert_eq "dock/$setting starts on" "$(omahub get "dock/$setting" | jq -r .value)" "true"

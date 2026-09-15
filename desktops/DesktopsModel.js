@@ -8,6 +8,8 @@ const AGENTS = ["claude", "codex", "opencode", "gemini", "pi", "crush", "cursor-
 const BUILDS = ["cargo", "npm", "pnpm", "yarn", "bun", "deno", "node", "make", "cmake", "ninja", "go", "pytest", "python", "python3",
   "rails", "bundle", "rake", "mix", "gradle", "mvn", "docker", "podman", "vitest", "jest", "zig", "swift", "dotnet", "just"]
 const EDITING = ["nvim", "vim", "hx", "helix", "emacs", "nano", "micro", "kak"]
+// An agent whose turn ended this many seconds ago, with nothing since, is idle.
+const IDLE_SECONDS = 300
 
 function lower(value) {
   return String(value || "").toLowerCase()
@@ -95,14 +97,72 @@ function toolLabel(tool) {
   return String(tool || "").split("__").pop()
 }
 
+// The company behind an agent's model, which picks its pet: every Claude model shares one, every OpenAI model
+// another. Without a model, the agent's own name decides, and anything else is "other".
+function family(model, agent) {
+  const name = lower(model)
+  const companies = [[/^claude|anthropic/, "anthropic"], [/^(gpt|o\d|codex|chatgpt|openai)/, "openai"], [/^(gemini|gemma)/, "google"],
+    [/^kimi|moonshot/, "moonshot"], [/^qwen/, "alibaba"], [/^deepseek/, "deepseek"], [/^grok/, "xai"], [/^(mistral|codestral|devstral)/, "mistral"]]
+  for (const company of companies) {
+    if (company[0].test(name)) return company[1]
+  }
+  const agents = { claude: "anthropic", codex: "openai", gemini: "google", qwen: "alibaba" }
+  return agents[lower(agent)] || "other"
+}
+
+// Every agent session running in a window, once each, for the dock's agent tiles. `windows` carry {address,
+// appId, title, workspace}; `info` maps addresses to context.sh entries. The windows of one process list the
+// same terminals, so a session sits on the window whose title names its project, or else the first that has
+// it. Sessions come in desktop order, then by project.
+function sessions(windows, info) {
+  const found = {}
+  const order = []
+  for (const window of windows || []) {
+    const read = info ? info[window.address] : null
+    if (!read || !read.sessions) continue
+    const titleProject = projectFromTitle(window.appId, window.title)
+    for (const session of read.sessions) {
+      if (kindOf(session.command) !== "agent") continue
+      const id = String(session.pid || window.address + session.terminal)
+      const fits = titleProject !== "" && session.project === titleProject
+      if (found[id] && (found[id].fits || !fits)) continue
+      if (!found[id]) order.push(id)
+      const state = session.state || ""
+      found[id] = {
+        fits: fits,
+        entry: {
+          id: id,
+          agent: lower(session.command),
+          model: String(session.model || ""),
+          family: family(session.model, session.command),
+          project: String(session.project || ""),
+          branch: String(session.branch || ""),
+          address: window.address,
+          workspace: Number(window.workspace) || 0,
+          activity: {
+            agent: lower(session.command),
+            agentWorking: state === "working",
+            agentWaiting: state === "waiting",
+            agentDone: state === "done",
+            agentTool: state === "working" ? toolLabel(session.tool) : "",
+            agentQuiet: state === "done" ? Number(session.quiet) || 0 : 0
+          }
+        }
+      }
+    }
+  }
+  return order.map(id => found[id].entry)
+    .sort((a, b) => a.workspace - b.workspace || a.project.localeCompare(b.project) || a.id.localeCompare(b.id))
+}
+
 // What most needs a look, from facts only: a window asking for attention, an agent waiting on you, working,
-// or done, the agent running there, or media playing. Empty when nothing does.
+// done, or idle after a while done, the agent running there, or media playing. Empty when nothing does.
 function activityState(activity) {
   if (!activity) return ""
   if (activity.attention) return "attention"
   if (activity.agentWaiting) return "waiting"
   if (activity.agentWorking) return "working"
-  if (activity.agentDone) return "done"
+  if (activity.agentDone) return (activity.agentQuiet || 0) >= IDLE_SECONDS ? "idle" : "done"
   if (activity.agent) return "agent"
   return activity.media ? "media" : ""
 }
@@ -116,6 +176,7 @@ function activityLabel(activity) {
   if (state === "waiting") return name + " is waiting on you"
   if (state === "working") return activity.agentTool ? name + " is running " + activity.agentTool : name + " is working"
   if (state === "done") return name + " is done"
+  if (state === "idle") return name + " is idle"
   return state === "agent" ? name : ""
 }
 
@@ -138,6 +199,7 @@ function windowContext(window, info) {
   const editorApp = EDITORS.indexOf(lower(window.appId)) >= 0
   const agents = kinds.filter(item => item.kind === "agent")
   const working = agents.find(item => item.session.state === "working") || null
+  const finished = agents.filter(item => item.session.state === "done")
   const agent = working || agents[0] || null
   return {
     project: project,
@@ -148,6 +210,8 @@ function windowContext(window, info) {
     agentWorking: working !== null,
     agentWaiting: agents.some(item => item.session.state === "waiting"),
     agentDone: working === null && agents.some(item => item.session.state === "done"),
+    // How long the most recently finished agent has been quiet.
+    agentQuiet: finished.length > 0 ? Math.min.apply(null, finished.map(item => Number(item.session.quiet) || 0)) : 0,
     agentTool: working ? toolLabel(working.session.tool) : ""
   }
 }
@@ -160,7 +224,8 @@ function summary(desktop, contexts, name, knownBranches) {
   const scores = {}
   const branches = {}
   const apps = []
-  const activity = { agent: "", agentWorking: false, agentWaiting: false, agentDone: false, agentTool: "", media: false, attention: false }
+  const activity = { agent: "", agentWorking: false, agentWaiting: false, agentDone: false, agentTool: "", agentQuiet: 0, media: false,
+    attention: false }
 
   windows.forEach((window, rank) => {
     const context = contexts[window.address] || {}
@@ -177,7 +242,10 @@ function summary(desktop, contexts, name, knownBranches) {
       activity.agentTool = context.agentTool || ""
     }
     if (context.agentWaiting) activity.agentWaiting = true
-    if (context.agentDone) activity.agentDone = true
+    if (context.agentDone) {
+      activity.agentQuiet = activity.agentDone ? Math.min(activity.agentQuiet, context.agentQuiet || 0) : context.agentQuiet || 0
+      activity.agentDone = true
+    }
     if (window.media) activity.media = true
     if (window.attention) activity.attention = true
     const app = { appId: window.appId, name: window.appName || window.appId }

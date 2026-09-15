@@ -134,10 +134,10 @@ agent focus a
 agent chord SUPER+D
 check "SUPER + D takes the keyboard" '.omahub.dock.keyboard' 1
 for _ in $(seq 40); do
-  agent state ".omahub.dock.cursor == (.omahub.dock.apps | length) + (.omahub.dock.desktops | map(.id) | index($away))" | grep -q true && break
+  agent state ".omahub.dock.cursor == (.omahub.dock.apps | length) + ((.omahub.dock.agents // []) | length) + (.omahub.dock.desktops | map(.id) | index($away))" | grep -q true && break
   agent chord Right || break
 done
-check "the cursor walks past the apps onto desktop $away" ".omahub.dock.cursor == (.omahub.dock.apps | length) + (.omahub.dock.desktops | map(.id) | index($away))" 1
+check "the cursor walks past the apps and agents onto desktop $away" ".omahub.dock.cursor == (.omahub.dock.apps | length) + ((.omahub.dock.agents // []) | length) + (.omahub.dock.desktops | map(.id) | index($away))" 1
 agent chord Return
 check "Enter goes to that desktop and gives the keyboard back" ".desktop == $away and (.omahub.dock.keyboard | not)" 2
 check "the pointer stays on the dock" '.omahub.dock.shelf as $s | .pointer.x >= $s.x - 40 and .pointer.x <= $s.x + $s.width + 40

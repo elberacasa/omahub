@@ -1425,7 +1425,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     textFormat: Text.PlainText
                     text: thumb.activity === "agent" ? Desktops.agentLabel(thumb.summary.activity.agent)
-                      : (({ attention: "Needs you", waiting: "Your turn", working: "Working", done: "Done", media: "Playing" })[thumb.activity] || "")
+                      : (({ attention: "Needs you", waiting: "Your turn", working: "Working", done: "Done", idle: "Idle", media: "Playing" })[thumb.activity] || "")
                     color: Color.menu.text
                     font.family: Style.font.menuFamily
                     font.pixelSize: Style.font.caption

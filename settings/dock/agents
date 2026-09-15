@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# omahub:title=Agents in the dock
+# omahub:summary=Every agent at work gets a tile with its own pixel pet, showing whether it is working, done, or idle. Click one to go to it
+# omahub:section=dock
+# omahub:order=66
+# omahub:kind=toggle
+# omahub:icon=󰚩
+# omahub:keywords=dock agents claude codex gpt pets working done idle sessions projects
+
+set -euo pipefail
+source "${OMAHUB_PATH:?run this through omahub}/lib/settings.sh"
+source "$OMAHUB_PATH/lib/dock.sh"
+
+omahub_dock_toggle_setting agents false dock/agents "$@"

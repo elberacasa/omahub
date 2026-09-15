@@ -6,7 +6,7 @@ Notable changes to Omahub. The format follows [Keep a Changelog](https://keepach
 
 ### Added
 
-- The dock shows what your agents are doing. A dot on a terminal, editor, or desktop breathes while Claude Code or Codex works and holds still once its turn is done, read from the agent's own session record, and hovering says which tool it is running. The overview's badge shows Done too.
+- Agents in the dock, a switch in the dock's menu and settings: every agent at work gets its own tile between your apps and desktops, with a pixel pet in your theme's colors. The pet taps at a tiny keyboard while its agent works, hops with its arms up when the turn is done, and falls asleep once the agent has been idle for five minutes, all read from Claude Code's and Codex's own session records. Every Claude model shares a blob with a sparkle, every GPT model a boxy cat with a loop, and other models a small robot. Click a tile to go to that agent's window, even inside Cursor, and hover to see its project and the tool it is running. The overview's badge shows Done and Idle too.
 - The overview always shows desktops 1 to 5, each numbered with the key that reaches it, so an empty desktop is one key or one drop away. The New tile appears once they are all in use.
 - A window moved with Shift + a number moves the moment the key is pressed and flies into its desktop's thumbnail, and u or Undo puts it back. The other windows slide into the room it leaves.
 - Holding SUPER from SUPER + TAB is one gesture: pick a desktop with a number, a window with h j k l, the arrows, or the pointer, and letting go of SUPER goes there. Moving windows while holding it keeps the overview open to keep organizing.

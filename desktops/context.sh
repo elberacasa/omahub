@@ -10,7 +10,7 @@
 # started through a runtime or a version manager by what it runs, that command's process, the git
 # project and branch of its folder, and for an agent that keeps a session record, what it is doing.
 #
-# Prints a JSON array, [{address, sessions: [{terminal, command, pid, project, branch, state, tool}]}],
+# Prints a JSON array, [{address, sessions: [{terminal, command, pid, project, branch, state, tool, quiet, model}]}],
 # leaving out windows without terminals. Folders and projects are names only, never paths, so nothing it
 # prints shows where they live. It reads the process table once and then only /proc, .git files, and the
 # ends of agents' session records, so it is cheap enough to run every second.
@@ -75,9 +75,10 @@ agent_name() {
 # What an agent is doing, from its own session record for the folder it works in: "working" and the tool
 # it is running, or "done" once its turn ends. Only Claude Code and Codex keep records Omahub can read. A
 # record older than the agent's process belongs to an earlier session, so it says nothing. Prints
-# state<TAB>tool.
+# state<TAB>tool<TAB>quiet<TAB>model, where quiet is how many seconds ago the record last changed and model
+# is the one the agent last answered with.
 agent_state() {
-  local command="$1" pid="$2" folder="$3" log="" file started
+  local command="$1" pid="$2" folder="$3" log="" file started said model
   case "$command" in
     claude)
       log=$(ls -t "$HOME/.claude/projects/${folder//[^a-zA-Z0-9]/-}"/*.jsonl 2>/dev/null | head -n 1)
@@ -96,7 +97,7 @@ agent_state() {
   (( $(stat -c %Y "$log") >= started )) || return 1
 
   if [[ $command == "claude" ]]; then
-    tail -n 80 "$log" | jq -Rrn '[inputs | fromjson? // empty | select(.isSidechain != true)
+    said=$(tail -n 80 "$log" | jq -Rrn '[inputs | fromjson? // empty | select(.isSidechain != true)
         | select(.type == "assistant" or .type == "user" or (.type == "system" and .subtype == "turn_duration"))]
       | last // empty
       | if .type == "system" then ["done", ""]
@@ -105,10 +106,10 @@ agent_state() {
            else ["working", ([.message.content[]? | select(.type == "tool_use") | .name] | last // "")] end)
         elif (.message.content | tostring | test("\\[Request interrupted")) then ["done", ""]
         else ["working", ""] end
-      | @tsv'
+      | @tsv')
   else
     # Codex records tool output inline, so lines can be large: only the last few event lines are parsed.
-    tail -n 400 "$log" \
+    said=$(tail -n 400 "$log" \
       | grep -E '"payload":\{"type":"(task_started|task_complete|turn_aborted|custom_tool_call|function_call|custom_tool_call_output|function_call_output)"' \
       | tail -n 3 | jq -Rrn '[inputs | fromjson? // empty | .payload? // empty | objects
         | select(.type == "task_started" or .type == "task_complete" or .type == "turn_aborted"
@@ -117,8 +118,16 @@ agent_state() {
       | if .type == "task_complete" or .type == "turn_aborted" then ["done", ""]
         elif .type == "custom_tool_call" or .type == "function_call" then ["working", (.name // "")]
         else ["working", ""] end
-      | @tsv'
+      | @tsv')
   fi
+  [[ -n $said ]] || return 1
+  if [[ $command == "claude" ]]; then
+    model=$(tail -n 80 "$log" | jq -Rrn '[inputs | fromjson? // empty | select(.type == "assistant" and .isSidechain != true)
+      | .message.model // empty | select(. != "<synthetic>")] | last // ""')
+  else
+    model=$(grep '"type":"turn_context"' "$log" | tail -n 1 | jq -r '.payload.model // ""' 2>/dev/null)
+  fi
+  printf '%s\t%s\t%s\n' "$said" "$(( EPOCHSECONDS - $(stat -c %Y "$log") ))" "$model"
 }
 
 # What each agent's record said this run, by agent and folder.
@@ -185,6 +194,8 @@ for pair in "$@"; do
     fi
     state=""
     tool=""
+    quiet=0
+    model=""
     if [[ ($command == "claude" || $command == "codex") && -n $process && -n $folder ]]; then
       # Agents working in one folder write one record, so it is read once.
       key="$command:$folder"
@@ -192,11 +203,15 @@ for pair in "$@"; do
       found=${states[$key]}
       if [[ -n $found ]]; then
         state=${found%%$'\t'*}
-        tool=${found#*$'\t'}
+        rest=${found#*$'\t'}
+        tool=${rest%%$'\t'*}
+        rest=${rest#*$'\t'}
+        quiet=${rest%%$'\t'*}
+        model=${rest#*$'\t'}
       fi
     fi
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$address" "$terminal" "$command" "${process:-0}" "$project" "$branch" "$state" "$tool"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$address" "$terminal" "$command" "${process:-0}" "$project" "$branch" "$state" "$tool" "$quiet" "$model"
   done
 done | jq -Rcn '[inputs | split("\t") | {address: .[0], terminal: .[1], command: .[2], pid: (.[3] | tonumber), project: .[4], branch: .[5],
-    state: (.[6] // ""), tool: (.[7] // "")}]
+    state: (.[6] // ""), tool: (.[7] // ""), quiet: ((.[8] // "0") | tonumber? // 0), model: (.[9] // "")}]
   | group_by(.address) | map({address: .[0].address, sessions: map(del(.address))})'

@@ -35,6 +35,7 @@ Item {
   readonly property bool showOpen: root.config.recents !== false
   readonly property bool bounce: root.config.bounce !== false
   readonly property bool showDesktops: root.config.desktops === true
+  readonly property bool showAgents: root.config.agents === true
 
   onShowDesktopsChanged: {
     if (!root.showDesktops) return
@@ -89,17 +90,28 @@ Item {
     ? Model.desktops(Hyprland.workspaces.values || [], Hyprland.toplevels.values || [], root.focusedScreen.name,
       Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 0)
     : []
-  readonly property int desktopsGap: root.items.length > 0 ? root.dividerWidth : 0
+  readonly property int desktopsGap: root.items.length > 0 || root.agentSessions.length > 0 ? root.dividerWidth : 0
   readonly property int desktopsLength: root.desktopTiles.length > 0 ? root.desktopsGap + root.desktopTiles.length * root.cellWidth : 0
   // The desktop tile an icon is dragged over, where letting go opens its app, or -1.
   readonly property int dragDesktop: root.dragItem !== null && root.dragItem.launchable && !root.dragRemoving
-    ? Model.desktopAt(root.dragAlong, root.layout.width, root.desktopsGap, root.cellWidth, root.desktopTiles.length) : -1
+    ? Model.desktopAt(root.dragAlong, root.layout.width + root.agentsLength, root.desktopsGap, root.cellWidth, root.desktopTiles.length) : -1
   // The tile under the pointer, measured from where the tiles are drawn, since magnified apps move them.
   readonly property int hoveredDesktop: root.dragIndex < 0 && root.pointerAlong >= 0
     ? Model.desktopAt(root.pointerAlong - (root.vertical ? desktopRow.y : desktopRow.x), 0, root.desktopsGap, root.cellWidth,
       root.desktopTiles.length) : -1
   // Past the apps, icons stop magnifying, so the tiles hold still under the pointer.
-  readonly property bool pointerPastApps: root.desktopTiles.length > 0 && root.pointerX > root.layout.width + root.desktopsGap / 2
+  readonly property bool pointerPastApps: (root.desktopTiles.length > 0 || root.agentSessions.length > 0)
+    && root.pointerX > root.layout.width + (root.agentsLength > 0 ? root.agentsGap : root.desktopsGap) / 2
+
+  // Agents between the apps and the desktops, when that setting is on: one tile for each agent session.
+  readonly property var agentSessions: root.showAgents
+    ? Desktops.sessions(Model.windowList(Hyprland.toplevels.values || []), root.terminalInfo) : []
+  readonly property int agentsGap: root.agentSessions.length > 0 && root.items.length > 0 ? root.dividerWidth : 0
+  readonly property int agentsLength: root.agentSessions.length > 0 ? root.agentsGap + root.agentSessions.length * root.cellWidth : 0
+  // The agent tile under the pointer, measured from where the tiles are drawn.
+  readonly property int hoveredAgent: root.dragIndex < 0 && root.pointerAlong >= 0
+    ? Model.desktopAt(root.pointerAlong - (root.vertical ? agentRow.y : agentRow.x), 0, root.agentsGap, root.cellWidth,
+      root.agentSessions.length) : -1
 
   // Names people gave desktops, shared with the overview.
   readonly property string desktopsFile: Quickshell.env("HOME") + "/.local/state/omahub/desktops.json"
@@ -109,6 +121,8 @@ Item {
   // reaches the dock, and every two seconds while it shows, since agents change without any window changing.
   readonly property string contextScript: Qt.resolvedUrl("../desktops/context.sh").toString().replace("file://", "")
   property var terminalInfo: ({})
+  // Pets hold still when animations are turned off in Hyprland.
+  property bool stillPets: false
   onDesktopTilesChanged: contextDelay.restart()
   onPointerInsideChanged: if (root.pointerInside) contextDelay.restart()
   // Each window's context by Hyprland address: its project, and what its agents are doing.
@@ -125,9 +139,9 @@ Item {
   // The size chosen in settings, made smaller when the apps and desktops would not fit along the edge.
   readonly property int chosenIconSize: Style.space(root.size === "small" ? 40 : (root.size === "large" ? 62 : 50))
   readonly property int iconSize: Model.fittedIconSize(root.chosenIconSize, Style.space(12), root.alongRoom,
-    root.items.length + root.desktopTiles.length + 1,
+    root.items.length + root.agentSessions.length + root.desktopTiles.length + 1,
     root.items.filter(function(item) { return item.divider }).length * root.dividerWidth + root.dividerWidth
-      + root.desktopsGap + root.dockPadding * 2,
+      + root.agentsGap + root.desktopsGap + root.dockPadding * 2,
     Style.space(5) / root.chosenIconSize, root.maxScale)
   // The bar's and other panels' room at each side of the screen, from Hyprland: left, top, right, bottom.
   readonly property var reserved: {
@@ -160,7 +174,8 @@ Item {
   // The overview button leads the dock, set off from the apps by a divider.
   readonly property int overviewButtonWidth: root.cellWidth + root.dividerWidth
   // How long the shelf runs along its edge, before magnification.
-  readonly property int baseWidth: root.layout.width + root.dockPadding * 2 + root.overviewButtonWidth + root.desktopsLength
+  readonly property int baseWidth: root.layout.width + root.dockPadding * 2 + root.overviewButtonWidth + root.agentsLength
+    + root.desktopsLength
   // Room in from the edge for magnified icons and the app name.
   readonly property int bandHeight: Math.ceil(root.iconSize * root.maxScale) + root.dockPadding * 2
     + root.dotSpace + root.edgeGap + Style.space(40)
@@ -232,6 +247,7 @@ Item {
     list.push({ label: "Add apps…", action: "apps" })
     list.push({ label: "Automatically hide", action: "autohide", checked: root.autohide })
     list.push({ label: "Show desktops", action: "desktops", checked: root.showDesktops })
+    list.push({ label: "Show agents", action: "agents", checked: root.showAgents })
     list.push({ heading: "Magnification" })
     list.push({ label: "Off", action: "magnify", value: "off", checked: root.magnification === "off" })
     list.push({ label: "Subtle", action: "magnify", value: "subtle", checked: root.magnification === "subtle" })
@@ -278,44 +294,6 @@ Item {
     border.color: Color.accent
   }
 
-  // What an agent is doing, on the corner of its icon or desktop away from the edge: breathing while it
-  // works, still once its turn is done, in the urgent color while it waits on you, and dim while it only runs.
-  component AgentDot: Rectangle {
-    id: dot
-    property string activity: ""
-    // The last state shown, so the dot keeps its color while it shrinks away.
-    property string held: ""
-    readonly property bool calling: dot.held === "waiting" || dot.held === "attention"
-    onActivityChanged: if (dot.activity !== "") dot.held = dot.activity
-    Component.onCompleted: dot.held = dot.activity
-    z: 3
-    width: Math.max(Style.space(8), Math.round(root.iconSize * 0.24))
-    height: width
-    radius: width / 2
-    x: root.edge === "right" ? -Math.round(width * 0.3) : parent.width - Math.round(width * 0.7)
-    y: -Math.round(height * 0.3)
-    visible: scale > 0
-    scale: dot.activity !== "" ? 1 : 0
-    color: dot.calling ? Color.urgent : (dot.held === "agent" ? Util.alpha(Color.menu.text, 0.6) : Color.accent)
-    border.width: Math.max(1, Style.space(2))
-    border.color: Color.menu.background
-
-    Behavior on scale {
-      NumberAnimation { duration: dot.activity !== "" ? 220 : 160; easing.type: dot.activity !== "" ? Easing.OutCubic : Easing.InCubic }
-    }
-    Behavior on color {
-      ColorAnimation { duration: 180 }
-    }
-
-    SequentialAnimation on opacity {
-      running: dot.activity === "working"
-      loops: Animation.Infinite
-      NumberAnimation { to: 0.35; duration: 750; easing.type: Easing.InOutSine }
-      NumberAnimation { to: 1; duration: 750; easing.type: Easing.InOutSine }
-      onRunningChanged: if (!running) dot.opacity = 1
-    }
-  }
-
   function reload() {
     stateView.reload()
   }
@@ -346,6 +324,12 @@ Item {
       if (cell) apps.push(Object.assign({ id: cell.modelData.id, name: cell.modelData.name, windows: cell.modelData.windows.length,
         agent: cell.agentState }, place(cell)))
     }
+    var agents = []
+    for (var g = 0; g < agentRepeater.count; g++) {
+      var agentTile = agentRepeater.itemAt(g)
+      if (agentTile) agents.push(Object.assign({ id: agentTile.modelData.id, family: agentTile.modelData.family,
+        project: agentTile.modelData.project, agent: agentTile.agentState }, place(agentTile)))
+    }
     var desktops = []
     for (var d = 0; d < desktopRepeater.count; d++) {
       var tile = desktopRepeater.itemAt(d)
@@ -357,7 +341,7 @@ Item {
         : { x: screenX + screenWidth / 2, y: screenY + screenHeight - 1 })
     return JSON.stringify({
       shown: root.shown, position: root.edge, keyboard: root.keyboardActive, cursor: root.keyCursor,
-      menu: root.menuOpen, apps: apps, desktops: desktops, overview: place(overviewButton), pressed: root.iconPressed,
+      menu: root.menuOpen, apps: apps, agents: agents, desktops: desktops, overview: place(overviewButton), pressed: root.iconPressed,
       screen: { x: screenX, y: screenY, width: screenWidth, height: screenHeight },
       usable: { x: screenX + root.reserved[0], y: screenY + root.reserved[1],
         width: screenWidth - root.reserved[0] - root.reserved[2], height: screenHeight - root.reserved[1] - root.reserved[3] },
@@ -394,6 +378,21 @@ Item {
   // From a click, the pointer stays on the dock.
   function goToDesktop(id) {
     Quickshell.execDetached(["hyprctl", "eval", Desktops.quietFocusLua({ workspace: String(id) })])
+  }
+
+  // Goes to an agent's window, even inside an editor with many. From a click, the pointer stays on the dock.
+  function goToAgent(session, fromPointer) {
+    if (!session || !session.address) return
+    if (fromPointer === true) {
+      Quickshell.execDetached(["hyprctl", "eval", Desktops.quietFocusLua({ window: "address:" + session.address })])
+    } else {
+      root.dispatch('hl.dsp.focus({ window = "address:' + session.address + '" })')
+    }
+  }
+
+  // An agent tile's name: the project it works in, and what its agent is doing.
+  function agentTitle(session) {
+    return root.withAgent(session.project || Desktops.agentLabel(session.agent), session.activity)
   }
 
   // Goes to a desktop and opens an app there. Hyprland places the app's window on that desktop even if it
@@ -521,6 +520,8 @@ Item {
       item.windows.forEach(function(window) { window.close() })
     } else if (entry.action === "autohide") {
       root.runOmahub(["set", "dock/autohide", root.autohide ? "off" : "on"], "Couldn't change automatic hiding")
+    } else if (entry.action === "agents") {
+      root.runOmahub(["set", "dock/agents", root.showAgents ? "off" : "on"], "Couldn't change agents in the dock")
     } else if (entry.action === "desktops") {
       root.runOmahub(["set", "dock/desktops", root.showDesktops ? "off" : "on"], "Couldn't change desktops in the dock")
     } else if (entry.action === "magnify") {
@@ -823,6 +824,19 @@ Item {
   }
 
   Process {
+    running: true
+    command: ["hyprctl", "getoption", "animations:enabled", "-j"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        try {
+          var option = JSON.parse(text)
+          root.stillPets = option.bool === false || option.int === 0
+        } catch (e) {}
+      }
+    }
+  }
+
+  Process {
     id: contextReader
     property var sharers: ({})
     stdout: StdioCollector {
@@ -1021,13 +1035,15 @@ Item {
           } else if (previous) {
             root.keyCursor = Math.max(-1, root.keyCursor - 1)
           } else if (next) {
-            root.keyCursor = Math.min(root.items.length + root.desktopTiles.length - 1, root.keyCursor + 1)
+            root.keyCursor = Math.min(root.items.length + root.agentSessions.length + root.desktopTiles.length - 1, root.keyCursor + 1)
           } else if (enter) {
             if (root.keyCursor < 0) {
               Quickshell.execDetached([root.omahub, "open", "overview"])
-            } else if (root.keyCursor >= root.items.length) {
-              var tile = root.desktopTiles[root.keyCursor - root.items.length]
+            } else if (root.keyCursor >= root.items.length + root.agentSessions.length) {
+              var tile = root.desktopTiles[root.keyCursor - root.items.length - root.agentSessions.length]
               if (tile) root.dispatch('hl.dsp.focus({ workspace = "' + tile.id + '" })')
+            } else if (root.keyCursor >= root.items.length) {
+              root.goToAgent(root.agentSessions[root.keyCursor - root.items.length], false)
             } else {
               var cell = iconRepeater.itemAt(root.keyCursor)
               if (cell) cell.open()
@@ -1158,7 +1174,7 @@ Item {
         // With no apps kept or open, the shelf still holds the Overview tile.
         readonly property real length: (root.items.length > 0 ? (root.vertical ? iconRow.height : iconRow.width)
             : (root.desktopTiles.length > 0 ? 0 : -root.dividerWidth))
-          + root.desktopsLength + root.dockPadding * 2 + root.overviewButtonWidth
+          + root.agentsLength + root.desktopsLength + root.dockPadding * 2 + root.overviewButtonWidth
         x: root.edge === "left" ? root.edgeGap
           : (root.edge === "right" ? parent.width - width - root.edgeGap : (parent.width - width) / 2)
         y: root.vertical ? (parent.height - height) / 2 : parent.height - height - root.edgeGap
@@ -1251,8 +1267,9 @@ Item {
         id: iconRow
         columns: root.vertical ? 1 : Math.max(1, iconRepeater.count)
         x: root.vertical ? dockBackground.x + root.dockPadding + (root.edge === "left" ? root.dotSpace : 0)
-          : dockBackground.x + dockBackground.width - root.dockPadding - root.desktopsLength - width
-        y: root.vertical ? dockBackground.y + dockBackground.height - root.dockPadding - root.desktopsLength - height : dockBackground.y + root.dockPadding
+          : dockBackground.x + dockBackground.width - root.dockPadding - root.desktopsLength - root.agentsLength - width
+        y: root.vertical ? dockBackground.y + dockBackground.height - root.dockPadding - root.desktopsLength - root.agentsLength - height
+          : dockBackground.y + root.dockPadding
 
         Repeater {
           id: iconRepeater
@@ -1422,10 +1439,6 @@ Item {
                 NumberAnimation { target: iconBox; property: "hop"; to: Style.space(14); duration: 160; easing.type: Easing.OutCubic }
                 NumberAnimation { target: iconBox; property: "hop"; to: 0; duration: 220; easing.type: Easing.InOutCubic }
               }
-
-              AgentDot {
-                activity: cell.agentState
-              }
             }
 
             FocusRing {
@@ -1513,6 +1526,98 @@ Item {
         }
       }
 
+      // Agents between the apps and the desktops: a tile for each session with its pet, doing what the agent
+      // does. Click one to go to its window.
+      Item {
+        id: agentRow
+        visible: root.agentSessions.length > 0
+        x: root.vertical ? iconRow.x : dockBackground.x + dockBackground.width - root.dockPadding - root.desktopsLength - root.agentsLength
+        y: root.vertical ? dockBackground.y + dockBackground.height - root.dockPadding - root.desktopsLength - root.agentsLength
+          : dockBackground.y + root.dockPadding
+        width: root.vertical ? root.iconSize : root.agentsLength
+        height: root.vertical ? root.agentsLength : root.iconSize
+
+        Rectangle {
+          visible: root.agentsGap > 0
+          x: root.vertical ? Math.round(root.iconSize * 0.15) : root.agentsGap / 2
+          y: root.vertical ? root.agentsGap / 2 : Math.round(root.iconSize * 0.15)
+          width: root.vertical ? Math.round(root.iconSize * 0.7) : Math.max(1, Style.space(1))
+          height: root.vertical ? Math.max(1, Style.space(1)) : Math.round(root.iconSize * 0.7)
+          color: root.hairline
+        }
+
+        Repeater {
+          id: agentRepeater
+          model: root.agentSessions
+
+          delegate: Item {
+            id: agentTile
+            required property var modelData
+            required property int index
+
+            readonly property bool hovered: root.hoveredAgent === agentTile.index
+            readonly property bool keyed: root.keyboardActive && !root.menuOpen && root.keyCursor === root.items.length + agentTile.index
+            readonly property string agentState: Desktops.activityState(agentTile.modelData.activity)
+            readonly property real offset: root.agentsGap + agentTile.index * root.cellWidth
+
+            x: root.vertical ? 0 : agentTile.offset
+            y: root.vertical ? agentTile.offset : 0
+            width: root.vertical ? root.iconSize : root.cellWidth
+            height: root.vertical ? root.cellWidth : root.iconSize
+
+            Rectangle {
+              id: agentBox
+              width: root.iconSize
+              height: width
+              x: root.vertical ? 0 : root.cellPadding
+              y: root.vertical ? root.cellPadding : 0
+              radius: Math.round(width * 0.23)
+              color: agentTile.hovered || agentTile.keyed ? Util.alpha(Color.accent, 0.22) : Util.alpha(Color.menu.text, 0.07)
+              border.width: Math.max(1, Style.space(1))
+              border.color: root.hairline
+
+              Behavior on color {
+                ColorAnimation { duration: 120 }
+              }
+
+              AgentPet {
+                family: agentTile.modelData.family
+                mood: agentTile.agentState
+                still: root.stillPets
+                pixelSize: Math.max(1, Math.floor(root.iconSize * 0.8 / 16))
+                x: Math.round((parent.width - width) / 2)
+                y: Math.round((parent.height - height) / 2)
+              }
+            }
+
+            FocusRing {
+              visible: agentTile.keyed
+              x: agentBox.x - Style.space(4)
+              y: agentBox.y - Style.space(4)
+              width: agentBox.width + Style.space(8)
+              height: agentBox.height + Style.space(8)
+            }
+
+            DockLabel {
+              visible: (agentTile.hovered || agentTile.keyed) && root.dragIndex < 0 && !root.menuOpen && !root.pickerOpen
+              text: root.agentTitle(agentTile.modelData)
+              x: root.edge === "left" ? agentBox.x + agentBox.width + root.labelGap
+                : (root.edge === "right" ? agentBox.x - width - root.labelGap : agentBox.x + (agentBox.width - width) / 2)
+              y: root.vertical ? agentBox.y + (agentBox.height - height) / 2 : agentBox.y - height - root.labelGap
+            }
+
+            MouseArea {
+              x: root.edge === "left" ? -root.reachEdge : (root.edge === "right" ? -root.clickAway : 0)
+              y: root.edge === "bottom" ? -root.clickAway : 0
+              width: root.vertical ? root.iconSize + root.clickAway + root.reachEdge : parent.width
+              height: root.vertical ? parent.height : root.iconSize + root.clickAway + root.reachEdge
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.goToAgent(agentTile.modelData, true)
+            }
+          }
+        }
+      }
+
       // Desktops at the end of the dock: click one to go there, or drop an app on one to open it there.
       Item {
         id: desktopRow
@@ -1542,7 +1647,7 @@ Item {
 
             readonly property bool hovered: root.hoveredDesktop === desk.index
             readonly property bool dropping: root.dragDesktop === desk.index
-            readonly property bool keyed: root.keyboardActive && !root.menuOpen && root.keyCursor === root.items.length + desk.index
+            readonly property bool keyed: root.keyboardActive && !root.menuOpen && root.keyCursor === root.items.length + root.agentSessions.length + desk.index
             readonly property bool lit: desk.hovered || desk.dropping || desk.keyed
             readonly property var summary: root.desktopSummary(desk.modelData)
             readonly property string title: desk.summary.title
@@ -1602,10 +1707,6 @@ Item {
                 font.pixelSize: small ? Math.max(6, Math.min(Style.font.caption, Math.round(parent.height * 0.26)))
                   : Math.round(parent.height * 0.42)
                 font.bold: true
-              }
-
-              AgentDot {
-                activity: desk.agentState
               }
             }
 
